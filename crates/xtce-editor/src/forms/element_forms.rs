@@ -1,0 +1,435 @@
+use gpui::{App, Context, Div, Window};
+
+use super::{
+    alias_set::AliasSetForm, ancillary_data_set::AncillaryDataSetForm,
+    command_metadata::CommandMetaDataForm, header::HeaderForm, parameter::ParameterForm,
+    parameter_set::ParameterSetForm, parameter_type::ParameterTypeForm,
+    service_set::ServiceSetForm, space_system::SpaceSystemForm,
+    telemetry_metadata::TelemetryMetaDataForm,
+};
+use crate::{ElementKind, XtceDocument, XtceEditor};
+
+pub(crate) struct ElementForms {
+    space_system: SpaceSystemForm,
+    alias_set: AliasSetForm,
+    ancillary_data_set: AncillaryDataSetForm,
+    header: HeaderForm,
+    telemetry_metadata: TelemetryMetaDataForm,
+    command_metadata: CommandMetaDataForm,
+    parameter_set: ParameterSetForm,
+    parameter: ParameterForm,
+    parameter_type: ParameterTypeForm,
+    service_set: ServiceSetForm,
+}
+
+impl ElementForms {
+    pub(crate) fn element_title(
+        &self,
+        kind: ElementKind,
+        system: &xtce::SpaceSystem,
+        cx: &App,
+    ) -> String {
+        if let Some(name) = self.draft_name(kind, system, cx) {
+            return name;
+        }
+        match kind {
+            ElementKind::TelemetryParameter(index) => telemetry_parameter_set(system)
+                .and_then(|set| set.content.get(index))
+                .map(parameter_title)
+                .unwrap_or_else(|| kind.label().to_owned()),
+            ElementKind::CommandParameter(index) => command_parameter_set(system)
+                .and_then(|set| set.content.get(index))
+                .map(parameter_title)
+                .unwrap_or_else(|| kind.label().to_owned()),
+            ElementKind::ArgumentType(index) => system
+                .command_meta_data
+                .as_ref()
+                .and_then(|metadata| metadata.argument_type_set.as_ref())
+                .and_then(|set| set.content.get(index))
+                .map(XtceDocument::argument_type_label)
+                .unwrap_or_else(|| kind.label().to_owned()),
+            ElementKind::MetaCommand(index) => system
+                .command_meta_data
+                .as_ref()
+                .and_then(|metadata| metadata.meta_command_set.as_ref())
+                .and_then(|set| set.content.get(index))
+                .map(XtceDocument::meta_command_label)
+                .unwrap_or_else(|| kind.label().to_owned()),
+            _ => kind.label().to_owned(),
+        }
+    }
+
+    pub(crate) fn draft_name(
+        &self,
+        kind: ElementKind,
+        system: &xtce::SpaceSystem,
+        cx: &App,
+    ) -> Option<String> {
+        match kind {
+            ElementKind::SpaceSystem => Some(self.space_system.name(cx)),
+            ElementKind::TelemetryParameter(index)
+                if matches!(
+                    telemetry_parameter_set(system).and_then(|set| set.content.get(index)),
+                    Some(xtce::ParameterSetTypeContent::Parameter(_))
+                ) =>
+            {
+                Some(self.parameter.name(cx))
+            }
+            ElementKind::CommandParameter(index)
+                if matches!(
+                    command_parameter_set(system).and_then(|set| set.content.get(index)),
+                    Some(xtce::ParameterSetTypeContent::Parameter(_))
+                ) =>
+            {
+                Some(self.parameter.name(cx))
+            }
+            ElementKind::TelemetryParameterType(_) | ElementKind::CommandParameterType(_) => {
+                Some(self.parameter_type.name(cx))
+            }
+            _ => None,
+        }
+    }
+
+    pub(crate) fn render_name_editor(
+        &self,
+        kind: ElementKind,
+        system: &xtce::SpaceSystem,
+    ) -> Option<Div> {
+        match kind {
+            ElementKind::SpaceSystem => Some(self.space_system.render_name_editor()),
+            ElementKind::TelemetryParameter(index)
+                if matches!(
+                    telemetry_parameter_set(system).and_then(|set| set.content.get(index)),
+                    Some(xtce::ParameterSetTypeContent::Parameter(_))
+                ) =>
+            {
+                Some(self.parameter.render_name_editor())
+            }
+            ElementKind::CommandParameter(index)
+                if matches!(
+                    command_parameter_set(system).and_then(|set| set.content.get(index)),
+                    Some(xtce::ParameterSetTypeContent::Parameter(_))
+                ) =>
+            {
+                Some(self.parameter.render_name_editor())
+            }
+            ElementKind::TelemetryParameterType(_) | ElementKind::CommandParameterType(_) => {
+                Some(self.parameter_type.render_name_editor())
+            }
+            _ => None,
+        }
+    }
+
+    pub(crate) fn new(
+        system: &xtce::SpaceSystem,
+        window: &mut Window,
+        cx: &mut Context<XtceEditor>,
+    ) -> Self {
+        Self {
+            space_system: SpaceSystemForm::new(system, window, cx),
+            alias_set: AliasSetForm::new(system.alias_set.as_ref(), window, cx),
+            ancillary_data_set: AncillaryDataSetForm::new(
+                system.ancillary_data_set.as_ref(),
+                window,
+                cx,
+            ),
+            header: HeaderForm::new(system.header.as_ref(), window, cx),
+            telemetry_metadata: TelemetryMetaDataForm,
+            command_metadata: CommandMetaDataForm,
+            parameter_set: ParameterSetForm::new(
+                system
+                    .telemetry_meta_data
+                    .as_ref()
+                    .and_then(|metadata| metadata.parameter_set.as_ref()),
+                window,
+                cx,
+            ),
+            parameter: ParameterForm::new(
+                telemetry_parameter_set(system).and_then(|set| set.content.first()),
+                window,
+                cx,
+            ),
+            parameter_type: ParameterTypeForm::new(
+                telemetry_parameter_type_set(system).and_then(|set| set.content.first()),
+                window,
+                cx,
+            ),
+            service_set: ServiceSetForm,
+        }
+    }
+
+    pub(crate) fn load(
+        &self,
+        kind: ElementKind,
+        system: &xtce::SpaceSystem,
+        window: &mut Window,
+        cx: &mut Context<XtceEditor>,
+    ) {
+        match kind {
+            ElementKind::SpaceSystem => {
+                self.space_system.load(system, window, cx);
+                self.alias_set.load(system.alias_set.as_ref(), window, cx);
+                self.ancillary_data_set
+                    .load(system.ancillary_data_set.as_ref(), window, cx);
+                self.header.load(system.header.as_ref(), window, cx);
+            }
+            ElementKind::TelemetryParameterSet => {
+                self.parameter_set.load(
+                    system
+                        .telemetry_meta_data
+                        .as_ref()
+                        .and_then(|metadata| metadata.parameter_set.as_ref()),
+                    window,
+                    cx,
+                );
+            }
+            ElementKind::CommandParameterSet => {
+                self.parameter_set.load(
+                    system
+                        .command_meta_data
+                        .as_ref()
+                        .and_then(|metadata| metadata.parameter_set.as_ref()),
+                    window,
+                    cx,
+                );
+            }
+            ElementKind::TelemetryParameter(index) => {
+                self.parameter.load(
+                    telemetry_parameter_set(system).and_then(|set| set.content.get(index)),
+                    window,
+                    cx,
+                );
+            }
+            ElementKind::CommandParameter(index) => {
+                self.parameter.load(
+                    command_parameter_set(system).and_then(|set| set.content.get(index)),
+                    window,
+                    cx,
+                );
+            }
+            ElementKind::TelemetryParameterType(index) => {
+                self.parameter_type.load(
+                    telemetry_parameter_type_set(system).and_then(|set| set.content.get(index)),
+                    window,
+                    cx,
+                );
+            }
+            ElementKind::CommandParameterType(index) => {
+                self.parameter_type.load(
+                    command_parameter_type_set(system).and_then(|set| set.content.get(index)),
+                    window,
+                    cx,
+                );
+            }
+            _ => {}
+        }
+    }
+
+    pub(crate) fn apply_to(&self, kind: ElementKind, system: &mut xtce::SpaceSystem, cx: &App) {
+        match kind {
+            ElementKind::SpaceSystem => {
+                self.space_system.apply_to(system, cx);
+                self.alias_set.apply_to_option(&mut system.alias_set, cx);
+                self.ancillary_data_set
+                    .apply_to_option(&mut system.ancillary_data_set, cx);
+                self.header.apply_to_option(&mut system.header, cx);
+            }
+            ElementKind::TelemetryParameterSet => {
+                if let Some(parameter_set) = system
+                    .telemetry_meta_data
+                    .as_mut()
+                    .and_then(|metadata| metadata.parameter_set.as_mut())
+                {
+                    self.parameter_set.apply_to(parameter_set, cx);
+                }
+            }
+            ElementKind::CommandParameterSet => {
+                if let Some(parameter_set) = system
+                    .command_meta_data
+                    .as_mut()
+                    .and_then(|metadata| metadata.parameter_set.as_mut())
+                {
+                    self.parameter_set.apply_to(parameter_set, cx);
+                }
+            }
+            ElementKind::TelemetryParameter(index) => {
+                if let Some(parameter) =
+                    telemetry_parameter_set_mut(system).and_then(|set| set.content.get_mut(index))
+                {
+                    self.parameter.apply_to(parameter, cx);
+                }
+            }
+            ElementKind::CommandParameter(index) => {
+                if let Some(parameter) =
+                    command_parameter_set_mut(system).and_then(|set| set.content.get_mut(index))
+                {
+                    self.parameter.apply_to(parameter, cx);
+                }
+            }
+            ElementKind::TelemetryParameterType(index) => {
+                if let Some(parameter_type) = telemetry_parameter_type_set_mut(system)
+                    .and_then(|set| set.content.get_mut(index))
+                {
+                    self.parameter_type.apply_to(parameter_type, cx);
+                }
+            }
+            ElementKind::CommandParameterType(index) => {
+                if let Some(parameter_type) = command_parameter_type_set_mut(system)
+                    .and_then(|set| set.content.get_mut(index))
+                {
+                    self.parameter_type.apply_to(parameter_type, cx);
+                }
+            }
+            _ => {}
+        }
+    }
+
+    pub(crate) fn is_editable(kind: ElementKind) -> bool {
+        matches!(
+            kind,
+            ElementKind::SpaceSystem
+                | ElementKind::TelemetryParameterSet
+                | ElementKind::TelemetryParameter(_)
+                | ElementKind::CommandParameterSet
+                | ElementKind::CommandParameter(_)
+                | ElementKind::TelemetryParameterType(_)
+                | ElementKind::CommandParameterType(_)
+        )
+    }
+
+    pub(crate) fn render(&self, kind: ElementKind, system: &xtce::SpaceSystem, cx: &App) -> Div {
+        match kind {
+            ElementKind::TelemetryParameterSet | ElementKind::CommandParameterSet => {
+                self.parameter_set.render(cx)
+            }
+            ElementKind::TelemetryParameter(index) => self.parameter.render(
+                telemetry_parameter_set(system).and_then(|set| set.content.get(index)),
+                cx,
+            ),
+            ElementKind::CommandParameter(index) => self.parameter.render(
+                command_parameter_set(system).and_then(|set| set.content.get(index)),
+                cx,
+            ),
+            ElementKind::TelemetryParameterType(index) => self.parameter_type.render(
+                telemetry_parameter_type_set(system).and_then(|set| set.content.get(index)),
+                cx,
+            ),
+            ElementKind::CommandParameterType(index) => self.parameter_type.render(
+                command_parameter_type_set(system).and_then(|set| set.content.get(index)),
+                cx,
+            ),
+            ElementKind::TelemetryMetaData
+            | ElementKind::TelemetryParameterTypeSet
+            | ElementKind::ContainerSet
+            | ElementKind::MessageSet
+            | ElementKind::TelemetryStreamSet
+            | ElementKind::TelemetryAlgorithmSet => {
+                self.telemetry_metadata
+                    .render(kind, system.telemetry_meta_data.as_ref(), cx)
+            }
+            ElementKind::CommandMetaData
+            | ElementKind::CommandParameterTypeSet
+            | ElementKind::ArgumentTypeSet
+            | ElementKind::ArgumentType(_)
+            | ElementKind::MetaCommandSet
+            | ElementKind::MetaCommand(_)
+            | ElementKind::CommandContainerSet
+            | ElementKind::CommandStreamSet
+            | ElementKind::CommandAlgorithmSet => {
+                self.command_metadata
+                    .render(kind, system.command_meta_data.as_ref(), cx)
+            }
+            ElementKind::ServiceSet => self.service_set.render(system.service_set.as_ref(), cx),
+            ElementKind::SpaceSystem => self.space_system.render_identity(cx),
+        }
+    }
+
+    pub(crate) fn render_space_system_description(&self, cx: &App) -> Div {
+        self.space_system.render_description(cx)
+    }
+
+    pub(crate) fn render_space_system_aliases(&self, cx: &App) -> Div {
+        self.alias_set.render(cx)
+    }
+
+    pub(crate) fn render_space_system_ancillary_data(&self, cx: &App) -> Div {
+        self.ancillary_data_set.render(cx)
+    }
+
+    pub(crate) fn render_space_system_header(&self, cx: &App) -> Div {
+        self.header.render(cx)
+    }
+}
+
+fn telemetry_parameter_set(system: &xtce::SpaceSystem) -> Option<&xtce::ParameterSetType> {
+    system
+        .telemetry_meta_data
+        .as_ref()
+        .and_then(|metadata| metadata.parameter_set.as_ref())
+}
+
+fn telemetry_parameter_set_mut(
+    system: &mut xtce::SpaceSystem,
+) -> Option<&mut xtce::ParameterSetType> {
+    system
+        .telemetry_meta_data
+        .as_mut()
+        .and_then(|metadata| metadata.parameter_set.as_mut())
+}
+
+fn command_parameter_set(system: &xtce::SpaceSystem) -> Option<&xtce::ParameterSetType> {
+    system
+        .command_meta_data
+        .as_ref()
+        .and_then(|metadata| metadata.parameter_set.as_ref())
+}
+
+fn command_parameter_set_mut(
+    system: &mut xtce::SpaceSystem,
+) -> Option<&mut xtce::ParameterSetType> {
+    system
+        .command_meta_data
+        .as_mut()
+        .and_then(|metadata| metadata.parameter_set.as_mut())
+}
+
+fn telemetry_parameter_type_set(system: &xtce::SpaceSystem) -> Option<&xtce::ParameterTypeSetType> {
+    system
+        .telemetry_meta_data
+        .as_ref()
+        .and_then(|metadata| metadata.parameter_type_set.as_ref())
+}
+
+fn telemetry_parameter_type_set_mut(
+    system: &mut xtce::SpaceSystem,
+) -> Option<&mut xtce::ParameterTypeSetType> {
+    system
+        .telemetry_meta_data
+        .as_mut()
+        .and_then(|metadata| metadata.parameter_type_set.as_mut())
+}
+
+fn command_parameter_type_set(system: &xtce::SpaceSystem) -> Option<&xtce::ParameterTypeSetType> {
+    system
+        .command_meta_data
+        .as_ref()
+        .and_then(|metadata| metadata.parameter_type_set.as_ref())
+}
+
+fn command_parameter_type_set_mut(
+    system: &mut xtce::SpaceSystem,
+) -> Option<&mut xtce::ParameterTypeSetType> {
+    system
+        .command_meta_data
+        .as_mut()
+        .and_then(|metadata| metadata.parameter_type_set.as_mut())
+}
+
+fn parameter_title(parameter: &xtce::ParameterSetTypeContent) -> String {
+    match parameter {
+        xtce::ParameterSetTypeContent::Parameter(parameter) => parameter.name.clone(),
+        xtce::ParameterSetTypeContent::ParameterRef(parameter) => {
+            format!("→ {}", parameter.parameter_ref)
+        }
+    }
+}

@@ -1,0 +1,1950 @@
+mod forms;
+
+use std::collections::HashSet;
+
+use gpui::{prelude::FluentBuilder, *};
+use gpui_component::{
+    ActiveTheme, GlobalState, Icon, IconName, Root, Sizable, StyledExt, TitleBar, WindowExt,
+    button::{Button, ButtonVariants},
+    h_flex,
+    input::{Input, InputState},
+    menu::{AppMenuBar, DropdownMenu, PopupMenuItem},
+    v_flex,
+};
+
+use forms::ElementForms;
+
+actions!(xtce_editor, [NewDocument, SaveDocument]);
+
+#[derive(Clone, Copy, Debug, Hash, PartialEq, Eq)]
+enum ElementKind {
+    SpaceSystem,
+    TelemetryMetaData,
+    TelemetryParameterTypeSet,
+    TelemetryParameterType(usize),
+    TelemetryParameterSet,
+    TelemetryParameter(usize),
+    ContainerSet,
+    MessageSet,
+    TelemetryStreamSet,
+    TelemetryAlgorithmSet,
+    CommandMetaData,
+    CommandParameterTypeSet,
+    CommandParameterType(usize),
+    CommandParameterSet,
+    CommandParameter(usize),
+    ArgumentTypeSet,
+    ArgumentType(usize),
+    MetaCommandSet,
+    MetaCommand(usize),
+    CommandContainerSet,
+    CommandStreamSet,
+    CommandAlgorithmSet,
+    ServiceSet,
+}
+
+impl ElementKind {
+    fn label(self) -> &'static str {
+        match self {
+            Self::SpaceSystem => "SpaceSystem",
+            Self::TelemetryMetaData => "TelemetryMetaData",
+            Self::TelemetryParameterTypeSet | Self::CommandParameterTypeSet => "ParameterTypeSet",
+            Self::TelemetryParameterType(_) | Self::CommandParameterType(_) => "ParameterType",
+            Self::TelemetryParameterSet | Self::CommandParameterSet => "ParameterSet",
+            Self::TelemetryParameter(_) | Self::CommandParameter(_) => "Parameter",
+            Self::ContainerSet => "ContainerSet",
+            Self::MessageSet => "MessageSet",
+            Self::TelemetryStreamSet | Self::CommandStreamSet => "StreamSet",
+            Self::TelemetryAlgorithmSet | Self::CommandAlgorithmSet => "AlgorithmSet",
+            Self::CommandMetaData => "CommandMetaData",
+            Self::ArgumentTypeSet => "ArgumentTypeSet",
+            Self::ArgumentType(_) => "ArgumentType",
+            Self::MetaCommandSet => "MetaCommandSet",
+            Self::MetaCommand(_) => "MetaCommand",
+            Self::CommandContainerSet => "CommandContainerSet",
+            Self::ServiceSet => "ServiceSet",
+        }
+    }
+
+    fn can_add_child(self) -> bool {
+        matches!(
+            self,
+            Self::TelemetryParameterTypeSet
+                | Self::CommandParameterTypeSet
+                | Self::TelemetryParameterSet
+                | Self::CommandParameterSet
+                | Self::ArgumentTypeSet
+                | Self::MetaCommandSet
+        )
+    }
+
+    fn uses_folder_icon(self) -> bool {
+        matches!(
+            self,
+            Self::SpaceSystem
+                | Self::TelemetryMetaData
+                | Self::TelemetryParameterTypeSet
+                | Self::TelemetryParameterSet
+                | Self::CommandMetaData
+                | Self::CommandParameterTypeSet
+                | Self::CommandParameterSet
+                | Self::ArgumentTypeSet
+                | Self::MetaCommandSet
+                | Self::ServiceSet
+        )
+    }
+}
+
+#[derive(Clone, Debug, Hash, PartialEq, Eq)]
+struct ElementSelection {
+    system_path: Vec<usize>,
+    kind: ElementKind,
+}
+
+struct TreeNode {
+    selection: ElementSelection,
+    label: String,
+    level: usize,
+    has_children: bool,
+}
+
+struct XtceDocument {
+    root: xtce::SpaceSystem,
+    selection: ElementSelection,
+    file_name: String,
+}
+
+struct EditorChrome {
+    app_menu_bar: Entity<AppMenuBar>,
+}
+
+struct ElementTree {
+    search_input: Entity<InputState>,
+    collapsed: HashSet<ElementSelection>,
+}
+
+struct ElementInspector {
+    forms: ElementForms,
+}
+
+struct XtceEditor {
+    document: XtceDocument,
+    chrome: EditorChrome,
+    tree: ElementTree,
+    inspector: ElementInspector,
+}
+
+impl XtceEditor {
+    fn new(window: &mut Window, cx: &mut Context<Self>) -> Self {
+        let root = xtce::from_str(include_str!("../../xtce/tests/fixtures/sample.xml"))
+            .expect("the bundled sample.xml must be valid XTCE");
+        let inspector = ElementInspector {
+            forms: ElementForms::new(&root, window, cx),
+        };
+        let collapsed = ElementTree::collapsed_by_default(&root);
+
+        Self {
+            document: XtceDocument {
+                root,
+                selection: ElementSelection {
+                    system_path: Vec::new(),
+                    kind: ElementKind::SpaceSystem,
+                },
+                file_name: "sample.xml".to_owned(),
+            },
+            chrome: EditorChrome {
+                app_menu_bar: AppMenuBar::new(cx),
+            },
+            tree: ElementTree {
+                search_input: cx
+                    .new(|cx| InputState::new(window, cx).placeholder("Filter elements…")),
+                collapsed,
+            },
+            inspector,
+        }
+    }
+
+    fn load_selected_element(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        let kind = self.document.selection.kind;
+        self.inspector
+            .forms
+            .load(kind, self.document.selected_system(), window, cx);
+        cx.notify();
+    }
+
+    fn save_selected_element(&mut self, cx: &mut Context<Self>) {
+        let kind = self.document.selection.kind;
+        let path = self.document.selection.system_path.clone();
+        let system = XtceDocument::system_at_path_mut(&mut self.document.root, &path);
+        self.inspector.forms.apply_to(kind, system, cx);
+        cx.notify();
+    }
+
+    fn save_document(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        self.save_selected_element(cx);
+        let xml = match XtceDocument::serialize(&self.document.root) {
+            Ok(xml) => xml,
+            Err(error) => {
+                window.push_notification(format!("Could not encode XTCE XML: {error}"), cx);
+                return;
+            }
+        };
+        let directory = std::env::current_dir().unwrap_or_else(|_| std::path::PathBuf::from("."));
+        let receiver = cx.prompt_for_new_path(&directory, Some(&self.document.file_name));
+        cx.spawn_in(window, async move |this, window| {
+            let Ok(Ok(Some(path))) = receiver.await else {
+                return;
+            };
+            let result = std::fs::write(&path, xml);
+            let file_name = path
+                .file_name()
+                .map(|name| name.to_string_lossy().into_owned());
+            _ = this.update_in(window, |this, window, cx| {
+                let message = match result {
+                    Ok(()) => {
+                        if let Some(file_name) = file_name {
+                            this.document.file_name = file_name;
+                        }
+                        format!("Saved {}", path.display())
+                    }
+                    Err(error) => format!("Could not save {}: {error}", path.display()),
+                };
+                window.push_notification(message, cx);
+            });
+        })
+        .detach();
+    }
+
+    fn new_document(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        let document = XtceDocument::untitled();
+        let forms = ElementForms::new(&document.root, window, cx);
+        self.tree.collapsed = ElementTree::collapsed_by_default(&document.root);
+        self.document = document;
+        self.inspector.forms = forms;
+        window.push_notification("Created a new XTCE document", cx);
+        cx.notify();
+    }
+
+    fn toggle_tree_node(&mut self, selection: &ElementSelection, cx: &mut Context<Self>) {
+        if !self.tree.collapsed.insert(selection.clone()) {
+            self.tree.collapsed.remove(selection);
+        }
+        cx.notify();
+    }
+
+    fn add_tree_child(
+        &mut self,
+        parent: &ElementSelection,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        self.save_selected_element(cx);
+        let system = XtceDocument::system_at_path_mut(&mut self.document.root, &parent.system_path);
+        let Some(kind) = XtceDocument::add_collection_item(system, parent.kind) else {
+            return;
+        };
+        self.tree.collapsed.remove(parent);
+        self.document.selection = ElementSelection {
+            system_path: parent.system_path.clone(),
+            kind,
+        };
+        self.load_selected_element(window, cx);
+    }
+
+    fn add_metadata(
+        &mut self,
+        parent: &ElementSelection,
+        kind: ElementKind,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        self.save_selected_element(cx);
+        let system = XtceDocument::system_at_path_mut(&mut self.document.root, &parent.system_path);
+        if !XtceDocument::add_metadata(system, kind) {
+            return;
+        }
+        self.tree.collapsed.remove(parent);
+        self.document.selection = ElementSelection {
+            system_path: parent.system_path.clone(),
+            kind,
+        };
+        self.load_selected_element(window, cx);
+    }
+
+    fn add_space_system(
+        &mut self,
+        parent: &ElementSelection,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        self.save_selected_element(cx);
+        let system = XtceDocument::system_at_path_mut(&mut self.document.root, &parent.system_path);
+        let index = XtceDocument::add_space_system(system);
+        self.tree.collapsed.remove(parent);
+        let mut system_path = parent.system_path.clone();
+        system_path.push(index);
+        self.document.selection = ElementSelection {
+            system_path,
+            kind: ElementKind::SpaceSystem,
+        };
+        self.load_selected_element(window, cx);
+    }
+}
+
+impl XtceDocument {
+    fn untitled() -> Self {
+        Self {
+            root: xtce::SpaceSystem::new("NewSpaceSystem"),
+            selection: ElementSelection {
+                system_path: Vec::new(),
+                kind: ElementKind::SpaceSystem,
+            },
+            file_name: "untitled.xml".to_owned(),
+        }
+    }
+
+    fn serialize(root: &xtce::SpaceSystem) -> Result<String, String> {
+        xtce::to_string(root)
+            .map(|xml| format!("<?xml version=\"1.0\" encoding=\"utf-8\"?>\n{xml}"))
+            .map_err(|error| error.to_string())
+    }
+
+    fn system_at_path<'a>(system: &'a xtce::SpaceSystem, path: &[usize]) -> &'a xtce::SpaceSystem {
+        match path.split_first() {
+            Some((&index, remaining)) => {
+                Self::system_at_path(&system.space_system[index], remaining)
+            }
+            None => system,
+        }
+    }
+
+    fn system_at_path_mut<'a>(
+        system: &'a mut xtce::SpaceSystem,
+        path: &[usize],
+    ) -> &'a mut xtce::SpaceSystem {
+        match path.split_first() {
+            Some((&index, remaining)) => {
+                Self::system_at_path_mut(&mut system.space_system[index], remaining)
+            }
+            None => system,
+        }
+    }
+
+    fn selected_system(&self) -> &xtce::SpaceSystem {
+        Self::system_at_path(&self.root, &self.selection.system_path)
+    }
+
+    fn add_collection_item(
+        system: &mut xtce::SpaceSystem,
+        collection: ElementKind,
+    ) -> Option<ElementKind> {
+        match collection {
+            ElementKind::TelemetryParameterTypeSet => {
+                let set = system
+                    .telemetry_meta_data
+                    .as_mut()?
+                    .parameter_type_set
+                    .get_or_insert_with(|| xtce::ParameterTypeSetType {
+                        content: Vec::new(),
+                    });
+                let index = set.content.len();
+                let name = Self::next_parameter_type_name(&set.content);
+                set.content.push(Self::new_parameter_type(name));
+                Some(ElementKind::TelemetryParameterType(index))
+            }
+            ElementKind::CommandParameterTypeSet => {
+                let set = system
+                    .command_meta_data
+                    .as_mut()?
+                    .parameter_type_set
+                    .as_mut()?;
+                let index = set.content.len();
+                let name = Self::next_parameter_type_name(&set.content);
+                set.content.push(Self::new_parameter_type(name));
+                Some(ElementKind::CommandParameterType(index))
+            }
+            ElementKind::TelemetryParameterSet => {
+                let type_ref = system
+                    .telemetry_meta_data
+                    .as_ref()
+                    .and_then(|metadata| metadata.parameter_type_set.as_ref())
+                    .and_then(|set| set.content.first())
+                    .map(Self::parameter_type_label)
+                    .unwrap_or_else(|| "ParameterType1".to_owned());
+                let set = system
+                    .telemetry_meta_data
+                    .as_mut()?
+                    .parameter_set
+                    .get_or_insert_with(|| xtce::ParameterSetType {
+                        content: Vec::new(),
+                    });
+                let index = set.content.len();
+                let name = Self::next_parameter_name(&set.content);
+                set.content.push(Self::new_parameter(name, type_ref));
+                Some(ElementKind::TelemetryParameter(index))
+            }
+            ElementKind::CommandParameterSet => {
+                let type_ref = system
+                    .command_meta_data
+                    .as_ref()
+                    .and_then(|metadata| metadata.parameter_type_set.as_ref())
+                    .and_then(|set| set.content.first())
+                    .map(Self::parameter_type_label)
+                    .unwrap_or_else(|| "ParameterType1".to_owned());
+                let set = system.command_meta_data.as_mut()?.parameter_set.as_mut()?;
+                let index = set.content.len();
+                let name = Self::next_parameter_name(&set.content);
+                set.content.push(Self::new_parameter(name, type_ref));
+                Some(ElementKind::CommandParameter(index))
+            }
+            ElementKind::ArgumentTypeSet => {
+                let set = system
+                    .command_meta_data
+                    .as_mut()?
+                    .argument_type_set
+                    .get_or_insert_with(|| xtce::ArgumentTypeSetType {
+                        content: Vec::new(),
+                    });
+                let index = set.content.len();
+                let name = Self::next_argument_type_name(&set.content);
+                set.content.push(Self::new_argument_type(name));
+                Some(ElementKind::ArgumentType(index))
+            }
+            ElementKind::MetaCommandSet => {
+                let set = system
+                    .command_meta_data
+                    .as_mut()?
+                    .meta_command_set
+                    .get_or_insert_with(|| xtce::MetaCommandSetType {
+                        content: Vec::new(),
+                    });
+                let index = set.content.len();
+                let name = Self::next_meta_command_name(&set.content);
+                set.content.push(Self::new_meta_command(name));
+                Some(ElementKind::MetaCommand(index))
+            }
+            _ => None,
+        }
+    }
+
+    fn add_metadata(system: &mut xtce::SpaceSystem, kind: ElementKind) -> bool {
+        match kind {
+            ElementKind::TelemetryMetaData if system.telemetry_meta_data.is_none() => {
+                system.telemetry_meta_data = Some(xtce::TelemetryMetaDataType {
+                    parameter_type_set: None,
+                    parameter_set: None,
+                    container_set: None,
+                    message_set: None,
+                    stream_set: None,
+                    algorithm_set: None,
+                });
+                true
+            }
+            ElementKind::CommandMetaData if system.command_meta_data.is_none() => {
+                system.command_meta_data = Some(xtce::CommandMetaDataType {
+                    parameter_type_set: None,
+                    parameter_set: None,
+                    argument_type_set: None,
+                    meta_command_set: None,
+                    command_container_set: None,
+                    stream_set: None,
+                    algorithm_set: None,
+                });
+                true
+            }
+            _ => false,
+        }
+    }
+
+    fn add_space_system(system: &mut xtce::SpaceSystem) -> usize {
+        let index = system.space_system.len();
+        let name = Self::next_unique_name("SpaceSystem", |candidate| {
+            system
+                .space_system
+                .iter()
+                .any(|child| child.name == candidate)
+        });
+        system.space_system.push(xtce::SpaceSystem::new(name));
+        index
+    }
+
+    fn new_parameter_type(name: String) -> xtce::ParameterTypeSetTypeContent {
+        xtce::ParameterTypeSetTypeContent::StringParameterType(xtce::StringParameterType {
+            short_description: None,
+            name,
+            base_type: None,
+            initial_value: None,
+            restriction_pattern: None,
+            character_width: None,
+            content: Vec::new(),
+        })
+    }
+
+    fn new_parameter(name: String, parameter_type_ref: String) -> xtce::ParameterSetTypeContent {
+        xtce::ParameterSetTypeContent::Parameter(xtce::ParameterType {
+            short_description: None,
+            name,
+            parameter_type_ref,
+            initial_value: None,
+            long_description: None,
+            alias_set: None,
+            ancillary_data_set: None,
+            parameter_properties: None,
+        })
+    }
+
+    fn new_argument_type(name: String) -> xtce::ArgumentTypeSetTypeContent {
+        xtce::ArgumentTypeSetTypeContent::StringArgumentType(xtce::StringArgumentType {
+            short_description: None,
+            name,
+            base_type: None,
+            initial_value: None,
+            restriction_pattern: None,
+            character_width: None,
+            content: Vec::new(),
+        })
+    }
+
+    fn new_meta_command(name: String) -> xtce::MetaCommandSetTypeContent {
+        xtce::MetaCommandSetTypeContent::MetaCommand(xtce::MetaCommandType {
+            short_description: None,
+            name,
+            abstract_: xtce::MetaCommandType::default_abstract_(),
+            long_description: None,
+            alias_set: None,
+            ancillary_data_set: None,
+            base_meta_command: None,
+            system_name: None,
+            argument_list: None,
+            command_container: None,
+            transmission_constraint_list: None,
+            default_significance: None,
+            context_significance_list: None,
+            interlock: None,
+            verifier_set: None,
+            parameter_to_set_list: None,
+            parameters_to_suspend_alarms_on_set: None,
+        })
+    }
+
+    fn next_parameter_type_name(content: &[xtce::ParameterTypeSetTypeContent]) -> String {
+        Self::next_unique_name("ParameterType", |candidate| {
+            content
+                .iter()
+                .any(|parameter_type| Self::parameter_type_label(parameter_type) == candidate)
+        })
+    }
+
+    fn next_parameter_name(content: &[xtce::ParameterSetTypeContent]) -> String {
+        Self::next_unique_name("Parameter", |candidate| {
+            content.iter().any(|parameter| {
+                matches!(
+                    parameter,
+                    xtce::ParameterSetTypeContent::Parameter(parameter)
+                        if parameter.name == candidate
+                )
+            })
+        })
+    }
+
+    fn next_argument_type_name(content: &[xtce::ArgumentTypeSetTypeContent]) -> String {
+        Self::next_unique_name("ArgumentType", |candidate| {
+            content
+                .iter()
+                .any(|argument_type| Self::argument_type_label(argument_type) == candidate)
+        })
+    }
+
+    fn next_meta_command_name(content: &[xtce::MetaCommandSetTypeContent]) -> String {
+        Self::next_unique_name("MetaCommand", |candidate| {
+            content
+                .iter()
+                .any(|command| Self::meta_command_label(command) == candidate)
+        })
+    }
+
+    fn next_unique_name(prefix: &str, exists: impl Fn(&str) -> bool) -> String {
+        (1..)
+            .map(|index| format!("{prefix}{index}"))
+            .find(|candidate| !exists(candidate))
+            .expect("an available generated name should exist")
+    }
+}
+
+impl XtceDocument {
+    fn collect_tree_nodes(
+        system: &xtce::SpaceSystem,
+        path: &mut Vec<usize>,
+        level: usize,
+        nodes: &mut Vec<TreeNode>,
+    ) {
+        let has_children = system.telemetry_meta_data.is_some()
+            || system.command_meta_data.is_some()
+            || system.service_set.is_some()
+            || !system.space_system.is_empty();
+        nodes.push(TreeNode {
+            selection: ElementSelection {
+                system_path: path.clone(),
+                kind: ElementKind::SpaceSystem,
+            },
+            label: system.name.clone(),
+            level,
+            has_children,
+        });
+
+        let child_level = level + 1;
+        if let Some(metadata) = &system.telemetry_meta_data {
+            Self::push_tree_node(
+                nodes,
+                path,
+                ElementKind::TelemetryMetaData,
+                child_level,
+                true,
+            );
+            let parameter_types = metadata
+                .parameter_type_set
+                .as_ref()
+                .map(|set| set.content.as_slice())
+                .unwrap_or_default();
+            Self::push_tree_node(
+                nodes,
+                path,
+                ElementKind::TelemetryParameterTypeSet,
+                child_level + 1,
+                !parameter_types.is_empty(),
+            );
+            for (index, parameter_type) in parameter_types.iter().enumerate() {
+                Self::push_named_tree_node(
+                    nodes,
+                    path,
+                    ElementKind::TelemetryParameterType(index),
+                    Self::parameter_type_label(parameter_type),
+                    child_level + 2,
+                );
+            }
+            let parameters = metadata
+                .parameter_set
+                .as_ref()
+                .map(|set| set.content.as_slice())
+                .unwrap_or_default();
+            Self::push_tree_node(
+                nodes,
+                path,
+                ElementKind::TelemetryParameterSet,
+                child_level + 1,
+                !parameters.is_empty(),
+            );
+            for (index, parameter) in parameters.iter().enumerate() {
+                Self::push_named_tree_node(
+                    nodes,
+                    path,
+                    ElementKind::TelemetryParameter(index),
+                    Self::parameter_label(parameter),
+                    child_level + 2,
+                );
+            }
+            for (present, kind) in [
+                (metadata.container_set.is_some(), ElementKind::ContainerSet),
+                (metadata.message_set.is_some(), ElementKind::MessageSet),
+                (
+                    metadata.stream_set.is_some(),
+                    ElementKind::TelemetryStreamSet,
+                ),
+                (
+                    metadata.algorithm_set.is_some(),
+                    ElementKind::TelemetryAlgorithmSet,
+                ),
+            ] {
+                if present {
+                    Self::push_tree_node(nodes, path, kind, child_level + 1, false);
+                }
+            }
+        }
+        if let Some(metadata) = &system.command_meta_data {
+            Self::push_tree_node(nodes, path, ElementKind::CommandMetaData, child_level, true);
+            if let Some(parameter_type_set) = &metadata.parameter_type_set {
+                Self::push_tree_node(
+                    nodes,
+                    path,
+                    ElementKind::CommandParameterTypeSet,
+                    child_level + 1,
+                    !parameter_type_set.content.is_empty(),
+                );
+                for (index, parameter_type) in parameter_type_set.content.iter().enumerate() {
+                    Self::push_named_tree_node(
+                        nodes,
+                        path,
+                        ElementKind::CommandParameterType(index),
+                        Self::parameter_type_label(parameter_type),
+                        child_level + 2,
+                    );
+                }
+            }
+            if let Some(parameter_set) = &metadata.parameter_set {
+                Self::push_tree_node(
+                    nodes,
+                    path,
+                    ElementKind::CommandParameterSet,
+                    child_level + 1,
+                    !parameter_set.content.is_empty(),
+                );
+                for (index, parameter) in parameter_set.content.iter().enumerate() {
+                    Self::push_named_tree_node(
+                        nodes,
+                        path,
+                        ElementKind::CommandParameter(index),
+                        Self::parameter_label(parameter),
+                        child_level + 2,
+                    );
+                }
+            }
+            let argument_types = metadata
+                .argument_type_set
+                .as_ref()
+                .map(|set| set.content.as_slice())
+                .unwrap_or_default();
+            Self::push_tree_node(
+                nodes,
+                path,
+                ElementKind::ArgumentTypeSet,
+                child_level + 1,
+                !argument_types.is_empty(),
+            );
+            for (index, argument_type) in argument_types.iter().enumerate() {
+                Self::push_named_tree_node(
+                    nodes,
+                    path,
+                    ElementKind::ArgumentType(index),
+                    Self::argument_type_label(argument_type),
+                    child_level + 2,
+                );
+            }
+            let meta_commands = metadata
+                .meta_command_set
+                .as_ref()
+                .map(|set| set.content.as_slice())
+                .unwrap_or_default();
+            Self::push_tree_node(
+                nodes,
+                path,
+                ElementKind::MetaCommandSet,
+                child_level + 1,
+                !meta_commands.is_empty(),
+            );
+            for (index, command) in meta_commands.iter().enumerate() {
+                Self::push_named_tree_node(
+                    nodes,
+                    path,
+                    ElementKind::MetaCommand(index),
+                    Self::meta_command_label(command),
+                    child_level + 2,
+                );
+            }
+            for (present, kind) in [
+                (
+                    metadata.command_container_set.is_some(),
+                    ElementKind::CommandContainerSet,
+                ),
+                (metadata.stream_set.is_some(), ElementKind::CommandStreamSet),
+                (
+                    metadata.algorithm_set.is_some(),
+                    ElementKind::CommandAlgorithmSet,
+                ),
+            ] {
+                if present {
+                    Self::push_tree_node(nodes, path, kind, child_level + 1, false);
+                }
+            }
+        }
+        if system.service_set.is_some() {
+            Self::push_tree_node(nodes, path, ElementKind::ServiceSet, child_level, false);
+        }
+
+        for (index, child) in system.space_system.iter().enumerate() {
+            path.push(index);
+            Self::collect_tree_nodes(child, path, level + 1, nodes);
+            path.pop();
+        }
+    }
+
+    fn push_tree_node(
+        nodes: &mut Vec<TreeNode>,
+        system_path: &[usize],
+        kind: ElementKind,
+        level: usize,
+        has_children: bool,
+    ) {
+        nodes.push(TreeNode {
+            selection: ElementSelection {
+                system_path: system_path.to_vec(),
+                kind,
+            },
+            label: kind.label().to_owned(),
+            level,
+            has_children,
+        });
+    }
+
+    fn push_named_tree_node(
+        nodes: &mut Vec<TreeNode>,
+        system_path: &[usize],
+        kind: ElementKind,
+        label: String,
+        level: usize,
+    ) {
+        nodes.push(TreeNode {
+            selection: ElementSelection {
+                system_path: system_path.to_vec(),
+                kind,
+            },
+            label,
+            level,
+            has_children: false,
+        });
+    }
+
+    fn parameter_label(parameter: &xtce::ParameterSetTypeContent) -> String {
+        match parameter {
+            xtce::ParameterSetTypeContent::Parameter(parameter) => parameter.name.clone(),
+            xtce::ParameterSetTypeContent::ParameterRef(parameter) => {
+                format!("→ {}", parameter.parameter_ref)
+            }
+        }
+    }
+
+    fn parameter_type_label(parameter_type: &xtce::ParameterTypeSetTypeContent) -> String {
+        match parameter_type {
+            xtce::ParameterTypeSetTypeContent::StringParameterType(value) => value.name.clone(),
+            xtce::ParameterTypeSetTypeContent::EnumeratedParameterType(value) => value.name.clone(),
+            xtce::ParameterTypeSetTypeContent::IntegerParameterType(value) => value.name.clone(),
+            xtce::ParameterTypeSetTypeContent::BinaryParameterType(value) => value.name.clone(),
+            xtce::ParameterTypeSetTypeContent::FloatParameterType(value) => value.name.clone(),
+            xtce::ParameterTypeSetTypeContent::BooleanParameterType(value) => value.name.clone(),
+            xtce::ParameterTypeSetTypeContent::RelativeTimeParameterType(value) => {
+                value.name.clone()
+            }
+            xtce::ParameterTypeSetTypeContent::AbsoluteTimeParameterType(value) => {
+                value.name.clone()
+            }
+            xtce::ParameterTypeSetTypeContent::ArrayParameterType(value) => value.name.clone(),
+            xtce::ParameterTypeSetTypeContent::AggregateParameterType(value) => value.name.clone(),
+        }
+    }
+
+    fn argument_type_label(argument_type: &xtce::ArgumentTypeSetTypeContent) -> String {
+        match argument_type {
+            xtce::ArgumentTypeSetTypeContent::StringArgumentType(value) => value.name.clone(),
+            xtce::ArgumentTypeSetTypeContent::EnumeratedArgumentType(value) => value.name.clone(),
+            xtce::ArgumentTypeSetTypeContent::IntegerArgumentType(value) => value.name.clone(),
+            xtce::ArgumentTypeSetTypeContent::BinaryArgumentType(value) => value.name.clone(),
+            xtce::ArgumentTypeSetTypeContent::FloatArgumentType(value) => value.name.clone(),
+            xtce::ArgumentTypeSetTypeContent::BooleanArgumentType(value) => value.name.clone(),
+            xtce::ArgumentTypeSetTypeContent::RelativeTimeArgumentType(value) => value.name.clone(),
+            xtce::ArgumentTypeSetTypeContent::AbsoluteTimeArgumentType(value) => value.name.clone(),
+            xtce::ArgumentTypeSetTypeContent::ArrayArgumentType(value) => value.name.clone(),
+            xtce::ArgumentTypeSetTypeContent::AggregateArgumentType(value) => value.name.clone(),
+        }
+    }
+
+    fn meta_command_label(command: &xtce::MetaCommandSetTypeContent) -> String {
+        match command {
+            xtce::MetaCommandSetTypeContent::MetaCommand(value) => value.name.clone(),
+            xtce::MetaCommandSetTypeContent::MetaCommandRef(value) => format!("→ {value}"),
+            xtce::MetaCommandSetTypeContent::BlockMetaCommand(value) => value.name.clone(),
+        }
+    }
+
+    fn system_type_label(system_type: &xtce::SystemTypeType) -> &'static str {
+        match system_type {
+            xtce::SystemTypeType::Asset => "asset",
+            xtce::SystemTypeType::AssetGroup => "asset group",
+            xtce::SystemTypeType::AssetComponent => "asset component",
+            xtce::SystemTypeType::Unknown => "unknown",
+        }
+    }
+}
+
+impl ElementTree {
+    fn collapsed_by_default(root: &xtce::SpaceSystem) -> HashSet<ElementSelection> {
+        let mut nodes = Vec::new();
+        XtceDocument::collect_tree_nodes(root, &mut Vec::new(), 0, &mut nodes);
+        nodes
+            .into_iter()
+            .filter(|node| node.has_children)
+            .map(|node| node.selection)
+            .collect()
+    }
+
+    fn visible_nodes(nodes: Vec<TreeNode>, collapsed: &HashSet<ElementSelection>) -> Vec<TreeNode> {
+        let mut hidden_below_level = None;
+        let mut visible = Vec::with_capacity(nodes.len());
+
+        for node in nodes {
+            if let Some(level) = hidden_below_level {
+                if node.level > level {
+                    continue;
+                }
+                hidden_below_level = None;
+            }
+            if node.has_children && collapsed.contains(&node.selection) {
+                hidden_below_level = Some(node.level);
+            }
+            visible.push(node);
+        }
+
+        visible
+    }
+
+    fn tree_item(
+        id: SharedString,
+        node: TreeNode,
+        selected: bool,
+        collapsed: bool,
+        can_add_telemetry_metadata: bool,
+        can_add_command_metadata: bool,
+        cx: &mut Context<XtceEditor>,
+    ) -> impl IntoElement {
+        let toggle_id = format!("{id}-toggle");
+        let add_id = format!("{id}-add");
+        let add_metadata_id = format!("{id}-add-metadata");
+        let toggle_selection = node.selection.clone();
+        let add_parent = node.selection.clone();
+        let can_add_child = node.selection.kind.can_add_child();
+        let can_add_element = node.selection.kind == ElementKind::SpaceSystem;
+        let uses_folder_icon = node.selection.kind.uses_folder_icon();
+        let editor = cx.entity().downgrade();
+        let metadata_parent = node.selection.clone();
+        let selection = node.selection;
+        h_flex()
+            .id(id)
+            .h(px(34.))
+            .w_full()
+            .pl(px(10. + node.level as f32 * 18.))
+            .pr_2()
+            .gap_2()
+            .rounded_md()
+            .cursor_pointer()
+            .text_sm()
+            .when(selected, |this| {
+                this.bg(cx.theme().sidebar_accent)
+                    .text_color(cx.theme().sidebar_accent_foreground)
+            })
+            .when(!selected, |this| {
+                this.hover(|style| style.bg(cx.theme().sidebar_accent.opacity(0.55)))
+            })
+            .child(
+                div()
+                    .id(toggle_id)
+                    .w_4()
+                    .h_4()
+                    .flex_none()
+                    .when(node.has_children, |this| {
+                        this.cursor_pointer()
+                            .child(
+                                Icon::new(if collapsed {
+                                    IconName::ChevronRight
+                                } else {
+                                    IconName::ChevronDown
+                                })
+                                .xsmall()
+                                .text_color(cx.theme().muted_foreground),
+                            )
+                            .on_click(cx.listener(move |this, _, _, cx| {
+                                cx.stop_propagation();
+                                this.toggle_tree_node(&toggle_selection, cx);
+                            }))
+                    }),
+            )
+            .child(
+                Icon::new(if uses_folder_icon {
+                    if collapsed {
+                        IconName::Folder
+                    } else if node.has_children {
+                        IconName::FolderOpen
+                    } else {
+                        IconName::Folder
+                    }
+                } else {
+                    IconName::File
+                })
+                .small()
+                .text_color(cx.theme().muted_foreground),
+            )
+            .child(div().flex_1().truncate().child(node.label))
+            .when(can_add_child, |this| {
+                this.child(
+                    Button::new(add_id)
+                        .ghost()
+                        .xsmall()
+                        .icon(IconName::Plus)
+                        .on_click(cx.listener(move |this, _, window, cx| {
+                            cx.stop_propagation();
+                            this.add_tree_child(&add_parent, window, cx);
+                        })),
+                )
+            })
+            .when(can_add_element, |this| {
+                this.child(
+                    Button::new(add_metadata_id)
+                        .ghost()
+                        .xsmall()
+                        .icon(IconName::Plus)
+                        .dropdown_menu(move |menu, _, _| {
+                            let space_system_editor = editor.clone();
+                            let space_system_parent = metadata_parent.clone();
+                            let telemetry_editor = editor.clone();
+                            let telemetry_parent = metadata_parent.clone();
+                            let command_editor = editor.clone();
+                            let command_parent = metadata_parent.clone();
+                            menu.item(
+                                PopupMenuItem::new("SpaceSystem")
+                                    .icon(IconName::Folder)
+                                    .on_click(move |_, window, cx| {
+                                        _ = space_system_editor.update(cx, |this, cx| {
+                                            this.add_space_system(&space_system_parent, window, cx);
+                                        });
+                                    }),
+                            )
+                            .separator()
+                            .item(
+                                PopupMenuItem::new("TelemetryMetaData")
+                                    .icon(IconName::Folder)
+                                    .disabled(!can_add_telemetry_metadata)
+                                    .on_click(move |_, window, cx| {
+                                        _ = telemetry_editor.update(cx, |this, cx| {
+                                            this.add_metadata(
+                                                &telemetry_parent,
+                                                ElementKind::TelemetryMetaData,
+                                                window,
+                                                cx,
+                                            );
+                                        });
+                                    }),
+                            )
+                            .item(
+                                PopupMenuItem::new("CommandMetaData")
+                                    .icon(IconName::Folder)
+                                    .disabled(!can_add_command_metadata)
+                                    .on_click(move |_, window, cx| {
+                                        _ = command_editor.update(cx, |this, cx| {
+                                            this.add_metadata(
+                                                &command_parent,
+                                                ElementKind::CommandMetaData,
+                                                window,
+                                                cx,
+                                            );
+                                        });
+                                    }),
+                            )
+                        }),
+                )
+            })
+            .on_click(cx.listener(move |this, _, window, cx| {
+                this.save_selected_element(cx);
+                this.document.selection.clone_from(&selection);
+                this.load_selected_element(window, cx);
+            }))
+    }
+}
+
+impl ElementInspector {
+    fn section(
+        title: &'static str,
+        description: &'static str,
+        content: impl IntoElement,
+        cx: &App,
+    ) -> Div {
+        v_flex()
+            .w_full()
+            .gap_5()
+            .p_5()
+            .rounded_lg()
+            .border_1()
+            .border_color(cx.theme().border)
+            .bg(cx.theme().background)
+            .child(
+                v_flex()
+                    .gap_1()
+                    .child(div().text_base().font_semibold().child(title))
+                    .child(
+                        div()
+                            .text_sm()
+                            .text_color(cx.theme().muted_foreground)
+                            .child(description),
+                    ),
+            )
+            .child(content)
+    }
+}
+
+impl ElementTree {
+    fn render(
+        &self,
+        document: &XtceDocument,
+        draft_name: Option<&str>,
+        cx: &mut Context<XtceEditor>,
+    ) -> Div {
+        let mut nodes = Vec::new();
+        XtceDocument::collect_tree_nodes(&document.root, &mut Vec::new(), 0, &mut nodes);
+        let element_count = nodes.len();
+        let nodes = Self::visible_nodes(nodes, &self.collapsed);
+        let mut tree = v_flex()
+            .id("element-tree")
+            .flex_1()
+            .overflow_y_scroll()
+            .p_2()
+            .gap_0p5();
+
+        for mut node in nodes {
+            let path_id = if node.selection.system_path.is_empty() {
+                "root".to_owned()
+            } else {
+                node.selection
+                    .system_path
+                    .iter()
+                    .map(usize::to_string)
+                    .collect::<Vec<_>>()
+                    .join("-")
+            };
+            let id = format!("tree-{path_id}-{:?}", node.selection.kind);
+            let selected = node.selection == document.selection;
+            let selected_system =
+                XtceDocument::system_at_path(&document.root, &node.selection.system_path);
+            let can_add_telemetry_metadata = node.selection.kind == ElementKind::SpaceSystem
+                && selected_system.telemetry_meta_data.is_none();
+            let can_add_command_metadata = node.selection.kind == ElementKind::SpaceSystem
+                && selected_system.command_meta_data.is_none();
+            if selected && let Some(draft_name) = draft_name {
+                node.label = draft_name.to_owned();
+            }
+            let collapsed = self.collapsed.contains(&node.selection);
+            tree = tree.child(Self::tree_item(
+                id.into(),
+                node,
+                selected,
+                collapsed,
+                can_add_telemetry_metadata,
+                can_add_command_metadata,
+                cx,
+            ));
+        }
+
+        v_flex()
+            .w(px(292.))
+            .h_full()
+            .flex_none()
+            .border_r_1()
+            .border_color(cx.theme().border)
+            .bg(cx.theme().sidebar)
+            .child(
+                h_flex()
+                    .h(px(58.))
+                    .px_4()
+                    .justify_between()
+                    .border_b_1()
+                    .border_color(cx.theme().border)
+                    .child(
+                        v_flex()
+                            .gap_0p5()
+                            .child(div().text_sm().font_semibold().child("Document elements"))
+                            .child(
+                                div()
+                                    .text_xs()
+                                    .text_color(cx.theme().muted_foreground)
+                                    .child(document.file_name.clone()),
+                            ),
+                    )
+                    .child(
+                        Button::new("add-element")
+                            .ghost()
+                            .xsmall()
+                            .icon(IconName::Plus),
+                    ),
+            )
+            .child(
+                div()
+                    .px_3()
+                    .py_3()
+                    .border_b_1()
+                    .border_color(cx.theme().border)
+                    .child(Input::new(&self.search_input).prefix(IconName::Search)),
+            )
+            .child(tree)
+            .child(
+                h_flex()
+                    .h(px(38.))
+                    .px_4()
+                    .flex_none()
+                    .border_t_1()
+                    .border_color(cx.theme().border)
+                    .text_xs()
+                    .text_color(cx.theme().muted_foreground)
+                    .child(format!("{element_count} elements"))
+                    .child(div().flex_1())
+                    .child("XTCE 1.3"),
+            )
+    }
+}
+
+impl ElementInspector {
+    fn render_structural_element(
+        &self,
+        document: &XtceDocument,
+        cx: &mut Context<XtceEditor>,
+    ) -> Div {
+        let owner_name = document.selected_system().name.clone();
+        let kind = document.selection.kind;
+        let element_name = self
+            .forms
+            .element_title(kind, document.selected_system(), cx);
+        let name_editor = self
+            .forms
+            .render_name_editor(kind, document.selected_system());
+        let form = self.forms.render(kind, document.selected_system(), cx);
+
+        v_flex()
+            .flex_1()
+            .min_w_0()
+            .h_full()
+            .bg(cx.theme().muted.opacity(0.28))
+            .child(
+                h_flex()
+                    .h(px(58.))
+                    .px_6()
+                    .flex_none()
+                    .justify_between()
+                    .border_b_1()
+                    .border_color(cx.theme().border)
+                    .bg(cx.theme().background)
+                    .child(
+                        h_flex()
+                            .gap_2()
+                            .text_sm()
+                            .child(
+                                div()
+                                    .text_color(cx.theme().muted_foreground)
+                                    .child(owner_name.clone()),
+                            )
+                            .child(
+                                Icon::new(IconName::ChevronRight)
+                                    .xsmall()
+                                    .text_color(cx.theme().muted_foreground),
+                            )
+                            .child(div().font_medium().child(element_name.clone())),
+                    )
+                    ,
+            )
+            .child(
+                v_flex()
+                    .id("structural-editor-scroll")
+                    .flex_1()
+                    .overflow_y_scroll()
+                    .items_center()
+                    .child(
+                        v_flex()
+                            .w_full()
+                            .max_w(px(920.))
+                            .p_7()
+                            .gap_6()
+                            .child(
+                                v_flex()
+                                    .gap_2()
+                                    .child(if let Some(name_editor) = name_editor {
+                                        name_editor
+                                    } else {
+                                        div()
+                                            .text_2xl()
+                                            .font_semibold()
+                                            .child(element_name.clone())
+                                    })
+                                    .child(
+                                        div()
+                                            .text_sm()
+                                            .text_color(cx.theme().muted_foreground)
+                                            .child(format!(
+                                                "This element belongs to the {owner_name} space system."
+                                            )),
+                                    ),
+                            )
+                            .child(Self::section(
+                                "Properties",
+                                if ElementForms::is_editable(kind) {
+                                    "Review and edit this XTCE element."
+                                } else {
+                                    "Review the structure and item counts for this XTCE element."
+                                },
+                                form,
+                                cx,
+                            ))
+                            .when(!ElementForms::is_editable(kind), |this| {
+                                this.child(
+                                    div()
+                                        .p_4()
+                                        .rounded_lg()
+                                        .border_1()
+                                        .border_color(cx.theme().border)
+                                        .bg(cx.theme().background)
+                                        .text_sm()
+                                        .text_color(cx.theme().muted_foreground)
+                                        .child(
+                                            "Typed child-item editors will be added as their tree nodes are introduced.",
+                                        ),
+                                )
+                            }),
+                    ),
+            )
+    }
+
+    fn render(&self, document: &XtceDocument, cx: &mut Context<XtceEditor>) -> Div {
+        if document.selection.kind != ElementKind::SpaceSystem {
+            return self.render_structural_element(document, cx);
+        }
+
+        let system_type = {
+            let system = document.selected_system();
+            XtceDocument::system_type_label(&system.system_type)
+        };
+        let selected_name =
+            self.forms
+                .element_title(ElementKind::SpaceSystem, document.selected_system(), cx);
+        let name_editor = self
+            .forms
+            .render_name_editor(ElementKind::SpaceSystem, document.selected_system())
+            .expect("SpaceSystem has a name editor");
+
+        let identity_fields =
+            self.forms
+                .render(ElementKind::SpaceSystem, document.selected_system(), cx);
+        let description_fields = self.forms.render_space_system_description(cx);
+        let alias_fields = self.forms.render_space_system_aliases(cx);
+        let ancillary_data_fields = self.forms.render_space_system_ancillary_data(cx);
+        let header_fields = self.forms.render_space_system_header(cx);
+
+        v_flex()
+            .flex_1()
+            .min_w_0()
+            .h_full()
+            .bg(cx.theme().muted.opacity(0.28))
+            .child(
+                h_flex()
+                    .h(px(58.))
+                    .px_6()
+                    .flex_none()
+                    .justify_between()
+                    .border_b_1()
+                    .border_color(cx.theme().border)
+                    .bg(cx.theme().background)
+                    .child(
+                        h_flex()
+                            .gap_2()
+                            .text_sm()
+                            .child(div().font_medium().child(selected_name)),
+                    ),
+            )
+            .child(
+                v_flex()
+                    .id("editor-scroll")
+                    .flex_1()
+                    .overflow_y_scroll()
+                    .items_center()
+                    .child(
+                        v_flex()
+                            .w_full()
+                            .max_w(px(920.))
+                            .p_7()
+                            .gap_6()
+                            .child(
+                                h_flex()
+                                    .items_start()
+                                    .justify_between()
+                                    .child(
+                                        v_flex()
+                                            .gap_2()
+                                            .child(name_editor)
+                                            .child(
+                                                div()
+                                                    .text_sm()
+                                                    .text_color(cx.theme().muted_foreground)
+                                                    .child(
+                                                        "Review and edit the selected XTCE element.",
+                                                    ),
+                                            ),
+                                    )
+                                    .child(
+                                        div()
+                                            .px_2()
+                                            .py_1()
+                                            .rounded_md()
+                                            .bg(cx.theme().secondary)
+                                            .text_xs()
+                                            .text_color(cx.theme().secondary_foreground)
+                                            .child(system_type),
+                                    ),
+                            )
+                            .child(Self::section(
+                                "Identity",
+                                "Core attributes used to identify this space system.",
+                                identity_fields,
+                                cx,
+                            ))
+                            .child(Self::section(
+                                "Description",
+                                "Human-readable context for operators and maintainers.",
+                                description_fields,
+                                cx,
+                            ))
+                            .child(Self::section(
+                                "AliasSet",
+                                "Alternative names used by external systems and operators.",
+                                alias_fields,
+                                cx,
+                            ))
+                            .child(Self::section(
+                                "AncillaryDataSet",
+                                "Additional metadata and related resources.",
+                                ancillary_data_fields,
+                                cx,
+                            ))
+                            .child(Self::section(
+                                "Header",
+                                "Document version, classification, validation, and history.",
+                                header_fields,
+                                cx,
+                            ))
+                            .child(
+                                h_flex()
+                                    .p_4()
+                                    .rounded_lg()
+                                    .border_1()
+                                    .border_color(cx.theme().border)
+                                    .bg(cx.theme().background)
+                                    .gap_3()
+                                    .child(
+                                        Icon::new(IconName::Info)
+                                            .small()
+                                            .text_color(cx.theme().primary),
+                                    )
+                                    .child(
+                                        v_flex()
+                                            .gap_1()
+                                            .child(
+                                                div()
+                                                    .text_sm()
+                                                    .font_medium()
+                                                    .child("Schema defaults are applied"),
+                                            )
+                                            .child(
+                                                div()
+                                                    .text_sm()
+                                                    .text_color(cx.theme().muted_foreground)
+                                                    .child(
+                                                        "systemType and assetType use “unknown” when omitted.",
+                                                    ),
+                                            ),
+                                    ),
+                            ),
+                    ),
+            )
+    }
+}
+
+impl Render for XtceEditor {
+    fn render(&mut self, _: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+        let draft_name = self.inspector.forms.draft_name(
+            self.document.selection.kind,
+            self.document.selected_system(),
+            cx,
+        );
+        v_flex()
+            .on_action(cx.listener(|this, _: &NewDocument, window, cx| {
+                this.new_document(window, cx);
+            }))
+            .on_action(cx.listener(|this, _: &SaveDocument, window, cx| {
+                this.save_document(window, cx);
+            }))
+            .size_full()
+            .bg(cx.theme().background)
+            .text_color(cx.theme().foreground)
+            .child(
+                TitleBar::new().child(
+                    h_flex()
+                        .size_full()
+                        .child(self.chrome.app_menu_bar.clone())
+                        .child(div().flex_1())
+                        .child(
+                            div()
+                                .pr_3()
+                                .text_xs()
+                                .text_color(cx.theme().muted_foreground)
+                                .child("XTCE Editor"),
+                        ),
+                ),
+            )
+            .child(
+                h_flex()
+                    .id("workspace")
+                    .flex_1()
+                    .min_h_0()
+                    .overflow_hidden()
+                    .child(self.tree.render(&self.document, draft_name.as_deref(), cx))
+                    .child(self.inspector.render(&self.document, cx)),
+            )
+    }
+}
+
+fn build_menus() -> Vec<Menu> {
+    vec![
+        Menu {
+            name: "File".into(),
+            items: vec![
+                MenuItem::action("New File", NewDocument),
+                MenuItem::separator(),
+                MenuItem::action("Open…", gpui_component::input::Search),
+                MenuItem::action("Save File…", SaveDocument),
+            ],
+            disabled: false,
+        },
+        Menu {
+            name: "Edit".into(),
+            items: vec![
+                MenuItem::action("Undo", gpui_component::input::Undo),
+                MenuItem::action("Redo", gpui_component::input::Redo),
+                MenuItem::separator(),
+                MenuItem::action("Cut", gpui_component::input::Cut),
+                MenuItem::action("Copy", gpui_component::input::Copy),
+                MenuItem::action("Paste", gpui_component::input::Paste),
+            ],
+            disabled: false,
+        },
+    ]
+}
+
+fn main() {
+    let app = gpui_platform::application().with_assets(gpui_component_assets::Assets);
+
+    app.run(move |cx| {
+        gpui_component::init(cx);
+        cx.set_menus(build_menus());
+
+        let app_menus = build_menus().into_iter().map(Menu::owned).collect();
+        GlobalState::global_mut(cx).set_app_menus(app_menus);
+
+        let window_options = WindowOptions {
+            titlebar: Some(TitleBar::title_bar_options()),
+            window_bounds: Some(WindowBounds::centered(size(px(1240.), px(800.)), cx)),
+            ..Default::default()
+        };
+
+        cx.spawn(async move |cx| {
+            cx.open_window(window_options, |window, cx| {
+                let view = cx.new(|cx| XtceEditor::new(window, cx));
+                cx.new(|cx| Root::new(view, window, cx))
+            })
+            .expect("failed to open XTCE editor window");
+        })
+        .detach();
+    });
+}
+
+#[cfg(test)]
+mod tests {
+    use std::collections::HashSet;
+
+    use super::{ElementKind, ElementSelection, ElementTree, XtceDocument};
+
+    fn sample_document() -> xtce::SpaceSystem {
+        xtce::from_str(include_str!("../../xtce/tests/fixtures/sample.xml"))
+            .expect("sample.xml should decode")
+    }
+
+    #[test]
+    fn resolves_a_nested_space_system_from_its_tree_path() {
+        let document = sample_document();
+
+        assert_eq!(
+            XtceDocument::system_at_path(&document, &[0, 0]).name,
+            "Sensor"
+        );
+    }
+
+    #[test]
+    fn updates_only_the_space_system_at_the_selected_path() {
+        let mut document = sample_document();
+
+        XtceDocument::system_at_path_mut(&mut document, &[1]).asset_type =
+            "control-center".to_owned();
+
+        assert_eq!(document.name, "ExampleMission");
+        assert_eq!(document.space_system[0].asset_type, "payload");
+        assert_eq!(document.space_system[1].asset_type, "control-center");
+        xtce::to_string(&document).expect("the edited document should encode");
+    }
+
+    #[test]
+    fn serializes_a_file_with_an_xml_declaration() {
+        let document = sample_document();
+
+        let xml = XtceDocument::serialize(&document).expect("document should serialize");
+
+        assert!(xml.starts_with("<?xml version=\"1.0\" encoding=\"utf-8\"?>\n"));
+        let decoded = xtce::from_str(&xml).expect("saved XML should decode");
+        assert_eq!(decoded.name, document.name);
+    }
+
+    #[test]
+    fn creates_a_minimal_untitled_document() {
+        let document = XtceDocument::untitled();
+
+        assert_eq!(document.file_name, "untitled.xml");
+        assert_eq!(document.root.name, "NewSpaceSystem");
+        assert_eq!(document.selection.kind, ElementKind::SpaceSystem);
+        assert!(document.selection.system_path.is_empty());
+        XtceDocument::serialize(&document.root).expect("new document should serialize");
+    }
+
+    #[test]
+    fn adds_each_metadata_element_only_once() {
+        let mut document = XtceDocument::untitled().root;
+
+        assert!(XtceDocument::add_metadata(
+            &mut document,
+            ElementKind::TelemetryMetaData
+        ));
+        assert!(XtceDocument::add_metadata(
+            &mut document,
+            ElementKind::CommandMetaData
+        ));
+        assert!(!XtceDocument::add_metadata(
+            &mut document,
+            ElementKind::TelemetryMetaData
+        ));
+        assert!(!XtceDocument::add_metadata(
+            &mut document,
+            ElementKind::CommandMetaData
+        ));
+        assert!(document.telemetry_meta_data.is_some());
+        assert!(document.command_meta_data.is_some());
+        XtceDocument::serialize(&document).expect("metadata document should serialize");
+    }
+
+    #[test]
+    fn telemetry_metadata_always_has_parameter_set_tree_nodes() {
+        let mut document = XtceDocument::untitled().root;
+        assert!(XtceDocument::add_metadata(
+            &mut document,
+            ElementKind::TelemetryMetaData
+        ));
+        let mut nodes = Vec::new();
+
+        XtceDocument::collect_tree_nodes(&document, &mut Vec::new(), 0, &mut nodes);
+
+        assert!(nodes.iter().any(|node| {
+            node.selection.kind == ElementKind::TelemetryParameterTypeSet
+                && node.selection.system_path.is_empty()
+        }));
+        assert!(nodes.iter().any(|node| {
+            node.selection.kind == ElementKind::TelemetryParameterSet
+                && node.selection.system_path.is_empty()
+        }));
+    }
+
+    #[test]
+    fn adding_to_virtual_telemetry_sets_materializes_them() {
+        let mut document = XtceDocument::untitled().root;
+        assert!(XtceDocument::add_metadata(
+            &mut document,
+            ElementKind::TelemetryMetaData
+        ));
+
+        let parameter_type = XtceDocument::add_collection_item(
+            &mut document,
+            ElementKind::TelemetryParameterTypeSet,
+        );
+        let parameter =
+            XtceDocument::add_collection_item(&mut document, ElementKind::TelemetryParameterSet);
+
+        assert_eq!(parameter_type, Some(ElementKind::TelemetryParameterType(0)));
+        assert_eq!(parameter, Some(ElementKind::TelemetryParameter(0)));
+        let metadata = document
+            .telemetry_meta_data
+            .as_ref()
+            .expect("telemetry metadata");
+        assert_eq!(
+            metadata
+                .parameter_type_set
+                .as_ref()
+                .expect("parameter type set")
+                .content
+                .len(),
+            1
+        );
+        assert_eq!(
+            metadata
+                .parameter_set
+                .as_ref()
+                .expect("parameter set")
+                .content
+                .len(),
+            1
+        );
+        XtceDocument::serialize(&document).expect("materialized sets should serialize");
+    }
+
+    #[test]
+    fn adds_argument_types_and_meta_commands_to_command_metadata() {
+        let mut document = XtceDocument::untitled().root;
+        assert!(XtceDocument::add_metadata(
+            &mut document,
+            ElementKind::CommandMetaData
+        ));
+
+        let argument_type =
+            XtceDocument::add_collection_item(&mut document, ElementKind::ArgumentTypeSet);
+        let meta_command =
+            XtceDocument::add_collection_item(&mut document, ElementKind::MetaCommandSet);
+
+        assert_eq!(argument_type, Some(ElementKind::ArgumentType(0)));
+        assert_eq!(meta_command, Some(ElementKind::MetaCommand(0)));
+        let metadata = document
+            .command_meta_data
+            .as_ref()
+            .expect("command metadata");
+        assert_eq!(
+            XtceDocument::argument_type_label(
+                &metadata
+                    .argument_type_set
+                    .as_ref()
+                    .expect("argument type set")
+                    .content[0]
+            ),
+            "ArgumentType1"
+        );
+        assert_eq!(
+            XtceDocument::meta_command_label(
+                &metadata
+                    .meta_command_set
+                    .as_ref()
+                    .expect("meta command set")
+                    .content[0]
+            ),
+            "MetaCommand1"
+        );
+        let mut nodes = Vec::new();
+        XtceDocument::collect_tree_nodes(&document, &mut Vec::new(), 0, &mut nodes);
+        assert!(nodes.iter().any(|node| {
+            node.selection.kind == ElementKind::ArgumentType(0) && node.label == "ArgumentType1"
+        }));
+        assert!(nodes.iter().any(|node| {
+            node.selection.kind == ElementKind::MetaCommand(0) && node.label == "MetaCommand1"
+        }));
+        XtceDocument::serialize(&document).expect("command elements should serialize");
+    }
+
+    #[test]
+    fn adds_uniquely_named_child_space_systems() {
+        let mut document = XtceDocument::untitled().root;
+
+        let first = XtceDocument::add_space_system(&mut document);
+        let second = XtceDocument::add_space_system(&mut document);
+
+        assert_eq!(first, 0);
+        assert_eq!(second, 1);
+        assert_eq!(document.space_system[0].name, "SpaceSystem1");
+        assert_eq!(document.space_system[1].name, "SpaceSystem2");
+        XtceDocument::serialize(&document).expect("nested document should serialize");
+    }
+
+    #[test]
+    fn tree_contains_present_metadata_elements_for_each_space_system() {
+        let document = sample_document();
+        let mut nodes = Vec::new();
+        XtceDocument::collect_tree_nodes(&document, &mut Vec::new(), 0, &mut nodes);
+
+        assert!(nodes.iter().any(|node| {
+            node.selection.system_path.is_empty()
+                && node.selection.kind == ElementKind::TelemetryMetaData
+        }));
+        assert!(nodes.iter().any(|node| {
+            node.selection.system_path == [0]
+                && node.selection.kind == ElementKind::TelemetryParameterSet
+        }));
+        assert!(nodes.iter().any(|node| {
+            node.selection.system_path == [0]
+                && matches!(node.selection.kind, ElementKind::TelemetryParameter(_))
+                && node.label == "SampleCount"
+        }));
+        assert!(nodes.iter().any(|node| {
+            node.selection.system_path.is_empty()
+                && matches!(node.selection.kind, ElementKind::TelemetryParameterType(_))
+                && node.label == "OperationalFlagType"
+        }));
+        assert!(
+            !nodes
+                .iter()
+                .any(|node| node.label.ends_with("DataEncoding"))
+        );
+        assert!(nodes.iter().any(|node| {
+            node.selection.system_path == [0, 0]
+                && node.selection.kind == ElementKind::TelemetryMetaData
+        }));
+        assert!(nodes.iter().any(|node| {
+            node.selection.system_path == [1] && node.selection.kind == ElementKind::CommandMetaData
+        }));
+    }
+
+    #[test]
+    fn empty_command_metadata_has_its_required_editor_tree_nodes() {
+        let document = sample_document();
+        let mut nodes = Vec::new();
+        XtceDocument::collect_tree_nodes(&document, &mut Vec::new(), 0, &mut nodes);
+        let command_metadata = nodes
+            .iter()
+            .find(|node| {
+                node.selection.system_path.is_empty()
+                    && node.selection.kind == ElementKind::CommandMetaData
+            })
+            .expect("root command metadata");
+
+        assert!(command_metadata.has_children);
+        assert!(command_metadata.selection.kind.uses_folder_icon());
+        assert!(nodes.iter().any(|node| {
+            node.selection.system_path.is_empty()
+                && node.selection.kind == ElementKind::ArgumentTypeSet
+        }));
+        assert!(nodes.iter().any(|node| {
+            node.selection.system_path.is_empty()
+                && node.selection.kind == ElementKind::MetaCommandSet
+        }));
+        assert!(!nodes.iter().any(|node| {
+            node.selection.system_path.is_empty()
+                && node.selection.kind == ElementKind::CommandParameterTypeSet
+        }));
+        assert!(!nodes.iter().any(|node| {
+            node.selection.system_path.is_empty()
+                && node.selection.kind == ElementKind::CommandParameterSet
+        }));
+    }
+
+    #[test]
+    fn collapsing_a_tree_node_hides_only_its_descendants() {
+        let document = sample_document();
+        let mut nodes = Vec::new();
+        XtceDocument::collect_tree_nodes(&document, &mut Vec::new(), 0, &mut nodes);
+        let collapsed = HashSet::from([ElementSelection {
+            system_path: Vec::new(),
+            kind: ElementKind::TelemetryMetaData,
+        }]);
+
+        let visible = ElementTree::visible_nodes(nodes, &collapsed);
+
+        assert!(visible.iter().any(|node| {
+            node.selection.kind == ElementKind::TelemetryMetaData
+                && node.selection.system_path.is_empty()
+        }));
+        assert!(!visible.iter().any(|node| {
+            node.selection.kind == ElementKind::TelemetryParameterTypeSet
+                && node.selection.system_path.is_empty()
+        }));
+        assert!(visible.iter().any(|node| {
+            node.selection.kind == ElementKind::CommandMetaData
+                && node.selection.system_path.is_empty()
+        }));
+    }
+
+    #[test]
+    fn collapsing_the_root_hides_the_entire_document_subtree() {
+        let document = sample_document();
+        let mut nodes = Vec::new();
+        XtceDocument::collect_tree_nodes(&document, &mut Vec::new(), 0, &mut nodes);
+        let collapsed = HashSet::from([ElementSelection {
+            system_path: Vec::new(),
+            kind: ElementKind::SpaceSystem,
+        }]);
+
+        let visible = ElementTree::visible_nodes(nodes, &collapsed);
+
+        assert_eq!(visible.len(), 1);
+        assert_eq!(visible[0].selection.kind, ElementKind::SpaceSystem);
+    }
+
+    #[test]
+    fn every_parent_node_is_collapsed_by_default() {
+        let document = sample_document();
+        let mut nodes = Vec::new();
+        XtceDocument::collect_tree_nodes(&document, &mut Vec::new(), 0, &mut nodes);
+
+        let collapsed = ElementTree::collapsed_by_default(&document);
+
+        assert!(
+            nodes
+                .iter()
+                .filter(|node| node.has_children)
+                .all(|node| collapsed.contains(&node.selection))
+        );
+        assert!(
+            nodes
+                .iter()
+                .filter(|node| !node.has_children)
+                .all(|node| !collapsed.contains(&node.selection))
+        );
+    }
+
+    #[test]
+    fn adding_to_a_parameter_type_set_creates_a_uniquely_named_type() {
+        let mut document = sample_document();
+        let original_len = document
+            .telemetry_meta_data
+            .as_ref()
+            .and_then(|metadata| metadata.parameter_type_set.as_ref())
+            .expect("telemetry parameter type set")
+            .content
+            .len();
+
+        let added = XtceDocument::add_collection_item(
+            &mut document,
+            ElementKind::TelemetryParameterTypeSet,
+        );
+
+        assert_eq!(
+            added,
+            Some(ElementKind::TelemetryParameterType(original_len))
+        );
+        let set = document
+            .telemetry_meta_data
+            .as_ref()
+            .and_then(|metadata| metadata.parameter_type_set.as_ref())
+            .expect("telemetry parameter type set");
+        assert_eq!(set.content.len(), original_len + 1);
+        assert_eq!(
+            XtceDocument::parameter_type_label(&set.content[original_len]),
+            "ParameterType1"
+        );
+    }
+
+    #[test]
+    fn adding_to_a_parameter_set_uses_an_existing_type_reference() {
+        let mut document = sample_document();
+        let original_len = document
+            .telemetry_meta_data
+            .as_ref()
+            .and_then(|metadata| metadata.parameter_set.as_ref())
+            .expect("telemetry parameter set")
+            .content
+            .len();
+
+        let added =
+            XtceDocument::add_collection_item(&mut document, ElementKind::TelemetryParameterSet);
+
+        assert_eq!(added, Some(ElementKind::TelemetryParameter(original_len)));
+        let set = document
+            .telemetry_meta_data
+            .as_ref()
+            .and_then(|metadata| metadata.parameter_set.as_ref())
+            .expect("telemetry parameter set");
+        let xtce::ParameterSetTypeContent::Parameter(parameter) = &set.content[original_len] else {
+            panic!("expected a Parameter");
+        };
+        assert_eq!(parameter.name, "Parameter1");
+        assert_eq!(parameter.parameter_type_ref, "OperationalFlagType");
+    }
+}

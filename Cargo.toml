@@ -1,4 +1,8 @@
 [workspace]
-members = ["crates/xtce"]
+default-members = ["crates/xtce-editor"]
+members = [
+    "crates/xtce",
+    "crates/xtce-editor",
+]
 
 resolver = "3"
