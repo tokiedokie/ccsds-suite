@@ -8646,6 +8646,7 @@ dependencies = [
  "gpui-component",
  "gpui-component-assets",
  "gpui_platform",
+ "strum",
  "xtce",
 ]
 

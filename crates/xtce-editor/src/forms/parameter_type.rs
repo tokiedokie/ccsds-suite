@@ -2,23 +2,56 @@ use std::{cell::Cell, rc::Rc};
 
 use gpui::{App, AppContext, Context, Div, Entity, ParentElement, Styled, Window, div};
 use gpui_component::{
-    IndexPath, StyledExt, h_flex,
+    ActiveTheme, IndexPath, StyledExt, h_flex,
     input::{Input, InputEvent, InputState},
     select::{Select, SelectEvent, SelectState},
     v_flex,
 };
+use strum::{Display, EnumString, VariantArray};
 
 use super::{
     data_encoding::{
         DataEncodingForm, find_data_encoding, find_data_encoding_mut, set_data_encoding_kind,
     },
-    field, optional_value,
+    field, impl_select_item, optional_value,
 };
 use crate::XtceEditor;
 
+#[derive(Clone, Copy, Debug, Display, EnumString, VariantArray, PartialEq, Eq)]
+enum CharacterWidthChoice {
+    Default,
+    #[strum(serialize = "8")]
+    _8,
+    #[strum(serialize = "16")]
+    _16,
+    #[strum(serialize = "32")]
+    _32,
+}
+impl_select_item!(CharacterWidthChoice);
+
+#[derive(Clone, Copy, Debug, Display, EnumString, VariantArray, PartialEq, Eq)]
+enum FloatSizeChoice {
+    #[strum(serialize = "32")]
+    _32,
+    #[strum(serialize = "64")]
+    _64,
+    #[strum(serialize = "128")]
+    _128,
+}
+impl_select_item!(FloatSizeChoice);
+
+#[derive(Clone, Copy, Debug, Display, EnumString, VariantArray, PartialEq, Eq)]
+enum SignedChoice {
+    #[strum(serialize = "true")]
+    Signed,
+    #[strum(serialize = "false")]
+    Unsigned,
+}
+impl_select_item!(SignedChoice);
+
 pub(super) struct ParameterTypeForm {
     kind: Rc<Cell<ParameterTypeKind>>,
-    kind_select: Entity<SelectState<Vec<&'static str>>>,
+    kind_select: Entity<SelectState<Vec<ParameterTypeKind>>>,
     name_input: Entity<InputState>,
     base_or_ref_input: Entity<InputState>,
     initial_value_input: Entity<InputState>,
@@ -26,6 +59,9 @@ pub(super) struct ParameterTypeForm {
     long_description_input: Entity<InputState>,
     extra_a_input: Entity<InputState>,
     extra_b_input: Entity<InputState>,
+    character_width_select: Entity<SelectState<Vec<CharacterWidthChoice>>>,
+    signed_select: Entity<SelectState<Vec<SignedChoice>>>,
+    float_size_select: Entity<SelectState<Vec<FloatSizeChoice>>>,
     nested_items_input: Entity<InputState>,
     data_encoding: DataEncodingForm,
 }
@@ -54,7 +90,7 @@ impl ParameterTypeForm {
         let kind_state = Rc::new(Cell::new(kind));
         let kind_select = cx.new(|cx| {
             SelectState::new(
-                PARAMETER_TYPE_OPTIONS.to_vec(),
+                ParameterTypeKind::VARIANTS.to_vec(),
                 Some(IndexPath::default().row(kind.option_index())),
                 window,
                 cx,
@@ -69,22 +105,57 @@ impl ParameterTypeForm {
         let long_description_input = input(&values.long_description, true, window, cx);
         let extra_a_input = input(&values.extra_a, false, window, cx);
         let extra_b_input = input(&values.extra_b, false, window, cx);
+        let character_width_select = select(
+            CharacterWidthChoice::VARIANTS,
+            parse_choice(
+                if values.extra_b.is_empty() {
+                    "Default"
+                } else {
+                    &values.extra_b
+                },
+                CharacterWidthChoice::Default,
+            ),
+            window,
+            cx,
+        );
+        let signed_select = select(
+            SignedChoice::VARIANTS,
+            parse_choice(&values.extra_b, SignedChoice::Signed),
+            window,
+            cx,
+        );
+        let float_size_select = select(
+            FloatSizeChoice::VARIANTS,
+            parse_choice(&values.extra_a, FloatSizeChoice::_32),
+            window,
+            cx,
+        );
+        subscribe_select_to_input(
+            &character_width_select,
+            &extra_b_input,
+            Some(CharacterWidthChoice::Default),
+            window,
+            cx,
+        );
+        subscribe_select_to_input(&signed_select, &extra_b_input, None, window, cx);
+        subscribe_select_to_input(&float_size_select, &extra_a_input, None, window, cx);
         let nested_items_input = input(&encode_nested_items(parameter_type), true, window, cx);
 
         let subscription_kind = kind_state.clone();
         let kind_extra_a = extra_a_input.clone();
         let kind_extra_b = extra_b_input.clone();
+        let kind_character_width = character_width_select.clone();
+        let kind_signed = signed_select.clone();
+        let kind_float_size = float_size_select.clone();
         let kind_nested_items = nested_items_input.clone();
         cx.subscribe_in(
             &kind_select,
             window,
-            move |_, _, event: &SelectEvent<Vec<&'static str>>, window, cx| {
-                let SelectEvent::Confirm(Some(label)) = event else {
+            move |_, _, event: &SelectEvent<Vec<ParameterTypeKind>>, window, cx| {
+                let SelectEvent::Confirm(Some(selected_kind)) = event else {
                     return;
                 };
-                let Some(selected_kind) = ParameterTypeKind::from_label(label) else {
-                    return;
-                };
+                let selected_kind = *selected_kind;
                 if subscription_kind.replace(selected_kind) == selected_kind {
                     return;
                 }
@@ -95,6 +166,49 @@ impl ParameterTypeForm {
                 ] {
                     input.update(cx, |input, cx| input.set_value(value, window, cx));
                 }
+                sync_select(
+                    &kind_character_width,
+                    parse_choice(
+                        if selected_kind == ParameterTypeKind::String {
+                            if extra_b.is_empty() {
+                                "Default"
+                            } else {
+                                extra_b
+                            }
+                        } else {
+                            "Default"
+                        },
+                        CharacterWidthChoice::Default,
+                    ),
+                    window,
+                    cx,
+                );
+                sync_select(
+                    &kind_signed,
+                    parse_choice(
+                        if selected_kind == ParameterTypeKind::Integer {
+                            extra_b
+                        } else {
+                            "true"
+                        },
+                        SignedChoice::Signed,
+                    ),
+                    window,
+                    cx,
+                );
+                sync_select(
+                    &kind_float_size,
+                    parse_choice(
+                        if selected_kind == ParameterTypeKind::Float {
+                            extra_a
+                        } else {
+                            "32"
+                        },
+                        FloatSizeChoice::_32,
+                    ),
+                    window,
+                    cx,
+                );
                 kind_nested_items.update(cx, |input, cx| {
                     input.set_value(default_nested_items(selected_kind).to_owned(), window, cx);
                 });
@@ -113,6 +227,9 @@ impl ParameterTypeForm {
             long_description_input,
             extra_a_input,
             extra_b_input,
+            character_width_select,
+            signed_select,
+            float_size_select,
             nested_items_input,
             data_encoding: DataEncodingForm::new(
                 parameter_type.and_then(find_data_encoding),
@@ -133,9 +250,8 @@ impl ParameterTypeForm {
             .map(kind)
             .unwrap_or(ParameterTypeKind::String);
         self.kind.set(selected_kind);
-        let label = selected_kind.label();
         self.kind_select.update(cx, |select, cx| {
-            select.set_selected_value(&label, window, cx);
+            select.set_selected_value(&selected_kind, window, cx);
         });
         for (input, value) in [
             (&self.name_input, values.name),
@@ -152,6 +268,31 @@ impl ParameterTypeForm {
         ] {
             input.update(cx, |input, cx| input.set_value(value, window, cx));
         }
+        let extra_a = value(&self.extra_a_input, cx);
+        let extra_b = value(&self.extra_b_input, cx);
+        let character_width = if extra_b.is_empty() {
+            "Default"
+        } else {
+            &extra_b
+        };
+        sync_select(
+            &self.character_width_select,
+            parse_choice(character_width, CharacterWidthChoice::Default),
+            window,
+            cx,
+        );
+        sync_select(
+            &self.signed_select,
+            parse_choice(&extra_b, SignedChoice::Signed),
+            window,
+            cx,
+        );
+        sync_select(
+            &self.float_size_select,
+            parse_choice(&extra_a, FloatSizeChoice::_32),
+            window,
+            cx,
+        );
         self.data_encoding
             .load(parameter_type.and_then(find_data_encoding), window, cx);
     }
@@ -220,14 +361,63 @@ impl ParameterTypeForm {
                     cx,
                 )),
         );
-        if let Some((label_a, hint_a, label_b, hint_b)) = kind.extra_fields() {
-            form = form.child(
-                h_flex()
-                    .gap_4()
-                    .items_start()
-                    .child(field(label_a, hint_a, &self.extra_a_input, cx))
-                    .child(field(label_b, hint_b, &self.extra_b_input, cx)),
-            );
+        match kind {
+            ParameterTypeKind::String => {
+                form = form.child(
+                    h_flex()
+                        .gap_4()
+                        .items_start()
+                        .child(field(
+                            "Restriction pattern",
+                            "Optional",
+                            &self.extra_a_input,
+                            cx,
+                        ))
+                        .child(select_field(
+                            "Character width",
+                            "Optional",
+                            &self.character_width_select,
+                            cx,
+                        )),
+                );
+            }
+            ParameterTypeKind::Integer => {
+                form = form.child(
+                    h_flex()
+                        .gap_4()
+                        .items_start()
+                        .child(field("Size in bits", "Integer", &self.extra_a_input, cx))
+                        .child(select_field("Signed", "Required", &self.signed_select, cx)),
+                );
+            }
+            ParameterTypeKind::Float => {
+                form = form.child(select_field(
+                    "Size in bits",
+                    "Required",
+                    &self.float_size_select,
+                    cx,
+                ));
+            }
+            ParameterTypeKind::Boolean => {
+                form = form.child(
+                    h_flex()
+                        .gap_4()
+                        .items_start()
+                        .child(field(
+                            "One string value",
+                            "Defaults to True",
+                            &self.extra_a_input,
+                            cx,
+                        ))
+                        .child(field(
+                            "Zero string value",
+                            "Defaults to False",
+                            &self.extra_b_input,
+                            cx,
+                        )),
+                );
+            }
+            _ => {}
         }
         if kind.has_direct_long_description() {
             form = form.child(field(
@@ -265,54 +455,32 @@ impl ParameterTypeForm {
     }
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, Display, EnumString, VariantArray, PartialEq, Eq)]
 enum ParameterTypeKind {
+    #[strum(serialize = "StringParameterType")]
     String,
+    #[strum(serialize = "EnumeratedParameterType")]
     Enumerated,
+    #[strum(serialize = "IntegerParameterType")]
     Integer,
+    #[strum(serialize = "BinaryParameterType")]
     Binary,
+    #[strum(serialize = "FloatParameterType")]
     Float,
+    #[strum(serialize = "BooleanParameterType")]
     Boolean,
+    #[strum(serialize = "RelativeTimeParameterType")]
     RelativeTime,
+    #[strum(serialize = "AbsoluteTimeParameterType")]
     AbsoluteTime,
+    #[strum(serialize = "ArrayParameterType")]
     Array,
+    #[strum(serialize = "AggregateParameterType")]
     Aggregate,
 }
-
-const PARAMETER_TYPE_OPTIONS: [&str; 10] = [
-    "StringParameterType",
-    "EnumeratedParameterType",
-    "IntegerParameterType",
-    "BinaryParameterType",
-    "FloatParameterType",
-    "BooleanParameterType",
-    "RelativeTimeParameterType",
-    "AbsoluteTimeParameterType",
-    "ArrayParameterType",
-    "AggregateParameterType",
-];
+impl_select_item!(ParameterTypeKind);
 
 impl ParameterTypeKind {
-    fn label(self) -> &'static str {
-        PARAMETER_TYPE_OPTIONS[self.option_index()]
-    }
-
-    fn from_label(label: &str) -> Option<Self> {
-        match label {
-            "StringParameterType" => Some(Self::String),
-            "EnumeratedParameterType" => Some(Self::Enumerated),
-            "IntegerParameterType" => Some(Self::Integer),
-            "BinaryParameterType" => Some(Self::Binary),
-            "FloatParameterType" => Some(Self::Float),
-            "BooleanParameterType" => Some(Self::Boolean),
-            "RelativeTimeParameterType" => Some(Self::RelativeTime),
-            "AbsoluteTimeParameterType" => Some(Self::AbsoluteTime),
-            "ArrayParameterType" => Some(Self::Array),
-            "AggregateParameterType" => Some(Self::Aggregate),
-            _ => None,
-        }
-    }
-
     fn option_index(self) -> usize {
         match self {
             Self::String => 0,
@@ -354,26 +522,6 @@ impl ParameterTypeKind {
             Self::Array => Some(("Array type reference", "Required")),
             Self::Aggregate => None,
             _ => Some(("Base type", "Optional; used only for type inheritance")),
-        }
-    }
-
-    fn extra_fields(self) -> Option<(&'static str, &'static str, &'static str, &'static str)> {
-        match self {
-            Self::String => Some((
-                "Restriction pattern",
-                "Optional",
-                "Character width",
-                "8, 16, or 32",
-            )),
-            Self::Integer => Some(("Size in bits", "Integer", "Signed", "true or false")),
-            Self::Float => Some(("Size in bits", "32, 64, or 128", "Type", "Float")),
-            Self::Boolean => Some((
-                "One string value",
-                "Defaults to True",
-                "Zero string value",
-                "Defaults to False",
-            )),
-            _ => None,
         }
     }
 
@@ -945,6 +1093,108 @@ fn input(
             .multi_line(multi_line)
             .default_value(value.to_owned())
     })
+}
+
+fn parse_choice<T>(label: &str, fallback: T) -> T
+where
+    T: std::str::FromStr,
+{
+    label.parse().unwrap_or(fallback)
+}
+
+fn select<T>(
+    options: &'static [T],
+    selected: T,
+    window: &mut Window,
+    cx: &mut Context<XtceEditor>,
+) -> Entity<SelectState<Vec<T>>>
+where
+    T: Clone + Copy + PartialEq + gpui_component::select::SelectItem<Value = T> + 'static,
+{
+    let index = options
+        .iter()
+        .position(|option| option == &selected)
+        .unwrap_or_default();
+    cx.new(|cx| {
+        SelectState::new(
+            options.to_vec(),
+            Some(IndexPath::default().row(index)),
+            window,
+            cx,
+        )
+    })
+}
+
+fn subscribe_select_to_input<T>(
+    select: &Entity<SelectState<Vec<T>>>,
+    input: &Entity<InputState>,
+    empty_option: Option<T>,
+    window: &mut Window,
+    cx: &mut Context<XtceEditor>,
+) where
+    T: Clone
+        + Copy
+        + PartialEq
+        + ToString
+        + gpui_component::select::SelectItem<Value = T>
+        + 'static,
+{
+    let input = input.clone();
+    cx.subscribe_in(
+        select,
+        window,
+        move |_, _, event: &SelectEvent<Vec<T>>, window, cx| {
+            let SelectEvent::Confirm(Some(value)) = event else {
+                return;
+            };
+            let value = if empty_option == Some(*value) {
+                String::new()
+            } else {
+                value.to_string()
+            };
+            input.update(cx, |input, cx| input.set_value(value, window, cx));
+        },
+    )
+    .detach();
+}
+
+fn sync_select<T>(
+    select: &Entity<SelectState<Vec<T>>>,
+    value: T,
+    window: &mut Window,
+    cx: &mut Context<XtceEditor>,
+) where
+    T: Clone + Copy + PartialEq + gpui_component::select::SelectItem<Value = T> + 'static,
+{
+    select.update(cx, |select, cx| {
+        select.set_selected_value(&value, window, cx);
+    });
+}
+
+fn select_field<T>(
+    label: &'static str,
+    hint: &'static str,
+    select: &Entity<SelectState<Vec<T>>>,
+    cx: &App,
+) -> Div
+where
+    T: Clone + PartialEq + gpui_component::select::SelectItem<Value = T> + 'static,
+{
+    v_flex()
+        .w_full()
+        .gap_2()
+        .child(
+            h_flex()
+                .justify_between()
+                .child(div().text_sm().font_medium().child(label))
+                .child(
+                    div()
+                        .text_xs()
+                        .text_color(cx.theme().muted_foreground)
+                        .child(hint),
+                ),
+        )
+        .child(Select::new(select).w_full())
 }
 
 fn value(input: &Entity<InputState>, cx: &App) -> String {

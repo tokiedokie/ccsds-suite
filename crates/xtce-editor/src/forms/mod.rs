@@ -22,6 +22,24 @@ use gpui_component::{
 
 pub(crate) use element_forms::ElementForms;
 
+macro_rules! impl_select_item {
+    ($type:ty) => {
+        impl gpui_component::select::SelectItem for $type {
+            type Value = Self;
+
+            fn title(&self) -> gpui::SharedString {
+                self.to_string().into()
+            }
+
+            fn value(&self) -> &Self::Value {
+                self
+            }
+        }
+    };
+}
+
+pub(super) use impl_select_item;
+
 pub(super) fn field(
     label: &'static str,
     hint: &'static str,

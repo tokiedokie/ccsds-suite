@@ -1,15 +1,34 @@
-use gpui::{App, AppContext, Context, Div, Entity, ParentElement, Styled, Window};
-use gpui_component::{h_flex, input::InputState, v_flex};
+use gpui::{App, AppContext, Context, Div, Entity, ParentElement, Styled, Window, div};
+use gpui_component::{
+    ActiveTheme, IndexPath, StyledExt, h_flex,
+    input::InputState,
+    select::{Select, SelectState},
+    v_flex,
+};
+use strum::{Display, EnumString, VariantArray};
 
-use super::{field, optional_value};
+use super::{field, impl_select_item, optional_value};
 use crate::XtceEditor;
+
+#[derive(Clone, Copy, Debug, Display, EnumString, VariantArray, PartialEq, Eq)]
+enum ValidationStatusChoice {
+    Unknown,
+    Working,
+    Draft,
+    Test,
+    Validated,
+    Released,
+    Withdrawn,
+}
+
+impl_select_item!(ValidationStatusChoice);
 
 pub(super) struct HeaderForm {
     version_input: Entity<InputState>,
     date_input: Entity<InputState>,
     classification_input: Entity<InputState>,
     classification_instructions_input: Entity<InputState>,
-    validation_status_input: Entity<InputState>,
+    validation_status_select: Entity<SelectState<Vec<ValidationStatusChoice>>>,
     authors_input: Entity<InputState>,
     notes_input: Entity<InputState>,
     history_input: Entity<InputState>,
@@ -32,7 +51,7 @@ impl HeaderForm {
                 window,
                 cx,
             ),
-            validation_status_input: input(&values.validation_status, false, window, cx),
+            validation_status_select: select(&values.validation_status, window, cx),
             authors_input: input(&values.authors, true, window, cx),
             notes_input: input(&values.notes, true, window, cx),
             history_input: input(&values.history, true, window, cx),
@@ -54,13 +73,16 @@ impl HeaderForm {
                 &self.classification_instructions_input,
                 values.classification_instructions,
             ),
-            (&self.validation_status_input, values.validation_status),
             (&self.authors_input, values.authors),
             (&self.notes_input, values.notes),
             (&self.history_input, values.history),
         ] {
             input.update(cx, |input, cx| input.set_value(value, window, cx));
         }
+        self.validation_status_select.update(cx, |select, cx| {
+            let status = validation_status_choice_from_str(&values.validation_status);
+            select.set_selected_value(&status, window, cx);
+        });
     }
 
     pub(super) fn apply_to(&self, header: &mut xtce::HeaderType, cx: &App) {
@@ -69,8 +91,13 @@ impl HeaderForm {
         header.classification = value(&self.classification_input, cx);
         header.classification_instructions =
             optional_value(value(&self.classification_instructions_input, cx));
-        header.validation_status =
-            validation_status_from_str(&value(&self.validation_status_input, cx));
+        header.validation_status = validation_status_from_choice(
+            self.validation_status_select
+                .read(cx)
+                .selected_value()
+                .copied()
+                .unwrap_or(ValidationStatusChoice::Unknown),
+        );
         header.author_set =
             lines(&self.authors_input, cx).map(|author| xtce::AuthorSetType { author });
         header.note_set = lines(&self.notes_input, cx).map(|note| xtce::NoteSetType { note });
@@ -112,10 +139,10 @@ impl HeaderForm {
                         &self.classification_input,
                         cx,
                     ))
-                    .child(field(
+                    .child(select_field(
                         "Validation status",
-                        "Unknown, Working, Draft, Test, Validated, Released, or Withdrawn",
-                        &self.validation_status_input,
+                        "Required",
+                        &self.validation_status_select,
                         cx,
                     )),
             )
@@ -199,6 +226,49 @@ fn input(
     })
 }
 
+fn select(
+    selected: &str,
+    window: &mut Window,
+    cx: &mut Context<XtceEditor>,
+) -> Entity<SelectState<Vec<ValidationStatusChoice>>> {
+    let selected = validation_status_choice_from_str(selected);
+    let index = ValidationStatusChoice::VARIANTS
+        .iter()
+        .position(|option| option == &selected)
+        .unwrap_or_default();
+    cx.new(|cx| {
+        SelectState::new(
+            ValidationStatusChoice::VARIANTS.to_vec(),
+            Some(IndexPath::default().row(index)),
+            window,
+            cx,
+        )
+    })
+}
+
+fn select_field(
+    label: &'static str,
+    hint: &'static str,
+    select: &Entity<SelectState<Vec<ValidationStatusChoice>>>,
+    cx: &App,
+) -> Div {
+    v_flex()
+        .w_full()
+        .gap_2()
+        .child(
+            h_flex()
+                .justify_between()
+                .child(div().text_sm().font_medium().child(label))
+                .child(
+                    div()
+                        .text_xs()
+                        .text_color(cx.theme().muted_foreground)
+                        .child(hint),
+                ),
+        )
+        .child(Select::new(select).w_full())
+}
+
 fn value(input: &Entity<InputState>, cx: &App) -> String {
     input.read(cx).value().to_string()
 }
@@ -234,6 +304,30 @@ fn validation_status_from_str(value: &str) -> xtce::ValidationStatusType {
         "released" => xtce::ValidationStatusType::Released,
         "withdrawn" => xtce::ValidationStatusType::Withdrawn,
         _ => xtce::ValidationStatusType::Unknown,
+    }
+}
+
+fn validation_status_choice_from_str(value: &str) -> ValidationStatusChoice {
+    match validation_status_from_str(value) {
+        xtce::ValidationStatusType::Unknown => ValidationStatusChoice::Unknown,
+        xtce::ValidationStatusType::Working => ValidationStatusChoice::Working,
+        xtce::ValidationStatusType::Draft => ValidationStatusChoice::Draft,
+        xtce::ValidationStatusType::Test => ValidationStatusChoice::Test,
+        xtce::ValidationStatusType::Validated => ValidationStatusChoice::Validated,
+        xtce::ValidationStatusType::Released => ValidationStatusChoice::Released,
+        xtce::ValidationStatusType::Withdrawn => ValidationStatusChoice::Withdrawn,
+    }
+}
+
+fn validation_status_from_choice(value: ValidationStatusChoice) -> xtce::ValidationStatusType {
+    match value {
+        ValidationStatusChoice::Unknown => xtce::ValidationStatusType::Unknown,
+        ValidationStatusChoice::Working => xtce::ValidationStatusType::Working,
+        ValidationStatusChoice::Draft => xtce::ValidationStatusType::Draft,
+        ValidationStatusChoice::Test => xtce::ValidationStatusType::Test,
+        ValidationStatusChoice::Validated => xtce::ValidationStatusType::Validated,
+        ValidationStatusChoice::Released => xtce::ValidationStatusType::Released,
+        ValidationStatusChoice::Withdrawn => xtce::ValidationStatusType::Withdrawn,
     }
 }
 
