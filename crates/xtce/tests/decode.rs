@@ -1,0 +1,244 @@
+use std::str::FromStr;
+
+use num::BigInt;
+use xsd_parser_types::quick_xml::{
+    DeserializeBytes, DeserializeHelper, SerializeBytes, SerializeHelper,
+};
+use xtce::{
+    FixedIntegerValueType, ParameterSetTypeContent, ParameterTypeSetTypeContent, SystemTypeType,
+    ValidationStatusType, XTCE_NAMESPACE, from_str,
+};
+
+const SAMPLE_XML: &str = include_str!("fixtures/sample.xml");
+
+#[test]
+fn decodes_xtce_1_3_into_generated_types() {
+    let document = from_str(SAMPLE_XML).unwrap();
+    let space_system = &document;
+
+    assert_eq!(space_system.name, "ExampleMission");
+    assert!(matches!(space_system.system_type, SystemTypeType::Asset));
+    assert_eq!(space_system.asset_type, "spacecraft");
+    assert_eq!(
+        space_system.short_description.as_deref(),
+        Some("Example spacecraft mission database")
+    );
+    assert_eq!(
+        space_system.operational_status.as_deref(),
+        Some("operational")
+    );
+    assert_eq!(
+        space_system.base.as_deref(),
+        Some("https://example.invalid/xtce/")
+    );
+    assert_eq!(space_system.alias_set.as_ref().unwrap().alias.len(), 2);
+    assert_eq!(
+        space_system.alias_set.as_ref().unwrap().alias[1].alias,
+        "EXM"
+    );
+    assert_eq!(
+        space_system
+            .ancillary_data_set
+            .as_ref()
+            .unwrap()
+            .ancillary_data[0]
+            .content,
+        "Example Operations Team"
+    );
+
+    let header = space_system.header.as_ref().unwrap();
+    assert_eq!(header.version.as_deref(), Some("1.4.0"));
+    assert!(matches!(
+        header.validation_status,
+        ValidationStatusType::Validated
+    ));
+    assert_eq!(header.author_set.as_ref().unwrap().author.len(), 2);
+    assert_eq!(header.note_set.as_ref().unwrap().note.len(), 2);
+    assert_eq!(header.history_set.as_ref().unwrap().history.len(), 2);
+
+    let telemetry = space_system.telemetry_meta_data.as_ref().unwrap();
+    let parameter_types = &telemetry.parameter_type_set.as_ref().unwrap().content;
+    assert_eq!(parameter_types.len(), 2);
+    let ParameterTypeSetTypeContent::BooleanParameterType(operational_flag_type) =
+        &parameter_types[0]
+    else {
+        panic!("first parameter type must be BooleanParameterType");
+    };
+    assert_eq!(operational_flag_type.name, "OperationalFlagType");
+    assert_eq!(operational_flag_type.one_string_value, "Enabled");
+
+    let parameters = &telemetry.parameter_set.as_ref().unwrap().content;
+    assert_eq!(parameters.len(), 2);
+    let ParameterSetTypeContent::Parameter(mode_counter) = &parameters[1] else {
+        panic!("second parameter entry must be Parameter");
+    };
+    assert_eq!(mode_counter.name, "ModeCounter");
+    assert_eq!(mode_counter.parameter_type_ref, "ModeCounterType");
+
+    assert!(space_system.command_meta_data.is_some());
+    assert_eq!(space_system.space_system.len(), 2);
+    let payload = &space_system.space_system[0];
+    assert_eq!(payload.name, "Payload");
+    assert_eq!(payload.asset_type, "payload");
+    assert!(payload.telemetry_meta_data.is_some());
+    assert!(payload.command_meta_data.is_some());
+    assert_eq!(payload.space_system[0].name, "Sensor");
+
+    let ground_segment = &space_system.space_system[1];
+    assert_eq!(ground_segment.name, "GroundSegment");
+    assert_eq!(ground_segment.asset_type, "groundStation");
+    assert_eq!(
+        ground_segment.operational_status.as_deref(),
+        Some("standby")
+    );
+}
+
+#[test]
+fn rejects_a_non_xtce_1_3_namespace() {
+    let xml = SAMPLE_XML.replace(XTCE_NAMESPACE, "http://www.omg.org/spec/XTCE/20180204");
+
+    assert!(from_str(&xml).is_err());
+}
+
+#[test]
+fn accepts_elements_without_a_namespace() {
+    let xml = r#"
+        <SpaceSystem name="ExampleMission">
+          <TelemetryMetaData />
+        </SpaceSystem>
+    "#;
+
+    let document = from_str(xml).unwrap();
+    let space_system = &document;
+
+    assert_eq!(space_system.name, "ExampleMission");
+    assert!(space_system.telemetry_meta_data.is_some());
+}
+
+#[test]
+fn accepts_the_xtce_namespace_as_the_default_namespace() {
+    let xml = format!(
+        r#"
+        <SpaceSystem xmlns="{XTCE_NAMESPACE}" name="ExampleMission">
+          <TelemetryMetaData />
+        </SpaceSystem>
+        "#
+    );
+
+    let document = from_str(&xml).unwrap();
+    let space_system = &document;
+
+    assert_eq!(space_system.name, "ExampleMission");
+    assert!(space_system.telemetry_meta_data.is_some());
+}
+
+#[test]
+fn accepts_an_alternative_prefix_for_the_xtce_namespace() {
+    let xml = SAMPLE_XML
+        .replace("xmlns:xtce", "xmlns:mission")
+        .replace("xtce:", "mission:");
+
+    let document = from_str(&xml).unwrap();
+
+    assert_eq!(document.name, "ExampleMission");
+}
+
+#[test]
+fn accepts_an_xml_declaration_comments_and_surrounding_whitespace() {
+    let xml = format!(
+        r#"<?xml version="1.0" encoding="UTF-8"?>
+        <!-- document generated by a mission database -->
+        <xtce:SpaceSystem xmlns:xtce="{XTCE_NAMESPACE}" name="ExampleMission">
+          <!-- an empty metadata section is valid -->
+          <xtce:TelemetryMetaData />
+        </xtce:SpaceSystem>
+        "#
+    );
+
+    let document = from_str(&xml).unwrap();
+    let space_system = &document;
+
+    assert_eq!(space_system.name, "ExampleMission");
+    assert!(space_system.telemetry_meta_data.is_some());
+}
+
+#[test]
+fn decodes_every_space_system_type_value() {
+    let cases = [
+        ("asset", SystemTypeType::Asset),
+        ("assetGroup", SystemTypeType::AssetGroup),
+        ("assetComponent", SystemTypeType::AssetComponent),
+        ("unknown", SystemTypeType::Unknown),
+    ];
+
+    for (lexical_value, expected) in cases {
+        let xml = format!(
+            r#"<SpaceSystem xmlns="{XTCE_NAMESPACE}" name="Test" systemType="{lexical_value}" />"#
+        );
+        let document = from_str(&xml).unwrap();
+        let actual = &document.system_type;
+
+        assert!(
+            std::mem::discriminant(actual) == std::mem::discriminant(&expected),
+            "failed to decode systemType={lexical_value}"
+        );
+    }
+}
+
+#[test]
+fn preserves_nested_space_system_order_and_applies_nested_defaults() {
+    let xml = format!(
+        r#"
+        <SpaceSystem xmlns="{XTCE_NAMESPACE}" name="Root">
+          <SpaceSystem name="Payload" systemType="assetComponent" />
+          <SpaceSystem name="Ground" systemType="assetGroup" assetType="station" />
+        </SpaceSystem>
+        "#
+    );
+
+    let document = from_str(&xml).unwrap();
+    let children = &document.space_system;
+
+    assert_eq!(children.len(), 2);
+    assert_eq!(children[0].name, "Payload");
+    assert_eq!(children[0].asset_type, "unknown");
+    assert!(matches!(
+        children[0].system_type,
+        SystemTypeType::AssetComponent
+    ));
+    assert_eq!(children[1].name, "Ground");
+    assert_eq!(children[1].asset_type, "station");
+    assert!(matches!(
+        children[1].system_type,
+        SystemTypeType::AssetGroup
+    ));
+}
+
+#[test]
+fn round_trips_an_unbounded_xtce_integer_without_losing_precision() {
+    const VALUES: &[&str] = &[
+        "340282366920938463463374607431768211456",
+        "-170141183460469231731687303715884105729",
+    ];
+
+    for expected in VALUES {
+        let mut deserialize_helper = DeserializeHelper::default();
+        let value =
+            FixedIntegerValueType::deserialize_bytes(&mut deserialize_helper, expected.as_bytes())
+                .unwrap();
+
+        let FixedIntegerValueType::BigInt(value) = value else {
+            panic!("the integer was not decoded as BigInt");
+        };
+        assert_eq!(value, BigInt::from_str(expected).unwrap());
+
+        let mut serialize_helper = SerializeHelper::default();
+        let value = FixedIntegerValueType::BigInt(value);
+        let encoded = value
+            .serialize_bytes(&mut serialize_helper)
+            .unwrap()
+            .expect("BigInt must have a lexical representation");
+
+        assert_eq!(encoded, *expected);
+    }
+}

@@ -1,0 +1,128 @@
+<?xml version="1.0" encoding="utf-8" ?>
+<xtce:SpaceSystem
+    name="ExampleMission"
+    systemType="asset"
+    assetType="spacecraft"
+    operationalStatus="operational"
+    shortDescription="Example spacecraft mission database"
+    xml:base="https://example.invalid/xtce/"
+    xmlns:xtce="http://www.omg.org/spec/XTCE/20250214"
+    xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+    xsi:schemaLocation="http://www.omg.org/spec/XTCE/20250214 https://www.omg.org/spec/XTCE/20250214/SpaceSystem.xsd"
+>
+  <xtce:LongDescription>
+    Example mission definition containing spacecraft, payload, and ground
+    segment metadata.
+  </xtce:LongDescription>
+  <xtce:AliasSet>
+    <xtce:Alias nameSpace="catalog" alias="EXAMPLE-001" />
+    <xtce:Alias nameSpace="operations" alias="EXM" />
+  </xtce:AliasSet>
+  <xtce:AncillaryDataSet>
+    <xtce:AncillaryData name="owner">Example Operations Team</xtce:AncillaryData>
+    <xtce:AncillaryData
+        name="documentation"
+        mimeType="text/html"
+        href="https://example.invalid/docs/mission"
+    >Mission documentation</xtce:AncillaryData>
+  </xtce:AncillaryDataSet>
+  <xtce:Header
+      version="1.4.0"
+      date="2026-07-26"
+      classification="Public"
+      classificationInstructions="Redistribution permitted"
+      validationStatus="Validated"
+  >
+    <xtce:AuthorSet>
+      <xtce:Author>Flight Software Team</xtce:Author>
+      <xtce:Author>Mission Operations Team</xtce:Author>
+    </xtce:AuthorSet>
+    <xtce:NoteSet>
+      <xtce:Note>Values in this fixture are illustrative.</xtce:Note>
+      <xtce:Note>References use paths relative to the current SpaceSystem.</xtce:Note>
+    </xtce:NoteSet>
+    <xtce:HistorySet>
+      <xtce:History>1.0.0: Initial mission definition</xtce:History>
+      <xtce:History>1.4.0: Added payload and ground segment metadata</xtce:History>
+    </xtce:HistorySet>
+  </xtce:Header>
+  <xtce:TelemetryMetaData>
+    <xtce:ParameterTypeSet>
+      <xtce:BooleanParameterType
+          name="OperationalFlagType"
+          shortDescription="Whether the spacecraft is operational"
+          initialValue="Disabled"
+          oneStringValue="Enabled"
+          zeroStringValue="Disabled"
+      >
+        <xtce:IntegerDataEncoding encoding="unsigned" sizeInBits="1" />
+      </xtce:BooleanParameterType>
+      <xtce:IntegerParameterType
+          name="ModeCounterType"
+          shortDescription="Monotonic mode transition counter"
+          initialValue="0"
+          sizeInBits="32"
+          signed="false"
+      >
+        <xtce:IntegerDataEncoding encoding="unsigned" sizeInBits="32" />
+      </xtce:IntegerParameterType>
+    </xtce:ParameterTypeSet>
+    <xtce:ParameterSet>
+      <xtce:Parameter
+          name="OperationalFlag"
+          parameterTypeRef="OperationalFlagType"
+          initialValue="Enabled"
+      />
+      <xtce:Parameter
+          name="ModeCounter"
+          parameterTypeRef="ModeCounterType"
+          initialValue="0"
+      />
+    </xtce:ParameterSet>
+  </xtce:TelemetryMetaData>
+  <xtce:CommandMetaData />
+  <xtce:SpaceSystem
+      name="Payload"
+      systemType="assetComponent"
+      assetType="payload"
+      shortDescription="Primary science payload"
+  >
+    <xtce:AliasSet>
+      <xtce:Alias nameSpace="operations" alias="PLD" />
+    </xtce:AliasSet>
+    <xtce:TelemetryMetaData>
+      <xtce:ParameterTypeSet>
+        <xtce:IntegerParameterType
+            name="SampleCountType"
+            sizeInBits="16"
+            signed="false"
+        >
+          <xtce:IntegerDataEncoding encoding="unsigned" sizeInBits="16" />
+        </xtce:IntegerParameterType>
+      </xtce:ParameterTypeSet>
+      <xtce:ParameterSet>
+        <xtce:Parameter
+            name="SampleCount"
+            parameterTypeRef="SampleCountType"
+            initialValue="0"
+        />
+      </xtce:ParameterSet>
+    </xtce:TelemetryMetaData>
+    <xtce:CommandMetaData />
+    <xtce:SpaceSystem
+        name="Sensor"
+        systemType="assetComponent"
+        assetType="instrument"
+    >
+      <xtce:TelemetryMetaData />
+    </xtce:SpaceSystem>
+  </xtce:SpaceSystem>
+  <xtce:SpaceSystem
+      name="GroundSegment"
+      systemType="assetComponent"
+      assetType="groundStation"
+      operationalStatus="standby"
+  >
+    <xtce:CommandMetaData />
+  </xtce:SpaceSystem>
+</xtce:SpaceSystem>

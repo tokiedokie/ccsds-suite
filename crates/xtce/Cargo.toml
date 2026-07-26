@@ -1,0 +1,14 @@
+[package]
+name = "xtce"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+num = "0.4"
+xsd-parser-types = { version = "0.2.1", features = ["num", "quick-xml"] }
+
+[dev-dependencies]
+prettyplease = "0.2"
+quote = "1.0"
+syn = { version = "2.0", features = ["full"] }
+xsd-parser = { version = "1.5.2", features = ["web-resolver"] }
