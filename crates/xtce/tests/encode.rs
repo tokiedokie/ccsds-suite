@@ -5,22 +5,9 @@ use xtce::{
 };
 
 fn space_system(name: &str, system_type: SystemTypeType) -> SpaceSystem {
-    SpaceSystemType {
-        short_description: None,
-        name: name.to_owned(),
-        system_type,
-        asset_type: SpaceSystemType::default_asset_type(),
-        operational_status: None,
-        base: None,
-        long_description: None,
-        alias_set: None,
-        ancillary_data_set: None,
-        header: None,
-        telemetry_meta_data: None,
-        command_meta_data: None,
-        service_set: None,
-        space_system: Vec::new(),
-    }
+    let mut value = SpaceSystemType::new(name);
+    value.system_type = system_type;
+    value
 }
 
 #[test]

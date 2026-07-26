@@ -28,6 +28,23 @@ cargo run --example generate
 
 The generator disables `NILLABLE_TYPE_SUPPORT`. As a result, the generated `SpaceSystem` type directly represents `SpaceSystemType` instead of `Nillable<SpaceSystemType>`. A `SpaceSystem` with `xsi:nil="true"` is not supported.
 
+## Constructing a space system
+
+Use `SpaceSystem::new` to create a minimal value with the XTCE schema defaults:
+
+```rust
+use xtce::{SpaceSystem, SystemTypeType, to_string};
+
+let mut system = SpaceSystem::new("ExampleMission");
+system.system_type = SystemTypeType::Asset;
+system.asset_type = "spacecraft".to_owned();
+
+let xml = to_string(&system)?;
+# Ok::<(), xsd_parser_types::quick_xml::Error>(())
+```
+
+Constructing `SpaceSystemType` with a struct literal requires every generated field to be specified. The constructor initializes optional fields to `None`, child systems to an empty vector, and schema-defaulted fields to their XTCE defaults.
+
 ## Verifying the generated code
 
 After generation, run the formatter, tests, and Clippy:
