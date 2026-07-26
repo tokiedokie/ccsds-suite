@@ -146,6 +146,7 @@ impl ElementForms {
             ),
             parameter: ParameterForm::new(
                 telemetry_parameter_set(system).and_then(|set| set.content.first()),
+                telemetry_parameter_type_set(system),
                 window,
                 cx,
             ),
@@ -196,6 +197,7 @@ impl ElementForms {
             ElementKind::TelemetryParameter(index) => {
                 self.parameter.load(
                     telemetry_parameter_set(system).and_then(|set| set.content.get(index)),
+                    telemetry_parameter_type_set(system),
                     window,
                     cx,
                 );
@@ -203,6 +205,7 @@ impl ElementForms {
             ElementKind::CommandParameter(index) => {
                 self.parameter.load(
                     command_parameter_set(system).and_then(|set| set.content.get(index)),
+                    command_parameter_type_set(system),
                     window,
                     cx,
                 );
