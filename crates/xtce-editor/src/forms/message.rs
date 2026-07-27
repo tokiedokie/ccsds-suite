@@ -14,7 +14,8 @@ use strum::{Display, EnumString, VariantArray};
 
 use super::{
     alias_set::AliasSetForm, ancillary_data_set::AncillaryDataSetForm,
-    boolean_expression::BooleanExpressionForm, field, impl_select_item, optional_value,
+    boolean_expression::BooleanExpressionForm, field, impl_select_item,
+    input_algorithm::InputAlgorithmForm, optional_value,
 };
 use crate::XtceEditor;
 
@@ -23,6 +24,7 @@ enum CriteriaKind {
     Comparison,
     ComparisonList,
     BooleanExpression,
+    CustomAlgorithm,
 }
 impl_select_item!(CriteriaKind);
 
@@ -204,7 +206,7 @@ struct MessageCriteriaForm {
     kind_select: Entity<SelectState<Vec<CriteriaKind>>>,
     rows: Vec<Entity<ComparisonRow>>,
     boolean_expression: Entity<BooleanExpressionForm>,
-    unsupported_label: Option<&'static str>,
+    custom_algorithm: Entity<InputAlgorithmForm>,
     _subscriptions: Vec<Subscription>,
 }
 
@@ -216,6 +218,7 @@ impl MessageCriteriaForm {
     ) -> Entity<Self> {
         let values = CriteriaValues::from_criteria(criteria);
         let boolean_expression = BooleanExpressionForm::new(values.boolean_expression, window, cx);
+        let custom_algorithm = InputAlgorithmForm::new(values.custom_algorithm, window, cx);
         cx.new(move |cx| {
             let kind_select = select(CriteriaKind::VARIANTS, values.kind, window, cx);
             let kind_subscription = cx.subscribe(
@@ -226,7 +229,7 @@ impl MessageCriteriaForm {
                 kind_select,
                 rows: comparison_rows(&values.comparisons, window, cx),
                 boolean_expression,
-                unsupported_label: values.unsupported_label,
+                custom_algorithm,
                 _subscriptions: vec![kind_subscription],
             }
         })
@@ -244,14 +247,13 @@ impl MessageCriteriaForm {
         self.boolean_expression.update(cx, |form, cx| {
             form.load(values.boolean_expression, window, cx);
         });
-        self.unsupported_label = values.unsupported_label;
+        self.custom_algorithm.update(cx, |form, cx| {
+            form.load(values.custom_algorithm, window, cx);
+        });
         cx.notify();
     }
 
     fn apply_to(&self, criteria: &mut xtce::MatchCriteriaType, cx: &App) {
-        if self.unsupported_label.is_some() {
-            return;
-        }
         *criteria = match selected_value(&self.kind_select, CriteriaKind::Comparison, cx) {
             CriteriaKind::BooleanExpression => xtce::MatchCriteriaType::BooleanExpression(
                 self.boolean_expression.read(cx).expression(cx),
@@ -264,6 +266,9 @@ impl MessageCriteriaForm {
                     comparison: self.comparisons(cx),
                 })
             }
+            CriteriaKind::CustomAlgorithm => xtce::MatchCriteriaType::CustomAlgorithm(
+                self.custom_algorithm.read(cx).algorithm(cx),
+            ),
         };
     }
 
@@ -294,26 +299,20 @@ impl Render for MessageCriteriaForm {
                     .font_medium()
                     .child("Match criteria"),
             )
-            .when_some(self.unsupported_label, |form, label| {
-                form.child(
-                    div()
-                        .p_3()
-                        .rounded_md()
-                        .bg(cx.theme().muted.opacity(0.5))
-                        .text_sm()
-                        .text_color(cx.theme().muted_foreground)
-                        .child(format!(
-                            "{label} is preserved without modification."
-                        )),
-                )
+            .child(select_field("Criteria type", &self.kind_select))
+            .when(kind == CriteriaKind::BooleanExpression, |form| {
+                form.child(self.boolean_expression.clone())
             })
-            .when(self.unsupported_label.is_none(), |form| {
-                form.child(select_field("Criteria type", &self.kind_select))
-                    .when(kind == CriteriaKind::BooleanExpression, |form| {
-                        form.child(self.boolean_expression.clone())
-                    })
-                    .when(kind != CriteriaKind::BooleanExpression, |form| {
-                        form.child(
+            .when(kind == CriteriaKind::CustomAlgorithm, |form| {
+                form.child(self.custom_algorithm.clone())
+            })
+            .when(
+                matches!(
+                    kind,
+                    CriteriaKind::Comparison | CriteriaKind::ComparisonList
+                ),
+                |form| {
+                    form.child(
                         h_flex()
                             .justify_between()
                             .child(
@@ -342,8 +341,8 @@ impl Render for MessageCriteriaForm {
                                         })),
                                 )
                             }),
-                        )
-                        .child(
+                    )
+                    .child(
                         div()
                             .id("message-comparison-table-scroll")
                             .w_full()
@@ -416,9 +415,9 @@ impl Render for MessageCriteriaForm {
                                             }),
                                     ),
                             ),
-                        )
-                    })
-            })
+                    )
+                },
+            )
     }
 }
 
@@ -509,7 +508,7 @@ struct CriteriaValues<'a> {
     kind: CriteriaKind,
     comparisons: Vec<&'a xtce::ComparisonType>,
     boolean_expression: Option<&'a xtce::BooleanExpressionType>,
-    unsupported_label: Option<&'static str>,
+    custom_algorithm: Option<&'a xtce::InputAlgorithmType>,
 }
 
 impl<'a> CriteriaValues<'a> {
@@ -519,31 +518,31 @@ impl<'a> CriteriaValues<'a> {
                 kind: CriteriaKind::Comparison,
                 comparisons: vec![comparison],
                 boolean_expression: None,
-                unsupported_label: None,
+                custom_algorithm: None,
             },
             Some(xtce::MatchCriteriaType::ComparisonList(list)) => Self {
                 kind: CriteriaKind::ComparisonList,
                 comparisons: list.comparison.iter().collect(),
                 boolean_expression: None,
-                unsupported_label: None,
+                custom_algorithm: None,
             },
             Some(xtce::MatchCriteriaType::BooleanExpression(expression)) => Self {
                 kind: CriteriaKind::BooleanExpression,
                 comparisons: Vec::new(),
                 boolean_expression: Some(expression),
-                unsupported_label: None,
+                custom_algorithm: None,
             },
-            Some(xtce::MatchCriteriaType::CustomAlgorithm(_)) => Self {
-                kind: CriteriaKind::Comparison,
+            Some(xtce::MatchCriteriaType::CustomAlgorithm(algorithm)) => Self {
+                kind: CriteriaKind::CustomAlgorithm,
                 comparisons: Vec::new(),
                 boolean_expression: None,
-                unsupported_label: Some("CustomAlgorithm"),
+                custom_algorithm: Some(algorithm),
             },
             None => Self {
                 kind: CriteriaKind::Comparison,
                 comparisons: Vec::new(),
                 boolean_expression: None,
-                unsupported_label: None,
+                custom_algorithm: None,
             },
         }
     }
@@ -695,7 +694,6 @@ mod tests {
 
         assert_eq!(values.kind, CriteriaKind::Comparison);
         assert_eq!(values.comparisons.len(), 1);
-        assert!(values.unsupported_label.is_none());
     }
 
     #[test]
@@ -726,6 +724,28 @@ mod tests {
 
         assert_eq!(values.kind, CriteriaKind::BooleanExpression);
         assert!(values.boolean_expression.is_some());
-        assert!(values.unsupported_label.is_none());
+    }
+
+    #[test]
+    fn custom_algorithm_criteria_loads_as_an_editable_form() {
+        let criteria = xtce::MatchCriteriaType::CustomAlgorithm(xtce::InputAlgorithmType {
+            short_description: None,
+            name: "packetFilter".to_owned(),
+            long_description: None,
+            alias_set: None,
+            ancillary_data_set: None,
+            algorithm_text: None,
+            external_algorithm_set: None,
+            input_set: None,
+        });
+        let values = CriteriaValues::from_criteria(Some(&criteria));
+
+        assert_eq!(values.kind, CriteriaKind::CustomAlgorithm);
+        assert_eq!(
+            values
+                .custom_algorithm
+                .map(|algorithm| algorithm.name.as_str()),
+            Some("packetFilter")
+        );
     }
 }

@@ -378,7 +378,10 @@ fn custom_algorithm(
     }
 }
 
-fn decode_algorithm_text(language: String, content: String) -> Option<xtce::AlgorithmTextType> {
+pub(super) fn decode_algorithm_text(
+    language: String,
+    content: String,
+) -> Option<xtce::AlgorithmTextType> {
     (!content.is_empty()).then(|| xtce::AlgorithmTextType {
         language: if language.is_empty() {
             xtce::AlgorithmTextType::default_language()
@@ -389,7 +392,7 @@ fn decode_algorithm_text(language: String, content: String) -> Option<xtce::Algo
     })
 }
 
-fn encode_external_algorithms(set: Option<&xtce::ExternalAlgorithmSetType>) -> String {
+pub(super) fn encode_external_algorithms(set: Option<&xtce::ExternalAlgorithmSetType>) -> String {
     set.into_iter()
         .flat_map(|set| &set.external_algorithm)
         .map(|algorithm| {
@@ -402,7 +405,7 @@ fn encode_external_algorithms(set: Option<&xtce::ExternalAlgorithmSetType>) -> S
         .join("\n")
 }
 
-fn decode_external_algorithms(value: &str) -> Option<xtce::ExternalAlgorithmSetType> {
+pub(super) fn decode_external_algorithms(value: &str) -> Option<xtce::ExternalAlgorithmSetType> {
     let external_algorithm = value
         .lines()
         .filter_map(|line| {
@@ -421,7 +424,7 @@ fn decode_external_algorithms(value: &str) -> Option<xtce::ExternalAlgorithmSetT
         .then_some(xtce::ExternalAlgorithmSetType { external_algorithm })
 }
 
-fn encode_inputs(set: Option<&xtce::InputSetType>) -> String {
+pub(super) fn encode_inputs(set: Option<&xtce::InputSetType>) -> String {
     set.into_iter()
         .flat_map(|set| &set.content)
         .map(|input| match input {
@@ -440,7 +443,7 @@ fn encode_inputs(set: Option<&xtce::InputSetType>) -> String {
         .join("\n")
 }
 
-fn decode_inputs(value: &str) -> Option<xtce::InputSetType> {
+pub(super) fn decode_inputs(value: &str) -> Option<xtce::InputSetType> {
     let content = value
         .lines()
         .filter_map(|line| {
