@@ -9,6 +9,7 @@ mod data_encoding;
 mod default_calibrator;
 mod element_forms;
 mod enumeration_list;
+pub(super) mod fixed_frame_stream;
 mod header;
 mod message;
 pub(super) mod message_set;

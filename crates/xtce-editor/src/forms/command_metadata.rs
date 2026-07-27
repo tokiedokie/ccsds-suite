@@ -132,13 +132,23 @@ impl CommandMetaDataForm {
                 )
             }
             ElementKind::CommandStreamSet => {
-                let rows = metadata
+                let streams = metadata
                     .and_then(|value| value.stream_set.as_ref())
                     .into_iter()
                     .flat_map(|set| &set.content)
-                    .map(stream_row)
                     .collect::<Vec<_>>();
-                let targets = vec![None; rows.len()];
+                let rows = streams
+                    .iter()
+                    .map(|stream| stream_row(stream))
+                    .collect::<Vec<_>>();
+                let targets = streams
+                    .iter()
+                    .enumerate()
+                    .map(|(index, stream)| {
+                        matches!(stream, xtce::StreamSetTypeContent::FixedFrameStream(_))
+                            .then_some(ElementKind::CommandFixedFrameStream(index))
+                    })
+                    .collect();
                 collection_summary(
                     &["Type", "Name"],
                     rows,

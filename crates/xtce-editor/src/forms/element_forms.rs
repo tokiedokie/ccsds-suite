@@ -2,11 +2,12 @@ use gpui::{App, Context, Div, Entity, ParentElement, Styled, WeakEntity, Window}
 
 use super::{
     alias_set::AliasSetForm, ancillary_data_set::AncillaryDataSetForm,
-    argument_type::ArgumentTypeForm, command_metadata::CommandMetaDataForm, header::HeaderForm,
-    message::MessageForm, message_set::MessageSetForm, meta_command::MetaCommandForm,
-    parameter::ParameterForm, parameter_type::ParameterTypeForm,
-    sequence_container::SequenceContainerForm, service_set::ServiceSetForm,
-    space_system::SpaceSystemForm, telemetry_metadata::TelemetryMetaDataForm,
+    argument_type::ArgumentTypeForm, command_metadata::CommandMetaDataForm,
+    fixed_frame_stream::FixedFrameStreamForm, header::HeaderForm, message::MessageForm,
+    message_set::MessageSetForm, meta_command::MetaCommandForm, parameter::ParameterForm,
+    parameter_type::ParameterTypeForm, sequence_container::SequenceContainerForm,
+    service_set::ServiceSetForm, space_system::SpaceSystemForm,
+    telemetry_metadata::TelemetryMetaDataForm,
 };
 use crate::{ElementKind, XtceDocument, XtceEditor};
 
@@ -20,6 +21,7 @@ pub(crate) struct ElementForms {
     command_metadata: CommandMetaDataForm,
     message_set: MessageSetForm,
     message: Entity<MessageForm>,
+    fixed_frame_stream: Entity<FixedFrameStreamForm>,
     parameter: Entity<ParameterForm>,
     parameter_type: Entity<ParameterTypeForm>,
     sequence_container: Entity<SequenceContainerForm>,
@@ -69,6 +71,14 @@ impl ElementForms {
                 .and_then(|set| set.message.get(index))
                 .map(|message| message.name.clone())
                 .unwrap_or_else(|| kind.label().to_owned()),
+            ElementKind::TelemetryFixedFrameStream(index) => telemetry_stream_set(system)
+                .and_then(|set| set.content.get(index))
+                .map(stream_title)
+                .unwrap_or_else(|| kind.label().to_owned()),
+            ElementKind::CommandFixedFrameStream(index) => command_stream_set(system)
+                .and_then(|set| set.content.get(index))
+                .map(stream_title)
+                .unwrap_or_else(|| kind.label().to_owned()),
             _ => kind.label().to_owned(),
         }
     }
@@ -104,6 +114,9 @@ impl ElementForms {
             ElementKind::SequenceContainer(_) => Some(self.sequence_container.read(cx).name(cx)),
             ElementKind::MetaCommand(_) => Some(self.meta_command.read(cx).name(cx)),
             ElementKind::Message(_) => Some(self.message.read(cx).name(cx)),
+            ElementKind::TelemetryFixedFrameStream(_) | ElementKind::CommandFixedFrameStream(_) => {
+                Some(self.fixed_frame_stream.read(cx).name(cx))
+            }
             _ => None,
         }
     }
@@ -141,6 +154,9 @@ impl ElementForms {
             }
             ElementKind::MetaCommand(_) => Some(self.meta_command.read(cx).render_name_editor()),
             ElementKind::Message(_) => Some(self.message.read(cx).render_name_editor()),
+            ElementKind::TelemetryFixedFrameStream(_) | ElementKind::CommandFixedFrameStream(_) => {
+                Some(self.fixed_frame_stream.read(cx).render_name_editor())
+            }
             _ => None,
         }
     }
@@ -172,6 +188,11 @@ impl ElementForms {
             ),
             message: MessageForm::new(
                 message_set(system).and_then(|set| set.message.first()),
+                window,
+                cx,
+            ),
+            fixed_frame_stream: FixedFrameStreamForm::new(
+                telemetry_stream_set(system).and_then(|set| set.content.first()),
                 window,
                 cx,
             ),
@@ -314,6 +335,24 @@ impl ElementForms {
                     );
                 });
             }
+            ElementKind::TelemetryFixedFrameStream(index) => {
+                self.fixed_frame_stream.update(cx, |form, cx| {
+                    form.load(
+                        telemetry_stream_set(system).and_then(|set| set.content.get(index)),
+                        window,
+                        cx,
+                    );
+                });
+            }
+            ElementKind::CommandFixedFrameStream(index) => {
+                self.fixed_frame_stream.update(cx, |form, cx| {
+                    form.load(
+                        command_stream_set(system).and_then(|set| set.content.get(index)),
+                        window,
+                        cx,
+                    );
+                });
+            }
             ElementKind::ServiceSet => {
                 self.service_set.update(cx, |form, cx| {
                     form.load(system.service_set.as_ref(), window, cx);
@@ -393,6 +432,20 @@ impl ElementForms {
                     self.message.read(cx).apply_to(message, cx);
                 }
             }
+            ElementKind::TelemetryFixedFrameStream(index) => {
+                if let Some(stream) =
+                    telemetry_stream_set_mut(system).and_then(|set| set.content.get_mut(index))
+                {
+                    self.fixed_frame_stream.read(cx).apply_to(stream, cx);
+                }
+            }
+            ElementKind::CommandFixedFrameStream(index) => {
+                if let Some(stream) =
+                    command_stream_set_mut(system).and_then(|set| set.content.get_mut(index))
+                {
+                    self.fixed_frame_stream.read(cx).apply_to(stream, cx);
+                }
+            }
             ElementKind::ServiceSet => {
                 self.service_set
                     .read(cx)
@@ -439,6 +492,11 @@ impl ElementForms {
             ElementKind::Message(_) => gpui_component::v_flex()
                 .w_full()
                 .child(self.message.clone()),
+            ElementKind::TelemetryFixedFrameStream(_) | ElementKind::CommandFixedFrameStream(_) => {
+                gpui_component::v_flex()
+                    .w_full()
+                    .child(self.fixed_frame_stream.clone())
+            }
             ElementKind::TelemetryMetaData
             | ElementKind::TelemetryParameterTypeSet
             | ElementKind::ContainerSet
@@ -504,6 +562,34 @@ fn message_set_mut(system: &mut xtce::SpaceSystem) -> Option<&mut xtce::MessageS
         .telemetry_meta_data
         .as_mut()
         .and_then(|metadata| metadata.message_set.as_mut())
+}
+
+fn telemetry_stream_set(system: &xtce::SpaceSystem) -> Option<&xtce::StreamSetType> {
+    system
+        .telemetry_meta_data
+        .as_ref()
+        .and_then(|metadata| metadata.stream_set.as_ref())
+}
+
+fn telemetry_stream_set_mut(system: &mut xtce::SpaceSystem) -> Option<&mut xtce::StreamSetType> {
+    system
+        .telemetry_meta_data
+        .as_mut()
+        .and_then(|metadata| metadata.stream_set.as_mut())
+}
+
+fn command_stream_set(system: &xtce::SpaceSystem) -> Option<&xtce::StreamSetType> {
+    system
+        .command_meta_data
+        .as_ref()
+        .and_then(|metadata| metadata.stream_set.as_ref())
+}
+
+fn command_stream_set_mut(system: &mut xtce::SpaceSystem) -> Option<&mut xtce::StreamSetType> {
+    system
+        .command_meta_data
+        .as_mut()
+        .and_then(|metadata| metadata.stream_set.as_mut())
 }
 
 fn telemetry_parameter_set_mut(
@@ -619,5 +705,13 @@ fn parameter_title(parameter: &xtce::ParameterSetTypeContent) -> String {
 fn sequence_container_title(container: &xtce::ContainerSetTypeContent) -> String {
     match container {
         xtce::ContainerSetTypeContent::SequenceContainer(container) => container.name.clone(),
+    }
+}
+
+fn stream_title(stream: &xtce::StreamSetTypeContent) -> String {
+    match stream {
+        xtce::StreamSetTypeContent::FixedFrameStream(stream) => stream.name.clone(),
+        xtce::StreamSetTypeContent::VariableFrameStream(stream) => stream.name.clone(),
+        xtce::StreamSetTypeContent::CustomStream(stream) => stream.name.clone(),
     }
 }

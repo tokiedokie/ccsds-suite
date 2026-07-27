@@ -41,6 +41,7 @@ enum ElementKind {
     MessageSet,
     Message(usize),
     TelemetryStreamSet,
+    TelemetryFixedFrameStream(usize),
     TelemetryAlgorithmSet,
     CommandMetaData,
     CommandParameterTypeSet,
@@ -53,6 +54,7 @@ enum ElementKind {
     MetaCommand(usize),
     CommandContainerSet,
     CommandStreamSet,
+    CommandFixedFrameStream(usize),
     CommandAlgorithmSet,
     ServiceSet,
 }
@@ -71,6 +73,9 @@ impl ElementKind {
             Self::MessageSet => "MessageSet",
             Self::Message(_) => "Message",
             Self::TelemetryStreamSet | Self::CommandStreamSet => "StreamSet",
+            Self::TelemetryFixedFrameStream(_) | Self::CommandFixedFrameStream(_) => {
+                "FixedFrameStream"
+            }
             Self::TelemetryAlgorithmSet | Self::CommandAlgorithmSet => "AlgorithmSet",
             Self::CommandMetaData => "CommandMetaData",
             Self::ArgumentTypeSet => "ArgumentTypeSet",
@@ -90,6 +95,8 @@ impl ElementKind {
                 | Self::TelemetryParameterSet
                 | Self::ContainerSet
                 | Self::MessageSet
+                | Self::TelemetryStreamSet
+                | Self::CommandStreamSet
                 | Self::CommandParameterSet
                 | Self::ArgumentTypeSet
                 | Self::MetaCommandSet
@@ -133,7 +140,10 @@ impl ElementKind {
             Self::TelemetryParameter(_) | Self::CommandParameter(_) => IconName::Asterisk,
             Self::SequenceContainer(_) | Self::CommandContainerSet => IconName::Frame,
             Self::MessageSet | Self::Message(_) => IconName::Inbox,
-            Self::TelemetryStreamSet | Self::CommandStreamSet => IconName::GalleryVerticalEnd,
+            Self::TelemetryStreamSet
+            | Self::CommandStreamSet
+            | Self::TelemetryFixedFrameStream(_)
+            | Self::CommandFixedFrameStream(_) => IconName::GalleryVerticalEnd,
             Self::TelemetryAlgorithmSet | Self::CommandAlgorithmSet => IconName::Bot,
             Self::ArgumentType(_) => IconName::CaseSensitive,
             Self::ServiceSet => IconName::Building2,
@@ -728,6 +738,34 @@ impl XtceDocument {
                 });
                 Some(ElementKind::Message(index))
             }
+            ElementKind::TelemetryStreamSet => {
+                let set = system
+                    .telemetry_meta_data
+                    .as_mut()?
+                    .stream_set
+                    .get_or_insert_with(|| xtce::StreamSetType {
+                        content: Vec::new(),
+                    });
+                let index = set.content.len();
+                let name = Self::next_stream_name(&set.content);
+                set.content
+                    .push(forms::fixed_frame_stream::default_fixed_frame_stream(name));
+                Some(ElementKind::TelemetryFixedFrameStream(index))
+            }
+            ElementKind::CommandStreamSet => {
+                let set = system
+                    .command_meta_data
+                    .as_mut()?
+                    .stream_set
+                    .get_or_insert_with(|| xtce::StreamSetType {
+                        content: Vec::new(),
+                    });
+                let index = set.content.len();
+                let name = Self::next_stream_name(&set.content);
+                set.content
+                    .push(forms::fixed_frame_stream::default_fixed_frame_stream(name));
+                Some(ElementKind::CommandFixedFrameStream(index))
+            }
             ElementKind::CommandParameterSet => {
                 let type_ref = system
                     .command_meta_data
@@ -941,6 +979,16 @@ impl XtceDocument {
         })
     }
 
+    fn next_stream_name(content: &[xtce::StreamSetTypeContent]) -> String {
+        Self::next_unique_name("FixedFrameStream", |candidate| {
+            content.iter().any(|stream| match stream {
+                xtce::StreamSetTypeContent::FixedFrameStream(stream) => stream.name == candidate,
+                xtce::StreamSetTypeContent::VariableFrameStream(stream) => stream.name == candidate,
+                xtce::StreamSetTypeContent::CustomStream(stream) => stream.name == candidate,
+            })
+        })
+    }
+
     fn next_unique_name(prefix: &str, exists: impl Fn(&str) -> bool) -> String {
         (1..)
             .map(|index| format!("{prefix}{index}"))
@@ -1077,16 +1125,37 @@ impl XtceDocument {
                     child_level + 2,
                 );
             }
-            for (present, kind) in [
-                (
-                    metadata.stream_set.is_some(),
-                    ElementKind::TelemetryStreamSet,
-                ),
-                (
-                    metadata.algorithm_set.is_some(),
-                    ElementKind::TelemetryAlgorithmSet,
-                ),
-            ] {
+            let streams = metadata
+                .stream_set
+                .as_ref()
+                .map(|set| set.content.as_slice())
+                .unwrap_or_default();
+            let fixed_stream_count = streams
+                .iter()
+                .filter(|stream| matches!(stream, xtce::StreamSetTypeContent::FixedFrameStream(_)))
+                .count();
+            Self::push_tree_node(
+                nodes,
+                path,
+                ElementKind::TelemetryStreamSet,
+                child_level + 1,
+                fixed_stream_count > 0,
+            );
+            for (index, stream) in streams.iter().enumerate() {
+                if let xtce::StreamSetTypeContent::FixedFrameStream(stream) = stream {
+                    Self::push_named_tree_node(
+                        nodes,
+                        path,
+                        ElementKind::TelemetryFixedFrameStream(index),
+                        stream.name.clone(),
+                        child_level + 2,
+                    );
+                }
+            }
+            for (present, kind) in [(
+                metadata.algorithm_set.is_some(),
+                ElementKind::TelemetryAlgorithmSet,
+            )] {
                 if present {
                     Self::push_tree_node(nodes, path, kind, child_level + 1, false);
                 }
@@ -1172,12 +1241,38 @@ impl XtceDocument {
                     child_level + 2,
                 );
             }
+            let streams = metadata
+                .stream_set
+                .as_ref()
+                .map(|set| set.content.as_slice())
+                .unwrap_or_default();
+            let fixed_stream_count = streams
+                .iter()
+                .filter(|stream| matches!(stream, xtce::StreamSetTypeContent::FixedFrameStream(_)))
+                .count();
+            Self::push_tree_node(
+                nodes,
+                path,
+                ElementKind::CommandStreamSet,
+                child_level + 1,
+                fixed_stream_count > 0,
+            );
+            for (index, stream) in streams.iter().enumerate() {
+                if let xtce::StreamSetTypeContent::FixedFrameStream(stream) = stream {
+                    Self::push_named_tree_node(
+                        nodes,
+                        path,
+                        ElementKind::CommandFixedFrameStream(index),
+                        stream.name.clone(),
+                        child_level + 2,
+                    );
+                }
+            }
             for (present, kind) in [
                 (
                     metadata.command_container_set.is_some(),
                     ElementKind::CommandContainerSet,
                 ),
-                (metadata.stream_set.is_some(), ElementKind::CommandStreamSet),
                 (
                     metadata.algorithm_set.is_some(),
                     ElementKind::CommandAlgorithmSet,
@@ -2594,6 +2689,67 @@ mod tests {
             decoded_message.container_ref.container_ref,
             "/Vehicle/Housekeeping"
         );
+    }
+
+    #[test]
+    fn adds_fixed_frame_streams_to_telemetry_and_command_metadata() {
+        let mut root = XtceDocument::untitled().root;
+        assert!(XtceDocument::add_metadata(
+            &mut root,
+            ElementKind::TelemetryMetaData
+        ));
+        assert!(XtceDocument::add_metadata(
+            &mut root,
+            ElementKind::CommandMetaData
+        ));
+
+        assert_eq!(
+            XtceDocument::add_collection_item(&mut root, ElementKind::TelemetryStreamSet),
+            Some(ElementKind::TelemetryFixedFrameStream(0))
+        );
+        assert_eq!(
+            XtceDocument::add_collection_item(&mut root, ElementKind::CommandStreamSet),
+            Some(ElementKind::CommandFixedFrameStream(0))
+        );
+
+        let telemetry_stream = &root
+            .telemetry_meta_data
+            .as_ref()
+            .unwrap()
+            .stream_set
+            .as_ref()
+            .unwrap()
+            .content[0];
+        let command_stream = &root
+            .command_meta_data
+            .as_ref()
+            .unwrap()
+            .stream_set
+            .as_ref()
+            .unwrap()
+            .content[0];
+        assert!(matches!(
+            telemetry_stream,
+            xtce::StreamSetTypeContent::FixedFrameStream(stream)
+                if stream.name == "FixedFrameStream1"
+        ));
+        assert!(matches!(
+            command_stream,
+            xtce::StreamSetTypeContent::FixedFrameStream(stream)
+                if stream.name == "FixedFrameStream1"
+        ));
+
+        let mut nodes = Vec::new();
+        XtceDocument::collect_tree_nodes(&root, &mut Vec::new(), 0, &mut nodes);
+        assert!(nodes.iter().any(|node| {
+            node.selection.kind == ElementKind::TelemetryFixedFrameStream(0)
+                && node.label == "FixedFrameStream1"
+        }));
+        assert!(nodes.iter().any(|node| {
+            node.selection.kind == ElementKind::CommandFixedFrameStream(0)
+                && node.label == "FixedFrameStream1"
+        }));
+        XtceDocument::serialize(&root).expect("fixed frame streams should serialize");
     }
 
     #[test]

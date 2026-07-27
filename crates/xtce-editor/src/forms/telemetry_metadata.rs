@@ -115,13 +115,23 @@ impl TelemetryMetaDataForm {
                 )
             }
             ElementKind::TelemetryStreamSet => {
-                let rows = metadata
+                let streams = metadata
                     .and_then(|value| value.stream_set.as_ref())
                     .into_iter()
                     .flat_map(|set| &set.content)
-                    .map(stream_row)
                     .collect::<Vec<_>>();
-                let targets = no_targets(rows.len());
+                let rows = streams
+                    .iter()
+                    .map(|stream| stream_row(stream))
+                    .collect::<Vec<_>>();
+                let targets = streams
+                    .iter()
+                    .enumerate()
+                    .map(|(index, stream)| {
+                        matches!(stream, xtce::StreamSetTypeContent::FixedFrameStream(_))
+                            .then_some(ElementKind::TelemetryFixedFrameStream(index))
+                    })
+                    .collect();
                 collection_summary(
                     &["Type", "Name"],
                     rows,
