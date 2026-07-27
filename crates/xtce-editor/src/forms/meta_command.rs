@@ -17,6 +17,7 @@ use gpui_component::{
     h_flex,
     input::{CompletionProvider, Input, InputEvent, InputState, Rope, RopeExt},
     select::{Select, SelectEvent, SelectState},
+    tooltip::Tooltip,
     v_flex,
 };
 use lsp_types::{
@@ -151,6 +152,7 @@ impl MetaCommandForm {
                 EntryListView::new(
                     decode_container_entries(&values.command_container.entries),
                     argument_list.clone(),
+                    name_or_ref_input.clone(),
                     window,
                     cx,
                 )
@@ -362,10 +364,10 @@ impl MetaCommandForm {
                     cx,
                 ))
                 .child(self.render_arguments(cx))
-                .child(self.render_command_container(cx))
                 .child(self.render_documentation(cx))
                 .child(self.render_inheritance(cx))
-                .child(self.render_identification(cx)),
+                .child(self.render_identification(cx))
+                .child(self.render_command_container(cx)),
             MetaCommandKind::BlockMetaCommand => form
                 .child(field(
                     "Meta command steps",
@@ -640,9 +642,11 @@ struct EntryListView {
     editors: HashMap<usize, Entity<CommandContainerEntryRow>>,
     cache_order: VecDeque<usize>,
     arguments: Entity<ArgumentListView>,
+    command_name_input: Entity<InputState>,
     selected_index: Option<usize>,
     visible_indices: Vec<usize>,
-    move_to_input: Entity<InputState>,
+    bit_positions: Vec<Option<u64>>,
+    packet_layout_open: bool,
     list_state: ListState,
 }
 
@@ -1090,12 +1094,12 @@ impl EntryListView {
     fn new(
         rows: Vec<EditableContainerEntry>,
         arguments: Entity<ArgumentListView>,
-        window: &mut Window,
+        command_name_input: Entity<InputState>,
+        _window: &mut Window,
         cx: &mut Context<Self>,
     ) -> Self {
-        let move_to_input =
-            cx.new(|cx| InputState::new(window, cx).placeholder("Destination number"));
         let selected_index = (!rows.is_empty()).then_some(0);
+        let row_count = rows.len();
         let mut this = Self {
             visible_indices: (0..rows.len()).collect(),
             list_state: ListState::new(rows.len(), ListAlignment::Top, px(58.))
@@ -1104,8 +1108,10 @@ impl EntryListView {
             editors: HashMap::new(),
             cache_order: VecDeque::new(),
             arguments,
+            command_name_input,
             selected_index,
-            move_to_input,
+            bit_positions: vec![None; row_count],
+            packet_layout_open: true,
         };
         this.rebuild_visible(cx);
         this
@@ -1114,15 +1120,15 @@ impl EntryListView {
     fn set_rows(
         &mut self,
         rows: Vec<EditableContainerEntry>,
-        window: &mut Window,
+        _window: &mut Window,
         cx: &mut Context<Self>,
     ) {
         self.rows = rows;
         self.editors.clear();
         self.cache_order.clear();
         self.selected_index = (!self.rows.is_empty()).then_some(0);
-        self.move_to_input
-            .update(cx, |input, cx| input.set_value("", window, cx));
+        self.bit_positions = vec![None; self.rows.len()];
+        self.packet_layout_open = true;
         self.rebuild_visible(cx);
     }
 
@@ -1179,6 +1185,18 @@ impl EntryListView {
         }
     }
 
+    fn current_rows(&self, cx: &App) -> Vec<EditableContainerEntry> {
+        self.rows
+            .iter()
+            .enumerate()
+            .map(|(index, row)| {
+                self.editors
+                    .get(&index)
+                    .map_or_else(|| row.clone(), |editor| container_entry_data(editor, cx))
+            })
+            .collect()
+    }
+
     fn move_entry(&mut self, index: usize, target: usize, cx: &mut Context<Self>) {
         self.flush_editors(cx);
         if swap_rows(&mut self.rows, index, target) {
@@ -1187,16 +1205,6 @@ impl EntryListView {
             self.selected_index = Some(target);
             self.rebuild_visible(cx);
             cx.notify();
-        }
-    }
-
-    fn move_entry_to(&mut self, index: usize, target: usize, cx: &mut Context<Self>) {
-        self.flush_editors(cx);
-        if move_row_to(&mut self.rows, index, target) {
-            self.editors.clear();
-            self.cache_order.clear();
-            self.selected_index = Some(target);
-            self.rebuild_visible(cx);
         }
     }
 
@@ -1241,7 +1249,13 @@ impl EntryListView {
                     Button::new(format!("select-command-container-entry-{index}"))
                         .ghost()
                         .small()
-                        .label((index + 1).to_string())
+                        .label(
+                            self.bit_positions
+                                .get(index)
+                                .copied()
+                                .flatten()
+                                .map_or_else(|| "—".to_owned(), |position| position.to_string()),
+                        )
                         .tooltip("Select entry")
                         .on_click(cx.listener(move |this, _, _, cx| {
                             this.selected_index = Some(index);
@@ -1297,7 +1311,12 @@ impl EntryListView {
 impl Render for EntryListView {
     fn render(&mut self, _: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         let row_count = self.rows.len();
-        let selected_index = self.selected_index.filter(|index| *index < row_count);
+        let rows = self.current_rows(cx);
+        self.bit_positions = command_entry_bit_positions(&rows, &self.arguments, cx);
+        let command_name = value(&self.command_name_input, cx);
+        let packet_layout = self
+            .packet_layout_open
+            .then(|| command_packet_layout(&rows, &self.arguments, &command_name, cx));
         let entry_table = div()
             .id("entry-table-scroll-boundary")
             .w_full()
@@ -1324,7 +1343,7 @@ impl Render for EntryListView {
                                     .bg(cx.theme().muted.opacity(0.5))
                                     .text_xs()
                                     .font_medium()
-                                    .child(div().w(px(52.)).child("Select"))
+                                    .child(div().w(px(52.)).child("Bit"))
                                     .child(div().w(px(100.)).child("Actions"))
                                     .child(div().w(px(130.)).child("Type"))
                                     .child(div().flex_1().child("Reference / name"))
@@ -1381,42 +1400,45 @@ impl Render for EntryListView {
                             })),
                     ),
             )
-            .when_some(selected_index, |this, index| {
-                this.child(
-                    h_flex()
-                        .gap_3()
-                        .items_end()
-                        .child(
-                            div()
-                                .pb_2()
-                                .text_sm()
-                                .font_medium()
-                                .child(format!("Selected Entry {}", index + 1)),
-                        )
-                        .child(field(
-                            "Move to position",
-                            "1-based entry number",
-                            &self.move_to_input,
-                            cx,
-                        ))
-                        .child(
-                            Button::new("move-selected-entry-to-position")
-                                .small()
-                                .label("Move")
-                                .on_click(cx.listener(move |this, _, _, cx| {
-                                    let Ok(position) =
-                                        value(&this.move_to_input, cx).trim().parse::<usize>()
-                                    else {
-                                        return;
-                                    };
-                                    if position > 0 {
-                                        this.move_entry_to(index, position - 1, cx);
-                                    }
-                                })),
-                        ),
-                )
-            })
             .child(entry_table)
+            .child(
+                Collapsible::new()
+                    .open(self.packet_layout_open)
+                    .child(
+                        h_flex()
+                            .justify_between()
+                            .child(
+                                Button::new("toggle-command-packet-layout")
+                                    .small()
+                                    .link()
+                                    .icon(if self.packet_layout_open {
+                                        IconName::ChevronDown
+                                    } else {
+                                        IconName::ChevronRight
+                                    })
+                                    .label("Packet layout")
+                                    .on_click(cx.listener(|this, _, _, cx| {
+                                        this.packet_layout_open = !this.packet_layout_open;
+                                        cx.notify();
+                                    })),
+                            )
+                            .when(self.packet_layout_open, |header| {
+                                header.child(
+                                    Button::new("refresh-command-packet-layout")
+                                        .small()
+                                        .ghost()
+                                        .label("Refresh")
+                                        .on_click(cx.listener(|_, _, _, cx| cx.notify())),
+                                )
+                            }),
+                    )
+                    .content(v_flex().pt_2().child(
+                        packet_layout.as_ref().map_or_else(
+                            || div(),
+                            |layout| render_command_packet_layout(layout, cx),
+                        ),
+                    )),
+            )
     }
 }
 
@@ -1425,15 +1447,6 @@ fn swap_rows<T>(rows: &mut [T], index: usize, target: usize) -> bool {
         return false;
     }
     rows.swap(index, target);
-    true
-}
-
-fn move_row_to<T>(rows: &mut Vec<T>, index: usize, target: usize) -> bool {
-    if index >= rows.len() || target >= rows.len() || index == target {
-        return false;
-    }
-    let row = rows.remove(index);
-    rows.insert(target, row);
     true
 }
 
@@ -1515,14 +1528,17 @@ enum ValueRule {
 }
 
 struct CommandArguments {
+    name: String,
     base_ref: Option<String>,
     arguments: Vec<(String, String)>,
+    container_entries: Vec<EditableContainerEntry>,
 }
 
 struct AssignmentContext {
     current_base: String,
     commands: HashMap<String, CommandArguments>,
     type_rules: HashMap<String, ValueRule>,
+    type_sizes: HashMap<String, u64>,
     type_names: Vec<String>,
 }
 
@@ -1542,6 +1558,7 @@ impl AssignmentContext {
                 Some((
                     command.name.clone(),
                     CommandArguments {
+                        name: command.name.clone(),
                         base_ref: command
                             .base_meta_command
                             .as_ref()
@@ -1554,6 +1571,15 @@ impl AssignmentContext {
                                 (argument.name.clone(), argument.argument_type_ref.clone())
                             })
                             .collect(),
+                        container_entries: command
+                            .command_container
+                            .as_ref()
+                            .map(|container| {
+                                decode_container_entries(&encode_container_entries(
+                                    &container.entry_list,
+                                ))
+                            })
+                            .unwrap_or_default(),
                     },
                 ))
             })
@@ -1565,10 +1591,12 @@ impl AssignmentContext {
             .collect::<Vec<_>>();
         let type_names = type_entries.iter().map(|(name, _)| name.clone()).collect();
         let type_rules = type_entries.into_iter().collect();
+        let type_sizes = argument_type_sizes(argument_type_set);
         Self {
             current_base: current_base.to_owned(),
             commands,
             type_rules,
+            type_sizes,
             type_names,
         }
     }
@@ -1578,6 +1606,101 @@ impl AssignmentContext {
         let mut visited = HashSet::new();
         self.collect_arguments(&self.current_base, &mut visited, &mut result);
         result
+    }
+
+    fn active_argument_sizes(&self) -> HashMap<String, u64> {
+        let mut arguments = Vec::new();
+        self.collect_argument_types(&self.current_base, &mut HashSet::new(), &mut arguments);
+        arguments
+            .into_iter()
+            .filter_map(|(name, type_ref)| {
+                self.type_sizes
+                    .get(&type_ref)
+                    .or_else(|| {
+                        self.type_sizes
+                            .get(type_ref.rsplit('/').next().unwrap_or(&type_ref))
+                    })
+                    .copied()
+                    .map(|size| (name, size))
+            })
+            .collect()
+    }
+
+    fn collect_argument_types(
+        &self,
+        command_ref: &str,
+        visited: &mut HashSet<String>,
+        result: &mut Vec<(String, String)>,
+    ) {
+        let Some(command) = self.command(command_ref, visited) else {
+            return;
+        };
+        if let Some(base_ref) = &command.base_ref {
+            self.collect_argument_types(base_ref, visited, result);
+        }
+        result.extend(command.arguments.iter().cloned());
+    }
+
+    fn active_container_entries(&self) -> Vec<EditableContainerEntry> {
+        let mut entries = Vec::new();
+        self.collect_container_entries(&self.current_base, &mut HashSet::new(), &mut entries);
+        entries
+    }
+
+    fn active_container_entries_with_sources(&self) -> Vec<(String, Vec<EditableContainerEntry>)> {
+        let mut entries = Vec::new();
+        self.collect_container_entries_with_sources(
+            &self.current_base,
+            &mut HashSet::new(),
+            &mut entries,
+        );
+        entries
+    }
+
+    fn collect_container_entries_with_sources(
+        &self,
+        command_ref: &str,
+        visited: &mut HashSet<String>,
+        result: &mut Vec<(String, Vec<EditableContainerEntry>)>,
+    ) {
+        let Some(command) = self.command(command_ref, visited) else {
+            return;
+        };
+        if let Some(base_ref) = &command.base_ref {
+            self.collect_container_entries_with_sources(base_ref, visited, result);
+        }
+        if !command.container_entries.is_empty() {
+            result.push((command.name.clone(), command.container_entries.clone()));
+        }
+    }
+
+    fn collect_container_entries(
+        &self,
+        command_ref: &str,
+        visited: &mut HashSet<String>,
+        result: &mut Vec<EditableContainerEntry>,
+    ) {
+        let Some(command) = self.command(command_ref, visited) else {
+            return;
+        };
+        if let Some(base_ref) = &command.base_ref {
+            self.collect_container_entries(base_ref, visited, result);
+        }
+        result.extend(command.container_entries.iter().cloned());
+    }
+
+    fn command<'a>(
+        &'a self,
+        command_ref: &str,
+        visited: &mut HashSet<String>,
+    ) -> Option<&'a CommandArguments> {
+        if command_ref.is_empty() || !visited.insert(command_ref.to_owned()) {
+            return None;
+        }
+        let command_name = command_ref.rsplit('/').next().unwrap_or(command_ref);
+        self.commands
+            .get(command_ref)
+            .or_else(|| self.commands.get(command_name))
     }
 
     fn collect_arguments(
@@ -1769,6 +1892,136 @@ fn argument_type_rule(argument_type: &xtce::ArgumentTypeSetTypeContent) -> (Stri
             (value.name.clone(), ValueRule::Other)
         }
     }
+}
+
+fn argument_type_sizes(set: Option<&xtce::ArgumentTypeSetType>) -> HashMap<String, u64> {
+    let Some(set) = set else {
+        return HashMap::new();
+    };
+    set.content
+        .iter()
+        .filter_map(|argument_type| {
+            resolve_argument_type_size(argument_type, set, &mut HashSet::new())
+                .map(|size| (argument_type_name(argument_type).to_owned(), size))
+        })
+        .collect()
+}
+
+fn argument_type_name(argument_type: &xtce::ArgumentTypeSetTypeContent) -> &str {
+    match argument_type {
+        xtce::ArgumentTypeSetTypeContent::StringArgumentType(value) => &value.name,
+        xtce::ArgumentTypeSetTypeContent::EnumeratedArgumentType(value) => &value.name,
+        xtce::ArgumentTypeSetTypeContent::IntegerArgumentType(value) => &value.name,
+        xtce::ArgumentTypeSetTypeContent::BinaryArgumentType(value) => &value.name,
+        xtce::ArgumentTypeSetTypeContent::FloatArgumentType(value) => &value.name,
+        xtce::ArgumentTypeSetTypeContent::BooleanArgumentType(value) => &value.name,
+        xtce::ArgumentTypeSetTypeContent::RelativeTimeArgumentType(value) => &value.name,
+        xtce::ArgumentTypeSetTypeContent::AbsoluteTimeArgumentType(value) => &value.name,
+        xtce::ArgumentTypeSetTypeContent::ArrayArgumentType(value) => &value.name,
+        xtce::ArgumentTypeSetTypeContent::AggregateArgumentType(value) => &value.name,
+    }
+}
+
+fn resolve_argument_type_size(
+    argument_type: &xtce::ArgumentTypeSetTypeContent,
+    set: &xtce::ArgumentTypeSetType,
+    visiting: &mut HashSet<String>,
+) -> Option<u64> {
+    let name = argument_type_name(argument_type);
+    if !visiting.insert(name.to_owned()) {
+        return None;
+    }
+    let size = match argument_type {
+        xtce::ArgumentTypeSetTypeContent::StringArgumentType(value) => {
+            argument_encoding_size(&value.content)
+        }
+        xtce::ArgumentTypeSetTypeContent::EnumeratedArgumentType(value) => {
+            argument_encoding_size(&value.content)
+        }
+        xtce::ArgumentTypeSetTypeContent::IntegerArgumentType(value) => {
+            argument_encoding_size(&value.content)
+        }
+        xtce::ArgumentTypeSetTypeContent::BinaryArgumentType(value) => {
+            argument_encoding_size(&value.content)
+        }
+        xtce::ArgumentTypeSetTypeContent::FloatArgumentType(value) => {
+            argument_encoding_size(&value.content)
+        }
+        xtce::ArgumentTypeSetTypeContent::BooleanArgumentType(value) => {
+            argument_encoding_size(&value.content)
+        }
+        xtce::ArgumentTypeSetTypeContent::AggregateArgumentType(value) => value
+            .member_list
+            .member
+            .iter()
+            .try_fold(0_u64, |total, member| {
+                let member_type = set
+                    .content
+                    .iter()
+                    .find(|candidate| argument_type_name(candidate) == member.type_ref)?;
+                total.checked_add(resolve_argument_type_size(member_type, set, visiting)?)
+            }),
+        xtce::ArgumentTypeSetTypeContent::RelativeTimeArgumentType(_)
+        | xtce::ArgumentTypeSetTypeContent::AbsoluteTimeArgumentType(_)
+        | xtce::ArgumentTypeSetTypeContent::ArrayArgumentType(_) => None,
+    };
+    visiting.remove(name);
+    size
+}
+
+trait ArgumentEncodingContent {
+    fn fixed_size(&self) -> Option<u64>;
+}
+
+macro_rules! impl_argument_encoding_content {
+    ($type:ty) => {
+        impl ArgumentEncodingContent for $type {
+            fn fixed_size(&self) -> Option<u64> {
+                match self {
+                    Self::BinaryDataEncoding(value) => match &value.size_in_bits {
+                        xtce::ArgumentIntegerValueType::FixedValue(size) => {
+                            u64::try_from(*size).ok().filter(|size| *size > 0)
+                        }
+                        _ => None,
+                    },
+                    Self::FloatDataEncoding(value) => Some(match value.size_in_bits {
+                        xtce::FloatEncodingSizeInBitsType::_16 => 16,
+                        xtce::FloatEncodingSizeInBitsType::_32 => 32,
+                        xtce::FloatEncodingSizeInBitsType::_40 => 40,
+                        xtce::FloatEncodingSizeInBitsType::_48 => 48,
+                        xtce::FloatEncodingSizeInBitsType::_64 => 64,
+                        xtce::FloatEncodingSizeInBitsType::_80 => 80,
+                        xtce::FloatEncodingSizeInBitsType::_128 => 128,
+                    }),
+                    Self::IntegerDataEncoding(value) => u64::try_from(value.size_in_bits)
+                        .ok()
+                        .filter(|size| *size > 0),
+                    Self::StringDataEncoding(value) => {
+                        value.content.iter().find_map(|content| match content {
+                            xtce::ArgumentStringDataEncodingTypeContent::SizeInBits(value) => {
+                                u64::try_from(value.fixed.fixed_value)
+                                    .ok()
+                                    .filter(|size| *size > 0)
+                            }
+                            _ => None,
+                        })
+                    }
+                    _ => None,
+                }
+            }
+        }
+    };
+}
+
+impl_argument_encoding_content!(xtce::StringArgumentTypeContent);
+impl_argument_encoding_content!(xtce::EnumeratedArgumentTypeContent);
+impl_argument_encoding_content!(xtce::IntegerArgumentTypeContent);
+impl_argument_encoding_content!(xtce::BinaryArgumentTypeContent);
+impl_argument_encoding_content!(xtce::FloatArgumentTypeContent);
+impl_argument_encoding_content!(xtce::BooleanArgumentTypeContent);
+
+fn argument_encoding_size<T: ArgumentEncodingContent>(content: &[T]) -> Option<u64> {
+    content.iter().find_map(ArgumentEncodingContent::fixed_size)
 }
 
 enum AssignmentCompletionKind {
@@ -2457,6 +2710,405 @@ enum EditableContainerEntry {
     },
 }
 
+fn command_entry_bit_positions(
+    entries: &[EditableContainerEntry],
+    arguments: &Entity<ArgumentListView>,
+    cx: &App,
+) -> Vec<Option<u64>> {
+    let context = command_entry_context(arguments, cx);
+    let inherited_count = context.inherited_entries.len();
+    let mut all_entries = context.inherited_entries;
+    all_entries.extend_from_slice(entries);
+    command_entry_bit_positions_from_sizes(&all_entries, &context.argument_sizes)
+        .into_iter()
+        .skip(inherited_count)
+        .collect()
+}
+
+struct CommandEntryContext {
+    argument_sizes: HashMap<String, u64>,
+    inherited_entries: Vec<EditableContainerEntry>,
+    inherited_sources: Vec<(String, Vec<EditableContainerEntry>)>,
+}
+
+fn command_entry_context(arguments: &Entity<ArgumentListView>, cx: &App) -> CommandEntryContext {
+    let arguments = arguments.read(cx);
+    let context = arguments.context.borrow();
+    let mut argument_sizes = context.active_argument_sizes();
+    argument_sizes.extend(
+        arguments
+            .rows
+            .iter()
+            .enumerate()
+            .filter_map(|(index, model)| {
+                let argument = arguments
+                    .editors
+                    .get(&index)
+                    .map_or_else(|| model.clone(), |editor| command_argument_data(editor, cx));
+                let size = context
+                    .type_sizes
+                    .get(&argument.type_ref)
+                    .or_else(|| {
+                        context.type_sizes.get(
+                            argument
+                                .type_ref
+                                .rsplit('/')
+                                .next()
+                                .unwrap_or(&argument.type_ref),
+                        )
+                    })
+                    .copied();
+                size.map(|size| (argument.name, size))
+            })
+            .collect::<HashMap<_, _>>(),
+    );
+    CommandEntryContext {
+        argument_sizes,
+        inherited_entries: context.active_container_entries(),
+        inherited_sources: context.active_container_entries_with_sources(),
+    }
+}
+
+fn command_entry_bit_positions_from_sizes(
+    entries: &[EditableContainerEntry],
+    argument_sizes: &HashMap<String, u64>,
+) -> Vec<Option<u64>> {
+    let mut cursor = Some(0_u64);
+    entries
+        .iter()
+        .map(|entry| {
+            let (offset, size) = match entry {
+                EditableContainerEntry::ArgumentRef {
+                    reference, offset, ..
+                } => (
+                    offset
+                        .unwrap_or_default()
+                        .try_into()
+                        .ok()
+                        .and_then(|offset: u64| {
+                            cursor.and_then(|cursor| cursor.checked_add(offset))
+                        }),
+                    argument_sizes.get(reference).copied(),
+                ),
+                EditableContainerEntry::FixedValue { size_in_bits, .. } => (
+                    cursor,
+                    u64::try_from(*size_in_bits).ok().filter(|size| *size > 0),
+                ),
+                EditableContainerEntry::ParameterRef { .. }
+                | EditableContainerEntry::ContainerRef { .. } => (None, None),
+            };
+            cursor = offset.and_then(|offset| size.and_then(|size| offset.checked_add(size)));
+            offset.filter(|_| size.is_some())
+        })
+        .collect()
+}
+
+const COMMAND_LAYOUT_BYTES_PER_ROW: usize = 8;
+const COMMAND_LAYOUT_BIT_WIDTH: f32 = 11.;
+
+struct CommandPacketField {
+    label: String,
+    start_bit: u64,
+    size_bits: u64,
+    inherited: bool,
+    source: String,
+}
+
+struct CommandPacketLayout {
+    fields: Vec<CommandPacketField>,
+    unresolved: Vec<String>,
+    total_bits: u64,
+}
+
+fn command_packet_layout(
+    entries: &[EditableContainerEntry],
+    arguments: &Entity<ArgumentListView>,
+    current_source: &str,
+    cx: &App,
+) -> CommandPacketLayout {
+    let context = command_entry_context(arguments, cx);
+    command_packet_layout_from_sizes(
+        &context.inherited_sources,
+        entries,
+        &context.argument_sizes,
+        current_source,
+    )
+}
+
+fn command_packet_layout_from_sizes(
+    inherited_entries: &[(String, Vec<EditableContainerEntry>)],
+    entries: &[EditableContainerEntry],
+    argument_sizes: &HashMap<String, u64>,
+    current_source: &str,
+) -> CommandPacketLayout {
+    let mut layout = CommandPacketLayout {
+        fields: Vec::new(),
+        unresolved: Vec::new(),
+        total_bits: 0,
+    };
+    let mut cursor = Some(0_u64);
+    for (source, entries) in inherited_entries {
+        append_command_packet_entries(
+            entries,
+            true,
+            source,
+            argument_sizes,
+            &mut cursor,
+            &mut layout,
+        );
+    }
+    append_command_packet_entries(
+        entries,
+        false,
+        current_source,
+        argument_sizes,
+        &mut cursor,
+        &mut layout,
+    );
+    layout.total_bits = cursor.unwrap_or_else(|| {
+        layout
+            .fields
+            .iter()
+            .map(|field| field.start_bit + field.size_bits)
+            .max()
+            .unwrap_or_default()
+    });
+    layout
+}
+
+fn append_command_packet_entries(
+    entries: &[EditableContainerEntry],
+    inherited: bool,
+    source: &str,
+    argument_sizes: &HashMap<String, u64>,
+    cursor: &mut Option<u64>,
+    layout: &mut CommandPacketLayout,
+) {
+    for entry in entries {
+        let (label, start, size) = match entry {
+            EditableContainerEntry::ArgumentRef {
+                reference, offset, ..
+            } => {
+                let offset = u64::try_from(offset.unwrap_or_default()).ok();
+                (
+                    reference.clone(),
+                    cursor.and_then(|cursor| offset.and_then(|offset| cursor.checked_add(offset))),
+                    argument_sizes.get(reference).copied(),
+                )
+            }
+            EditableContainerEntry::FixedValue {
+                name, size_in_bits, ..
+            } => (
+                name.clone().unwrap_or_else(|| "Fixed value".to_owned()),
+                *cursor,
+                u64::try_from(*size_in_bits).ok().filter(|size| *size > 0),
+            ),
+            EditableContainerEntry::ParameterRef { reference, .. } => {
+                layout
+                    .unresolved
+                    .push(format!("{reference}: parameter size is unknown"));
+                *cursor = None;
+                continue;
+            }
+            EditableContainerEntry::ContainerRef { reference, .. } => {
+                layout
+                    .unresolved
+                    .push(format!("{reference}: container size is unknown"));
+                *cursor = None;
+                continue;
+            }
+        };
+        let Some((start, size)) = start.zip(size) else {
+            layout
+                .unresolved
+                .push(format!("{label}: size or offset is unknown"));
+            *cursor = None;
+            continue;
+        };
+        let Some(end) = start.checked_add(size) else {
+            layout
+                .unresolved
+                .push(format!("{label}: range is too large"));
+            *cursor = None;
+            continue;
+        };
+        layout.fields.push(CommandPacketField {
+            label,
+            start_bit: start,
+            size_bits: size,
+            inherited,
+            source: source.to_owned(),
+        });
+        *cursor = Some(end);
+    }
+}
+
+fn render_command_packet_layout(layout: &CommandPacketLayout, cx: &App) -> Div {
+    let bits_per_row = (COMMAND_LAYOUT_BYTES_PER_ROW * 8) as u64;
+    let row_count = usize::try_from(layout.total_bits.div_ceil(bits_per_row)).unwrap_or_default();
+    let mut content = v_flex().w_full().gap_2().child(
+        div()
+            .text_xs()
+            .text_color(cx.theme().muted_foreground)
+            .child("Fixed-size command entries · inherited fields use a lighter shade"),
+    );
+    if row_count == 0 {
+        content = content.child(
+            div()
+                .p_4()
+                .rounded_md()
+                .border_1()
+                .border_color(cx.theme().border)
+                .text_sm()
+                .text_color(cx.theme().muted_foreground)
+                .child("No fixed-size command fields can be resolved."),
+        );
+    } else {
+        content = content.child(
+            div()
+                .id("command-packet-layout-scroll")
+                .w_full()
+                .overflow_x_scroll()
+                .on_scroll_wheel(|_, _, cx| cx.stop_propagation())
+                .child(
+                    v_flex()
+                        .min_w(px(68. + COMMAND_LAYOUT_BIT_WIDTH * bits_per_row as f32))
+                        .gap_1()
+                        .child(
+                            h_flex()
+                                .ml(px(68.))
+                                .children((0..COMMAND_LAYOUT_BYTES_PER_ROW).map(|byte| {
+                                    div()
+                                        .w(px(COMMAND_LAYOUT_BIT_WIDTH * 8.))
+                                        .flex_none()
+                                        .text_xs()
+                                        .text_color(cx.theme().muted_foreground)
+                                        .child(format!("+{byte}"))
+                                })),
+                        )
+                        .children((0..row_count).map(|row| {
+                            let row_start = row as u64 * bits_per_row;
+                            let row_end = row_start + bits_per_row;
+                            let mut cursor = row_start;
+                            let mut segments = Vec::new();
+                            for field in layout.fields.iter().filter(|field| {
+                                field.start_bit < row_end
+                                    && field.start_bit + field.size_bits > row_start
+                            }) {
+                                let start = field.start_bit.max(row_start);
+                                let end = (field.start_bit + field.size_bits).min(row_end);
+                                if start > cursor {
+                                    segments.push(command_packet_segment(
+                                        start - cursor,
+                                        "Unused".to_owned(),
+                                        false,
+                                        false,
+                                        format!("command-layout-gap-{row}-{cursor}"),
+                                        format!("Unused\nBit offset: {cursor}\nSize: {} bits", start - cursor),
+                                        cx,
+                                    ));
+                                }
+                                let label = if field.start_bit < row_start {
+                                    format!("… {}", field.label)
+                                } else if field.size_bits % 8 == 0 {
+                                    format!("{} ({} B)", field.label, field.size_bits / 8)
+                                } else {
+                                    format!("{} ({} b)", field.label, field.size_bits)
+                                };
+                                segments.push(command_packet_segment(
+                                    end - start,
+                                    label,
+                                    true,
+                                    field.inherited,
+                                    format!("command-layout-field-{row}-{}", field.start_bit),
+                                    format!(
+                                        "{}\nBit offset: {} (byte 0x{:04X}, bit {})\nSize: {} bits\nSource: {}",
+                                        field.label,
+                                        field.start_bit,
+                                        field.start_bit / 8,
+                                        field.start_bit % 8,
+                                        field.size_bits,
+                                        field.source
+                                    ),
+                                    cx,
+                                ));
+                                cursor = cursor.max(end);
+                            }
+                            if cursor < row_end {
+                                segments.push(command_packet_segment(
+                                    row_end - cursor,
+                                    "Unused".to_owned(),
+                                    false,
+                                    false,
+                                    format!("command-layout-gap-{row}-{cursor}"),
+                                    format!("Unused\nBit offset: {cursor}\nSize: {} bits", row_end - cursor),
+                                    cx,
+                                ));
+                            }
+                            h_flex()
+                                .child(
+                                    div()
+                                        .w(px(68.))
+                                        .flex_none()
+                                        .text_xs()
+                                        .text_color(cx.theme().muted_foreground)
+                                        .child(format!("0x{:04X}", row_start / 8)),
+                                )
+                                .children(segments)
+                        })),
+                ),
+        );
+    }
+    if !layout.unresolved.is_empty() {
+        content = content.child(
+            v_flex()
+                .gap_1()
+                .text_xs()
+                .text_color(cx.theme().muted_foreground)
+                .child("Unresolved entries")
+                .children(
+                    layout
+                        .unresolved
+                        .iter()
+                        .map(|entry| div().child(format!("• {entry}"))),
+                ),
+        );
+    }
+    content
+}
+
+fn command_packet_segment(
+    bits: u64,
+    label: String,
+    occupied: bool,
+    inherited: bool,
+    id: String,
+    tooltip: String,
+    cx: &App,
+) -> AnyElement {
+    div()
+        .id(id)
+        .w(px(bits as f32 * COMMAND_LAYOUT_BIT_WIDTH))
+        .h(px(42.))
+        .flex_none()
+        .px_1()
+        .flex()
+        .items_center()
+        .border_1()
+        .border_color(cx.theme().border)
+        .when(occupied, |segment| {
+            segment.bg(cx
+                .theme()
+                .sidebar_accent
+                .opacity(if inherited { 0.28 } else { 0.62 }))
+        })
+        .text_xs()
+        .truncate()
+        .child(label)
+        .tooltip(move |window, cx| Tooltip::new(tooltip.clone()).build(window, cx))
+        .into_any_element()
+}
+
 fn encode_container_entries(list: &xtce::CommandContainerEntryListType) -> String {
     list.content
         .iter()
@@ -2979,8 +3631,9 @@ mod tests {
     use super::{
         ArgumentSpec, AssignmentContext, CommandArguments, CommandContainerValues,
         EditableContainerEntry, MetaCommandValues, ValueRule, apply_arguments,
-        apply_container_entries, apply_steps, decode_assignments, default_command_container,
-        default_meta_command, matching_argument_names, move_row_to, swap_rows,
+        apply_container_entries, apply_steps, command_entry_bit_positions_from_sizes,
+        command_packet_layout_from_sizes, decode_assignments, default_command_container,
+        default_meta_command, matching_argument_names, swap_rows,
     };
     use std::collections::HashMap;
 
@@ -3026,12 +3679,109 @@ mod tests {
     }
 
     #[test]
-    fn moving_an_entry_to_a_distant_position_preserves_other_ordering() {
-        let mut rows = vec!["first", "second", "third", "fourth"];
+    fn command_entry_list_displays_bit_positions_instead_of_row_numbers() {
+        let entries = vec![
+            EditableContainerEntry::ArgumentRef {
+                reference: "mode".to_owned(),
+                offset: None,
+                description: None,
+            },
+            EditableContainerEntry::FixedValue {
+                name: Some("marker".to_owned()),
+                binary_value: "1010".to_owned(),
+                size_in_bits: 4,
+            },
+            EditableContainerEntry::ArgumentRef {
+                reference: "value".to_owned(),
+                offset: Some(4),
+                description: None,
+            },
+        ];
+        let sizes = HashMap::from([("mode".to_owned(), 8), ("value".to_owned(), 16)]);
 
-        assert!(move_row_to(&mut rows, 0, 3));
-        assert_eq!(rows, ["second", "third", "fourth", "first"]);
-        assert!(!move_row_to(&mut rows, 4, 0));
+        assert_eq!(
+            command_entry_bit_positions_from_sizes(&entries, &sizes),
+            vec![Some(0), Some(8), Some(16)]
+        );
+    }
+
+    #[test]
+    fn command_entry_positions_include_base_meta_command_containers() {
+        let context = AssignmentContext {
+            current_base: "Derived".to_owned(),
+            commands: HashMap::from([
+                (
+                    "Base".to_owned(),
+                    CommandArguments {
+                        name: "Base".to_owned(),
+                        base_ref: None,
+                        arguments: Vec::new(),
+                        container_entries: vec![EditableContainerEntry::FixedValue {
+                            name: Some("base-header".to_owned()),
+                            binary_value: "0".to_owned(),
+                            size_in_bits: 8,
+                        }],
+                    },
+                ),
+                (
+                    "Derived".to_owned(),
+                    CommandArguments {
+                        name: "Derived".to_owned(),
+                        base_ref: Some("Base".to_owned()),
+                        arguments: Vec::new(),
+                        container_entries: vec![EditableContainerEntry::FixedValue {
+                            name: Some("derived-header".to_owned()),
+                            binary_value: "0".to_owned(),
+                            size_in_bits: 4,
+                        }],
+                    },
+                ),
+            ]),
+            type_rules: HashMap::new(),
+            type_sizes: HashMap::new(),
+            type_names: Vec::new(),
+        };
+        let mut entries = context.active_container_entries();
+        entries.push(EditableContainerEntry::FixedValue {
+            name: Some("current".to_owned()),
+            binary_value: "0".to_owned(),
+            size_in_bits: 16,
+        });
+
+        assert_eq!(
+            command_entry_bit_positions_from_sizes(&entries, &HashMap::new()),
+            vec![Some(0), Some(8), Some(12)]
+        );
+    }
+
+    #[test]
+    fn command_packet_layout_marks_base_meta_command_fields_as_inherited() {
+        let inherited = vec![(
+            "BaseCommand".to_owned(),
+            vec![EditableContainerEntry::FixedValue {
+                name: Some("header".to_owned()),
+                binary_value: "0".to_owned(),
+                size_in_bits: 8,
+            }],
+        )];
+        let entries = vec![EditableContainerEntry::ArgumentRef {
+            reference: "mode".to_owned(),
+            offset: None,
+            description: None,
+        }];
+        let layout = command_packet_layout_from_sizes(
+            &inherited,
+            &entries,
+            &HashMap::from([("mode".to_owned(), 16)]),
+            "CurrentCommand",
+        );
+
+        assert_eq!(layout.total_bits, 24);
+        assert!(layout.fields[0].inherited);
+        assert_eq!(layout.fields[0].source, "BaseCommand");
+        assert_eq!(layout.fields[1].start_bit, 8);
+        assert!(!layout.fields[1].inherited);
+        assert_eq!(layout.fields[1].source, "CurrentCommand");
     }
 
     #[test]
@@ -3092,15 +3842,19 @@ mod tests {
                 (
                     "Base".to_owned(),
                     CommandArguments {
+                        name: "Base".to_owned(),
                         base_ref: None,
                         arguments: vec![("mode".to_owned(), "ModeType".to_owned())],
+                        container_entries: Vec::new(),
                     },
                 ),
                 (
                     "Derived".to_owned(),
                     CommandArguments {
+                        name: "Derived".to_owned(),
                         base_ref: Some("Base".to_owned()),
                         arguments: vec![("count".to_owned(), "/Vehicle/CountType".to_owned())],
+                        container_entries: Vec::new(),
                     },
                 ),
             ]),
@@ -3111,6 +3865,7 @@ mod tests {
                 ),
                 ("CountType".to_owned(), ValueRule::Integer),
             ]),
+            type_sizes: HashMap::new(),
             type_names: vec!["ModeType".to_owned(), "CountType".to_owned()],
         };
 
@@ -3143,6 +3898,7 @@ mod tests {
                     ValueRule::Boolean(vec!["true".to_owned(), "false".to_owned()]),
                 ),
             ]),
+            type_sizes: HashMap::new(),
             type_names: vec![
                 "CountType".to_owned(),
                 "ModeType".to_owned(),

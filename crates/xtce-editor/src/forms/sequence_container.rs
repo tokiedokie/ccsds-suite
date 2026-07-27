@@ -43,6 +43,32 @@ enum AbstractChoice {
 impl_select_item!(AbstractChoice);
 
 #[derive(Clone, Copy, Debug, Display, EnumString, VariantArray, PartialEq, Eq)]
+enum ComparisonOperator {
+    #[strum(serialize = "==")]
+    Equal,
+    #[strum(serialize = "!=")]
+    NotEqual,
+    #[strum(serialize = "<")]
+    Less,
+    #[strum(serialize = "<=")]
+    LessOrEqual,
+    #[strum(serialize = ">")]
+    Greater,
+    #[strum(serialize = ">=")]
+    GreaterOrEqual,
+}
+impl_select_item!(ComparisonOperator);
+
+#[derive(Clone, Copy, Debug, Display, EnumString, VariantArray, PartialEq, Eq)]
+enum CalibratedChoice {
+    #[strum(serialize = "Calibrated value")]
+    CalibratedValue,
+    #[strum(serialize = "Raw value")]
+    RawValue,
+}
+impl_select_item!(CalibratedChoice);
+
+#[derive(Clone, Copy, Debug, Display, EnumString, VariantArray, PartialEq, Eq)]
 enum EntryKind {
     #[strum(serialize = "ParameterRefEntry")]
     ParameterReference,
@@ -68,7 +94,7 @@ pub(super) struct SequenceContainerForm {
     binary_encoding: Entity<ContainerBinaryEncodingForm>,
     base_container_present: Rc<Cell<bool>>,
     base_container_ref_input: Entity<InputState>,
-    restriction_criteria_input: Entity<InputState>,
+    comparisons: Entity<ComparisonListForm>,
     restriction_criteria_editable: bool,
     reference_context: Rc<RefCell<ReferenceContext>>,
     entry_list: Entity<TelemetryEntryListView>,
@@ -131,10 +157,17 @@ impl SequenceContainerForm {
                     rows_from_entry_list(values.entry_list),
                     reference_context.clone(),
                     base_container_ref_input.clone(),
+                    name_input.clone(),
                     window,
                     cx,
                 )
             });
+            let comparisons = ComparisonListForm::new(
+                &values.restriction_criteria,
+                reference_context.clone(),
+                window,
+                cx,
+            );
             Self {
                 name_input,
                 abstract_select: select(
@@ -161,7 +194,7 @@ impl SequenceContainerForm {
                 binary_encoding,
                 base_container_present: Rc::new(Cell::new(values.base_container_present)),
                 base_container_ref_input,
-                restriction_criteria_input: input(&values.restriction_criteria, true, window, cx),
+                comparisons,
                 restriction_criteria_editable: values.restriction_criteria_editable,
                 reference_context,
                 entry_list,
@@ -232,15 +265,14 @@ impl SequenceContainerForm {
             (&self.short_description_input, values.short_description),
             (&self.long_description_input, values.long_description),
             (&self.base_container_ref_input, values.base_container_ref),
-            (
-                &self.restriction_criteria_input,
-                values.restriction_criteria,
-            ),
         ] {
             input.update(cx, |input, cx| input.set_value(value, window, cx));
         }
         self.entry_list.update(cx, |list, cx| {
             list.set_rows(rows_from_entry_list(values.entry_list), cx);
+        });
+        self.comparisons.update(cx, |form, cx| {
+            form.load(&values.restriction_criteria, window, cx);
         });
         cx.notify();
     }
@@ -285,8 +317,7 @@ impl SequenceContainerForm {
                 });
             base.container_ref = value(&self.base_container_ref_input, cx);
             if self.restriction_criteria_editable {
-                base.restriction_criteria =
-                    decode_restriction_criteria(&value(&self.restriction_criteria_input, cx));
+                base.restriction_criteria = self.comparisons.read(cx).to_criteria(cx);
             }
         } else {
             container.base_container = None;
@@ -369,12 +400,7 @@ impl SequenceContainerForm {
                                     .content(if self.restriction_criteria_editable {
                                         v_flex()
                                             .pt_3()
-                                            .child(field(
-                                                "Comparisons",
-                                                "parameter reference | operator | value | instance | calibrated",
-                                                &self.restriction_criteria_input,
-                                                cx,
-                                            ))
+                                            .child(self.comparisons.clone())
                                             .into_any_element()
                                     } else {
                                         div()
@@ -527,8 +553,10 @@ struct TelemetryEntryListView {
     cache_order: VecDeque<usize>,
     context: Rc<RefCell<ReferenceContext>>,
     base_container_ref_input: Entity<InputState>,
+    container_name_input: Entity<InputState>,
     optional_columns_visible: Rc<Cell<bool>>,
     packet_layout_open: bool,
+    bit_positions: Vec<Option<u64>>,
     list_state: ListState,
 }
 
@@ -543,15 +571,221 @@ struct TelemetryEntryRow {
     _subscriptions: Vec<Subscription>,
 }
 
+struct ComparisonListForm {
+    rows: Vec<Entity<ComparisonRowForm>>,
+    context: Rc<RefCell<ReferenceContext>>,
+}
+
+struct ComparisonRowForm {
+    parameter_ref: Entity<InputState>,
+    operator: Entity<SelectState<Vec<ComparisonOperator>>>,
+    comparison_value: Entity<InputState>,
+    instance: Entity<InputState>,
+    calibrated: Entity<SelectState<Vec<CalibratedChoice>>>,
+}
+
+impl ComparisonListForm {
+    fn new(
+        value: &str,
+        context: Rc<RefCell<ReferenceContext>>,
+        window: &mut Window,
+        cx: &mut impl AppContext,
+    ) -> Entity<Self> {
+        let rows = comparison_models(value)
+            .into_iter()
+            .map(|model| comparison_row(model, context.clone(), window, cx))
+            .collect();
+        cx.new(move |_| Self { rows, context })
+    }
+
+    fn load(&mut self, value: &str, window: &mut Window, cx: &mut Context<Self>) {
+        self.rows = comparison_models(value)
+            .into_iter()
+            .map(|model| comparison_row(model, self.context.clone(), window, cx))
+            .collect();
+        cx.notify();
+    }
+
+    fn to_criteria(&self, cx: &App) -> Option<xtce::RestrictionCriteriaType> {
+        let comparison = self
+            .rows
+            .iter()
+            .filter_map(|row| {
+                let row = row.read(cx);
+                let parameter_ref = value(&row.parameter_ref, cx).trim().to_owned();
+                let comparison_value = value(&row.comparison_value, cx).trim().to_owned();
+                if parameter_ref.is_empty() || comparison_value.is_empty() {
+                    return None;
+                }
+                Some(xtce::ComparisonType {
+                    parameter_ref,
+                    comparison_operator: selected_value(
+                        &row.operator,
+                        ComparisonOperator::Equal,
+                        cx,
+                    )
+                    .to_string(),
+                    value: comparison_value,
+                    instance: value(&row.instance, cx)
+                        .trim()
+                        .parse()
+                        .unwrap_or_else(|_| xtce::ComparisonType::default_instance()),
+                    use_calibrated_value: selected_value(
+                        &row.calibrated,
+                        CalibratedChoice::CalibratedValue,
+                        cx,
+                    ) == CalibratedChoice::CalibratedValue,
+                })
+            })
+            .collect::<Vec<_>>();
+        (!comparison.is_empty()).then_some(xtce::RestrictionCriteriaType {
+            content: Some(xtce::RestrictionCriteriaTypeContent::ComparisonList(
+                xtce::ComparisonListType { comparison },
+            )),
+        })
+    }
+}
+
+impl Render for ComparisonListForm {
+    fn render(&mut self, _: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+        let count = self.rows.len();
+        v_flex()
+            .w_full()
+            .gap_3()
+            .child(
+                h_flex()
+                    .justify_between()
+                    .child(
+                        v_flex()
+                            .child(div().text_sm().font_medium().child("Comparisons"))
+                            .child(
+                                div()
+                                    .text_xs()
+                                    .text_color(cx.theme().muted_foreground)
+                                    .child("All comparison rows must evaluate to true"),
+                            ),
+                    )
+                    .child(
+                        Button::new("add-restriction-comparison")
+                            .small()
+                            .icon(IconName::Plus)
+                            .label("Add comparison")
+                            .on_click(cx.listener(|this, _, window, cx| {
+                                this.rows.push(comparison_row(
+                                    ComparisonRowModel::default(),
+                                    this.context.clone(),
+                                    window,
+                                    cx,
+                                ));
+                                cx.notify();
+                            })),
+                    ),
+            )
+            .child(
+                div()
+                    .id("comparison-table-scroll")
+                    .w_full()
+                    .overflow_x_scroll()
+                    .child(
+                        v_flex()
+                            .min_w(px(820.))
+                            .rounded_md()
+                            .border_1()
+                            .border_color(cx.theme().border)
+                            .child(
+                                h_flex()
+                                    .h(px(34.))
+                                    .px_2()
+                                    .gap_2()
+                                    .bg(cx.theme().muted.opacity(0.5))
+                                    .text_xs()
+                                    .font_medium()
+                                    .child(div().flex_1().child("Parameter reference"))
+                                    .child(div().w(px(110.)).child("Operator"))
+                                    .child(div().flex_1().child("Value"))
+                                    .child(div().w(px(90.)).child("Instance"))
+                                    .child(div().w(px(130.)).child("Compare using"))
+                                    .child(div().w(px(52.)).child("Actions")),
+                            )
+                            .children(self.rows.iter().enumerate().map(|(index, row)| {
+                                h_flex()
+                                    .h(px(52.))
+                                    .px_2()
+                                    .gap_2()
+                                    .border_b_1()
+                                    .border_color(cx.theme().border)
+                                    .child(row.clone())
+                                    .child(
+                                        div().w(px(52.)).flex_none().child(
+                                            Button::new(format!(
+                                                "remove-restriction-comparison-{index}"
+                                            ))
+                                            .small()
+                                            .ghost()
+                                            .icon(IconName::Minus)
+                                            .tooltip("Remove comparison")
+                                            .on_click(cx.listener(move |this, _, _, cx| {
+                                                if index < this.rows.len() {
+                                                    this.rows.remove(index);
+                                                    cx.notify();
+                                                }
+                                            })),
+                                        ),
+                                    )
+                            })),
+                    ),
+            )
+            .when(count == 0, |form| {
+                form.child(
+                    div()
+                        .text_xs()
+                        .text_color(cx.theme().muted_foreground)
+                        .child("No restriction comparison is defined."),
+                )
+            })
+    }
+}
+
+impl Render for ComparisonRowForm {
+    fn render(&mut self, _: &mut Window, _: &mut Context<Self>) -> impl IntoElement {
+        h_flex()
+            .flex_1()
+            .min_w_0()
+            .gap_2()
+            .child(div().flex_1().child(Input::new(&self.parameter_ref)))
+            .child(
+                div()
+                    .w(px(110.))
+                    .flex_none()
+                    .child(Select::new(&self.operator).w_full()),
+            )
+            .child(div().flex_1().child(Input::new(&self.comparison_value)))
+            .child(
+                div()
+                    .w(px(90.))
+                    .flex_none()
+                    .child(Input::new(&self.instance)),
+            )
+            .child(
+                div()
+                    .w(px(130.))
+                    .flex_none()
+                    .child(Select::new(&self.calibrated).w_full()),
+            )
+    }
+}
+
 impl TelemetryEntryListView {
     fn new(
         rows: Vec<EntryRowData>,
         context: Rc<RefCell<ReferenceContext>>,
         base_container_ref_input: Entity<InputState>,
+        container_name_input: Entity<InputState>,
         _: &mut Window,
         _: &mut Context<Self>,
     ) -> Self {
         let optional_columns_visible = Rc::new(Cell::new(false));
+        let row_count = rows.len();
         Self {
             list_state: ListState::new(rows.len(), ListAlignment::Top, px(58.))
                 .with_uniform_item_height(px(54.)),
@@ -560,8 +794,10 @@ impl TelemetryEntryListView {
             cache_order: VecDeque::new(),
             context,
             base_container_ref_input,
+            container_name_input,
             optional_columns_visible,
             packet_layout_open: true,
+            bit_positions: vec![None; row_count],
         }
     }
 
@@ -571,6 +807,7 @@ impl TelemetryEntryListView {
         self.cache_order.clear();
         self.optional_columns_visible.set(false);
         self.packet_layout_open = true;
+        self.bit_positions = vec![None; self.rows.len()];
         self.list_state
             .reset_with_uniform_height(self.rows.len(), px(54.));
         cx.notify();
@@ -732,11 +969,13 @@ impl TelemetryEntryListView {
             .border_b_1()
             .border_color(cx.theme().border)
             .child(
-                div()
-                    .w(px(44.))
-                    .flex_none()
-                    .text_sm()
-                    .child((index + 1).to_string()),
+                div().w(px(72.)).flex_none().text_sm().child(
+                    self.bit_positions
+                        .get(index)
+                        .copied()
+                        .flatten()
+                        .map_or_else(|| "—".to_owned(), |position| position.to_string()),
+                ),
             )
             .child(controls)
             .child(content)
@@ -749,17 +988,27 @@ impl Render for TelemetryEntryListView {
         let row_count = self.rows.len();
         let optional_columns_visible = self.optional_columns_visible.get();
         let reference_context = self.context.clone();
-        let packet_layout = self.packet_layout_open.then(|| {
-            let rows = self.current_rows(cx);
+        let rows = self.current_rows(cx);
+        let base_container_ref = value(&self.base_container_ref_input, cx);
+        let container_name = value(&self.container_name_input, cx);
+        let packet_layout = {
             let context = self.context.borrow();
-            let base_container_ref = value(&self.base_container_ref_input, cx);
-            packet_layout(
+            self.bit_positions = entry_bit_positions(
                 &rows,
                 &context.parameter_sizes,
                 &base_container_ref,
                 &context.container_layouts,
-            )
-        });
+            );
+            self.packet_layout_open.then(|| {
+                packet_layout(
+                    &rows,
+                    &context.parameter_sizes,
+                    &base_container_ref,
+                    &context.container_layouts,
+                    &container_name,
+                )
+            })
+        };
         v_flex()
             .id("telemetry-entry-list-drop-target")
             .w_full()
@@ -848,9 +1097,9 @@ impl Render for TelemetryEntryListView {
                             .child(
                                 v_flex()
                                     .min_w(if optional_columns_visible {
-                                        px(870.)
+                                        px(898.)
                                     } else {
-                                        px(610.)
+                                        px(638.)
                                     })
                                     .rounded_md()
                                     .border_1()
@@ -863,7 +1112,7 @@ impl Render for TelemetryEntryListView {
                                             .bg(cx.theme().muted.opacity(0.5))
                                             .text_xs()
                                             .font_medium()
-                                            .child(div().w(px(44.)).child("#"))
+                                            .child(div().w(px(72.)).child("Bit position"))
                                             .child(div().w(px(98.)).child("Actions"))
                                             .child(div().w(px(170.)).child("Type"))
                                             .child(div().flex_1().child("Reference"))
@@ -935,6 +1184,7 @@ struct PacketField {
     start_bit: u64,
     size_bits: u64,
     inherited: bool,
+    source: String,
 }
 
 struct PacketLayout {
@@ -948,6 +1198,7 @@ fn packet_layout(
     parameter_sizes: &HashMap<String, u64>,
     base_container_ref: &str,
     container_layouts: &HashMap<String, ContainerLayoutSource>,
+    current_source: &str,
 ) -> PacketLayout {
     let mut layout = PacketLayout {
         fields: Vec::new(),
@@ -965,7 +1216,14 @@ fn packet_layout(
             &mut layout,
         );
     }
-    append_packet_rows(rows, false, parameter_sizes, &mut cursor, &mut layout);
+    append_packet_rows(
+        rows,
+        false,
+        current_source,
+        parameter_sizes,
+        &mut cursor,
+        &mut layout,
+    );
     layout.total_bits = cursor.unwrap_or_else(|| {
         layout
             .fields
@@ -975,6 +1233,59 @@ fn packet_layout(
             .unwrap_or(0)
     });
     layout
+}
+
+fn entry_bit_positions(
+    rows: &[EntryRowData],
+    parameter_sizes: &HashMap<String, u64>,
+    base_container_ref: &str,
+    container_layouts: &HashMap<String, ContainerLayoutSource>,
+) -> Vec<Option<u64>> {
+    let mut base_layout = PacketLayout {
+        fields: Vec::new(),
+        total_bits: 0,
+        unresolved: Vec::new(),
+    };
+    let mut cursor = Some(0_u64);
+    if !base_container_ref.trim().is_empty() {
+        append_base_container(
+            base_container_ref.trim(),
+            parameter_sizes,
+            container_layouts,
+            &mut HashSet::new(),
+            &mut cursor,
+            &mut base_layout,
+        );
+    }
+
+    rows.iter()
+        .map(|row| {
+            let EntryRowContent::Editable {
+                kind,
+                reference,
+                offset,
+                ..
+            } = &row.content
+            else {
+                cursor = None;
+                return None;
+            };
+            if *kind != EntryKind::ParameterReference {
+                cursor = None;
+                return None;
+            }
+            let offset = if offset.trim().is_empty() {
+                Some(0)
+            } else {
+                offset.trim().parse::<u64>().ok()
+            };
+            let start =
+                cursor.and_then(|position| offset.and_then(|offset| position.checked_add(offset)));
+            let size = parameter_sizes.get(reference).copied();
+            cursor = start.and_then(|start| size.and_then(|size| start.checked_add(size)));
+            start.filter(|_| size.is_some())
+        })
+        .collect()
 }
 
 fn append_base_container(
@@ -1013,13 +1324,14 @@ fn append_base_container(
             layout,
         );
     }
-    append_packet_rows(&source.rows, true, parameter_sizes, cursor, layout);
+    append_packet_rows(&source.rows, true, name, parameter_sizes, cursor, layout);
     visited.remove(name);
 }
 
 fn append_packet_rows(
     rows: &[EntryRowData],
     inherited: bool,
+    source: &str,
     parameter_sizes: &HashMap<String, u64>,
     cursor: &mut Option<u64>,
     layout: &mut PacketLayout,
@@ -1076,6 +1388,7 @@ fn append_packet_rows(
             start_bit: start,
             size_bits: size,
             inherited,
+            source: source.to_owned(),
         });
         *cursor = Some(end);
     }
@@ -1180,11 +1493,7 @@ fn render_packet_layout(layout: &PacketLayout, cx: &App) -> Div {
                                         } else {
                                             String::new()
                                         },
-                                        if field.inherited {
-                                            "Base Container"
-                                        } else {
-                                            "Current Container"
-                                        }
+                                        field.source
                                     ),
                                     cx,
                                 ));
@@ -1790,6 +2099,7 @@ fn positive_size(size: i64) -> Option<u64> {
 
 enum CompletionTarget {
     Container,
+    Parameter,
     Entry(Entity<SelectState<Vec<EntryKind>>>),
 }
 
@@ -1812,6 +2122,7 @@ impl CompletionProvider for ReferenceCompletionProvider {
         let context = self.context.borrow();
         let names = match &self.target {
             CompletionTarget::Container => &context.container_names,
+            CompletionTarget::Parameter => &context.parameter_names,
             CompletionTarget::Entry(kind) => {
                 if selected_value(kind, EntryKind::ParameterReference, cx)
                     == EntryKind::ParameterReference
@@ -1933,6 +2244,81 @@ fn encode_comparison(comparison: &xtce::ComparisonType) -> String {
     )
 }
 
+struct ComparisonRowModel {
+    parameter_ref: String,
+    operator: String,
+    comparison_value: String,
+    instance: String,
+    calibrated: bool,
+}
+
+impl Default for ComparisonRowModel {
+    fn default() -> Self {
+        Self {
+            parameter_ref: String::new(),
+            operator: "==".to_owned(),
+            comparison_value: String::new(),
+            instance: "0".to_owned(),
+            calibrated: true,
+        }
+    }
+}
+
+fn comparison_models(value: &str) -> Vec<ComparisonRowModel> {
+    value
+        .lines()
+        .filter_map(|line| {
+            let fields = line.split('|').map(str::trim).collect::<Vec<_>>();
+            Some(ComparisonRowModel {
+                parameter_ref: fields.first()?.to_string(),
+                operator: fields.get(1).copied().unwrap_or("==").to_owned(),
+                comparison_value: fields.get(2).copied().unwrap_or_default().to_owned(),
+                instance: fields.get(3).copied().unwrap_or("0").to_owned(),
+                calibrated: fields
+                    .get(4)
+                    .and_then(|value| value.parse().ok())
+                    .unwrap_or(true),
+            })
+        })
+        .collect()
+}
+
+fn comparison_row(
+    model: ComparisonRowModel,
+    context: Rc<RefCell<ReferenceContext>>,
+    window: &mut Window,
+    cx: &mut impl AppContext,
+) -> Entity<ComparisonRowForm> {
+    cx.new(|cx| ComparisonRowForm {
+        parameter_ref: completion_input(
+            &model.parameter_ref,
+            CompletionTarget::Parameter,
+            context,
+            window,
+            cx,
+        ),
+        operator: select(
+            ComparisonOperator::VARIANTS,
+            model.operator.parse().unwrap_or(ComparisonOperator::Equal),
+            window,
+            cx,
+        ),
+        comparison_value: input(&model.comparison_value, false, window, cx),
+        instance: input(&model.instance, false, window, cx),
+        calibrated: select(
+            CalibratedChoice::VARIANTS,
+            if model.calibrated {
+                CalibratedChoice::CalibratedValue
+            } else {
+                CalibratedChoice::RawValue
+            },
+            window,
+            cx,
+        ),
+    })
+}
+
+#[cfg(test)]
 fn decode_restriction_criteria(value: &str) -> Option<xtce::RestrictionCriteriaType> {
     let comparison = value
         .lines()
@@ -2102,9 +2488,9 @@ mod tests {
 
     use super::{
         ContainerLayoutSource, EntryKind, EntryRowContent, EntryRowData, PacketField,
-        apply_entry_rows, binary_encoding_size, decode_restriction_criteria, fixed_integer_value,
-        float_encoding_size, packet_layout, parameter_type_sizes, restriction_criteria_values,
-        rows_from_entry_list, string_encoding_size,
+        apply_entry_rows, binary_encoding_size, decode_restriction_criteria, entry_bit_positions,
+        fixed_integer_value, float_encoding_size, packet_layout, parameter_type_sizes,
+        restriction_criteria_values, rows_from_entry_list, string_encoding_size,
     };
 
     #[test]
@@ -2261,7 +2647,7 @@ mod tests {
         ];
         let sizes = HashMap::from([("apid".to_owned(), 16), ("temperature".to_owned(), 8)]);
 
-        let layout = packet_layout(&rows, &sizes, "", &HashMap::new());
+        let layout = packet_layout(&rows, &sizes, "", &HashMap::new(), "CurrentPacket");
 
         assert_eq!(
             layout.fields,
@@ -2271,12 +2657,14 @@ mod tests {
                     start_bit: 0,
                     size_bits: 16,
                     inherited: false,
+                    source: "CurrentPacket".to_owned(),
                 },
                 PacketField {
                     label: "temperature".to_owned(),
                     start_bit: 16,
                     size_bits: 8,
                     inherited: false,
+                    source: "CurrentPacket".to_owned(),
                 },
             ]
         );
@@ -2285,10 +2673,29 @@ mod tests {
     }
 
     #[test]
+    fn entry_list_positions_use_packet_bit_offsets_instead_of_row_numbers() {
+        let mut payload = EntryRowData::new_parameter_reference("payload".to_owned());
+        let EntryRowContent::Editable { offset, .. } = &mut payload.content else {
+            unreachable!()
+        };
+        *offset = "4".to_owned();
+        let rows = vec![
+            EntryRowData::new_parameter_reference("header".to_owned()),
+            payload,
+        ];
+        let sizes = HashMap::from([("header".to_owned(), 12), ("payload".to_owned(), 8)]);
+
+        assert_eq!(
+            entry_bit_positions(&rows, &sizes, "", &HashMap::new()),
+            vec![Some(0), Some(16)]
+        );
+    }
+
+    #[test]
     fn packet_layout_reports_parameters_with_unknown_sizes() {
         let rows = vec![EntryRowData::new_parameter_reference("payload".to_owned())];
 
-        let layout = packet_layout(&rows, &HashMap::new(), "", &HashMap::new());
+        let layout = packet_layout(&rows, &HashMap::new(), "", &HashMap::new(), "Packet");
 
         assert!(layout.fields.is_empty());
         assert_eq!(layout.unresolved, vec!["payload: size is unknown"]);
@@ -2306,14 +2713,16 @@ mod tests {
             },
         )]);
 
-        let layout = packet_layout(&rows, &sizes, "BasePacket", &containers);
+        let layout = packet_layout(&rows, &sizes, "BasePacket", &containers, "CurrentPacket");
 
         assert_eq!(layout.fields[0].label, "header");
         assert_eq!(layout.fields[0].start_bit, 0);
         assert!(layout.fields[0].inherited);
+        assert_eq!(layout.fields[0].source, "BasePacket");
         assert_eq!(layout.fields[1].label, "payload");
         assert_eq!(layout.fields[1].start_bit, 16);
         assert!(!layout.fields[1].inherited);
+        assert_eq!(layout.fields[1].source, "CurrentPacket");
     }
 
     #[test]
