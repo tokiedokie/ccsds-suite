@@ -102,7 +102,9 @@ impl TelemetryMetaDataForm {
                         ]
                     })
                     .collect::<Vec<_>>();
-                let targets = no_targets(rows.len());
+                let targets = (0..rows.len())
+                    .map(|index| Some(ElementKind::Message(index)))
+                    .collect();
                 collection_summary(
                     &["Name", "Container reference"],
                     rows,

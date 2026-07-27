@@ -10,6 +10,8 @@ mod default_calibrator;
 mod element_forms;
 mod enumeration_list;
 mod header;
+mod message;
+pub(super) mod message_set;
 mod meta_command;
 mod parameter;
 mod parameter_type;

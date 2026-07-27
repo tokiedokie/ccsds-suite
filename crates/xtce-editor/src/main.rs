@@ -39,6 +39,7 @@ enum ElementKind {
     ContainerSet,
     SequenceContainer(usize),
     MessageSet,
+    Message(usize),
     TelemetryStreamSet,
     TelemetryAlgorithmSet,
     CommandMetaData,
@@ -68,6 +69,7 @@ impl ElementKind {
             Self::ContainerSet => "ContainerSet",
             Self::SequenceContainer(_) => "SequenceContainer",
             Self::MessageSet => "MessageSet",
+            Self::Message(_) => "Message",
             Self::TelemetryStreamSet | Self::CommandStreamSet => "StreamSet",
             Self::TelemetryAlgorithmSet | Self::CommandAlgorithmSet => "AlgorithmSet",
             Self::CommandMetaData => "CommandMetaData",
@@ -87,6 +89,7 @@ impl ElementKind {
                 | Self::CommandParameterTypeSet
                 | Self::TelemetryParameterSet
                 | Self::ContainerSet
+                | Self::MessageSet
                 | Self::CommandParameterSet
                 | Self::ArgumentTypeSet
                 | Self::MetaCommandSet
@@ -129,7 +132,7 @@ impl ElementKind {
             Self::TelemetryParameterType(_) | Self::CommandParameterType(_) => IconName::Settings2,
             Self::TelemetryParameter(_) | Self::CommandParameter(_) => IconName::Asterisk,
             Self::SequenceContainer(_) | Self::CommandContainerSet => IconName::Frame,
-            Self::MessageSet => IconName::Inbox,
+            Self::MessageSet | Self::Message(_) => IconName::Inbox,
             Self::TelemetryStreamSet | Self::CommandStreamSet => IconName::GalleryVerticalEnd,
             Self::TelemetryAlgorithmSet | Self::CommandAlgorithmSet => IconName::Bot,
             Self::ArgumentType(_) => IconName::CaseSensitive,
@@ -697,6 +700,34 @@ impl XtceDocument {
                 set.content.push(Self::new_sequence_container(name));
                 Some(ElementKind::SequenceContainer(index))
             }
+            ElementKind::MessageSet => {
+                let metadata = system.telemetry_meta_data.as_mut()?;
+                let set = metadata
+                    .message_set
+                    .get_or_insert_with(forms::message_set::default_message_set);
+                let index = set.message.len();
+                let name = Self::next_unique_name("Message", |candidate| {
+                    set.message.iter().any(|message| message.name == candidate)
+                });
+                set.message.push(xtce::MessageType {
+                    short_description: None,
+                    name,
+                    long_description: None,
+                    alias_set: None,
+                    ancillary_data_set: None,
+                    match_criteria: xtce::MatchCriteriaType::Comparison(xtce::ComparisonType {
+                        parameter_ref: String::new(),
+                        instance: xtce::ComparisonType::default_instance(),
+                        use_calibrated_value: xtce::ComparisonType::default_use_calibrated_value(),
+                        comparison_operator: xtce::ComparisonType::default_comparison_operator(),
+                        value: "0".to_owned(),
+                    }),
+                    container_ref: xtce::ContainerRefType {
+                        container_ref: String::new(),
+                    },
+                });
+                Some(ElementKind::Message(index))
+            }
             ElementKind::CommandParameterSet => {
                 let type_ref = system
                     .command_meta_data
@@ -1025,8 +1056,28 @@ impl XtceDocument {
                     child_level + 2,
                 );
             }
+            let messages = metadata
+                .message_set
+                .as_ref()
+                .map(|set| set.message.as_slice())
+                .unwrap_or_default();
+            Self::push_tree_node(
+                nodes,
+                path,
+                ElementKind::MessageSet,
+                child_level + 1,
+                !messages.is_empty(),
+            );
+            for (index, message) in messages.iter().enumerate() {
+                Self::push_named_tree_node(
+                    nodes,
+                    path,
+                    ElementKind::Message(index),
+                    message.name.clone(),
+                    child_level + 2,
+                );
+            }
             for (present, kind) in [
-                (metadata.message_set.is_some(), ElementKind::MessageSet),
                 (
                     metadata.stream_set.is_some(),
                     ElementKind::TelemetryStreamSet,
@@ -2465,6 +2516,84 @@ mod tests {
             1
         );
         XtceDocument::serialize(&document).expect("materialized sets should serialize");
+    }
+
+    #[test]
+    fn adding_a_message_materializes_its_set_and_tree_node() {
+        let mut document = XtceDocument::untitled().root;
+        assert!(XtceDocument::add_metadata(
+            &mut document,
+            ElementKind::TelemetryMetaData
+        ));
+
+        let message = XtceDocument::add_collection_item(&mut document, ElementKind::MessageSet);
+
+        assert_eq!(message, Some(ElementKind::Message(0)));
+        let set = document
+            .telemetry_meta_data
+            .as_ref()
+            .and_then(|metadata| metadata.message_set.as_ref())
+            .expect("message set");
+        assert_eq!(set.message.len(), 1);
+        assert_eq!(set.message[0].name, "Message1");
+        assert!(set.message[0].container_ref.container_ref.is_empty());
+        let xtce::MatchCriteriaType::Comparison(comparison) = &set.message[0].match_criteria else {
+            panic!("new messages should start with one comparison");
+        };
+        assert!(comparison.parameter_ref.is_empty());
+
+        let mut nodes = Vec::new();
+        XtceDocument::collect_tree_nodes(&document, &mut Vec::new(), 0, &mut nodes);
+        assert!(
+            nodes.iter().any(|node| {
+                node.selection.kind == ElementKind::MessageSet && node.has_children
+            })
+        );
+        assert!(nodes.iter().any(|node| {
+            node.selection.kind == ElementKind::Message(0) && node.label == "Message1"
+        }));
+    }
+
+    #[test]
+    fn message_survives_xtce_xml_round_trip() {
+        let mut root = XtceDocument::untitled().root;
+        assert!(XtceDocument::add_metadata(
+            &mut root,
+            ElementKind::TelemetryMetaData
+        ));
+        assert_eq!(
+            XtceDocument::add_collection_item(&mut root, ElementKind::MessageSet),
+            Some(ElementKind::Message(0))
+        );
+        let message = &mut root
+            .telemetry_meta_data
+            .as_mut()
+            .unwrap()
+            .message_set
+            .as_mut()
+            .unwrap()
+            .message[0];
+        message.name = "HousekeepingMessage".to_owned();
+        message.container_ref.container_ref = "/Vehicle/Housekeeping".to_owned();
+
+        let xml = XtceDocument::serialize(&root).expect("message document should serialize");
+        let decoded =
+            XtceDocument::from_xml(&xml, "messages.xml".to_owned()).expect("message should decode");
+        let decoded_message = &decoded
+            .root
+            .telemetry_meta_data
+            .as_ref()
+            .unwrap()
+            .message_set
+            .as_ref()
+            .unwrap()
+            .message[0];
+
+        assert_eq!(decoded_message.name, "HousekeepingMessage");
+        assert_eq!(
+            decoded_message.container_ref.container_ref,
+            "/Vehicle/Housekeeping"
+        );
     }
 
     #[test]

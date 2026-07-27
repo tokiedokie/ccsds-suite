@@ -3,7 +3,8 @@ use gpui::{App, Context, Div, Entity, ParentElement, Styled, WeakEntity, Window}
 use super::{
     alias_set::AliasSetForm, ancillary_data_set::AncillaryDataSetForm,
     argument_type::ArgumentTypeForm, command_metadata::CommandMetaDataForm, header::HeaderForm,
-    meta_command::MetaCommandForm, parameter::ParameterForm, parameter_type::ParameterTypeForm,
+    message::MessageForm, message_set::MessageSetForm, meta_command::MetaCommandForm,
+    parameter::ParameterForm, parameter_type::ParameterTypeForm,
     sequence_container::SequenceContainerForm, service_set::ServiceSetForm,
     space_system::SpaceSystemForm, telemetry_metadata::TelemetryMetaDataForm,
 };
@@ -17,6 +18,8 @@ pub(crate) struct ElementForms {
     header: HeaderForm,
     telemetry_metadata: TelemetryMetaDataForm,
     command_metadata: CommandMetaDataForm,
+    message_set: MessageSetForm,
+    message: Entity<MessageForm>,
     parameter: Entity<ParameterForm>,
     parameter_type: Entity<ParameterTypeForm>,
     sequence_container: Entity<SequenceContainerForm>,
@@ -62,6 +65,10 @@ impl ElementForms {
                 .and_then(|set| set.content.get(index))
                 .map(XtceDocument::meta_command_label)
                 .unwrap_or_else(|| kind.label().to_owned()),
+            ElementKind::Message(index) => message_set(system)
+                .and_then(|set| set.message.get(index))
+                .map(|message| message.name.clone())
+                .unwrap_or_else(|| kind.label().to_owned()),
             _ => kind.label().to_owned(),
         }
     }
@@ -96,6 +103,7 @@ impl ElementForms {
             ElementKind::ArgumentType(_) => Some(self.argument_type.read(cx).name(cx)),
             ElementKind::SequenceContainer(_) => Some(self.sequence_container.read(cx).name(cx)),
             ElementKind::MetaCommand(_) => Some(self.meta_command.read(cx).name(cx)),
+            ElementKind::Message(_) => Some(self.message.read(cx).name(cx)),
             _ => None,
         }
     }
@@ -132,6 +140,7 @@ impl ElementForms {
                 Some(self.sequence_container.read(cx).render_name_editor())
             }
             ElementKind::MetaCommand(_) => Some(self.meta_command.read(cx).render_name_editor()),
+            ElementKind::Message(_) => Some(self.message.read(cx).render_name_editor()),
             _ => None,
         }
     }
@@ -153,6 +162,19 @@ impl ElementForms {
             header: HeaderForm::new(system.header.as_ref(), window, cx),
             telemetry_metadata: TelemetryMetaDataForm,
             command_metadata: CommandMetaDataForm,
+            message_set: MessageSetForm::new(
+                system
+                    .telemetry_meta_data
+                    .as_ref()
+                    .and_then(|metadata| metadata.message_set.as_ref()),
+                window,
+                cx,
+            ),
+            message: MessageForm::new(
+                message_set(system).and_then(|set| set.message.first()),
+                window,
+                cx,
+            ),
             parameter: ParameterForm::new(
                 telemetry_parameter_set(system).and_then(|set| set.content.first()),
                 telemetry_parameter_type_set(system),
@@ -273,6 +295,25 @@ impl ElementForms {
                     );
                 });
             }
+            ElementKind::MessageSet => {
+                self.message_set.load(
+                    system
+                        .telemetry_meta_data
+                        .as_ref()
+                        .and_then(|metadata| metadata.message_set.as_ref()),
+                    window,
+                    cx,
+                );
+            }
+            ElementKind::Message(index) => {
+                self.message.update(cx, |form, cx| {
+                    form.load(
+                        message_set(system).and_then(|set| set.message.get(index)),
+                        window,
+                        cx,
+                    );
+                });
+            }
             ElementKind::ServiceSet => {
                 self.service_set.update(cx, |form, cx| {
                     form.load(system.service_set.as_ref(), window, cx);
@@ -340,6 +381,18 @@ impl ElementForms {
                     self.meta_command.read(cx).apply_to(command, cx);
                 }
             }
+            ElementKind::MessageSet => {
+                if let Some(metadata) = system.telemetry_meta_data.as_mut() {
+                    self.message_set.apply_to(&mut metadata.message_set, cx);
+                }
+            }
+            ElementKind::Message(index) => {
+                if let Some(message) =
+                    message_set_mut(system).and_then(|set| set.message.get_mut(index))
+                {
+                    self.message.read(cx).apply_to(message, cx);
+                }
+            }
             ElementKind::ServiceSet => {
                 self.service_set
                     .read(cx)
@@ -382,10 +435,13 @@ impl ElementForms {
             ElementKind::MetaCommand(_) => gpui_component::v_flex()
                 .w_full()
                 .child(self.meta_command.clone()),
+            ElementKind::MessageSet => self.message_set.render(cx),
+            ElementKind::Message(_) => gpui_component::v_flex()
+                .w_full()
+                .child(self.message.clone()),
             ElementKind::TelemetryMetaData
             | ElementKind::TelemetryParameterTypeSet
             | ElementKind::ContainerSet
-            | ElementKind::MessageSet
             | ElementKind::TelemetryStreamSet
             | ElementKind::TelemetryAlgorithmSet => self.telemetry_metadata.render(
                 kind,
@@ -434,6 +490,20 @@ fn telemetry_parameter_set(system: &xtce::SpaceSystem) -> Option<&xtce::Paramete
         .telemetry_meta_data
         .as_ref()
         .and_then(|metadata| metadata.parameter_set.as_ref())
+}
+
+fn message_set(system: &xtce::SpaceSystem) -> Option<&xtce::MessageSetType> {
+    system
+        .telemetry_meta_data
+        .as_ref()
+        .and_then(|metadata| metadata.message_set.as_ref())
+}
+
+fn message_set_mut(system: &mut xtce::SpaceSystem) -> Option<&mut xtce::MessageSetType> {
+    system
+        .telemetry_meta_data
+        .as_mut()
+        .and_then(|metadata| metadata.message_set.as_mut())
 }
 
 fn telemetry_parameter_set_mut(
