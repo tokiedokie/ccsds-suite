@@ -39,7 +39,7 @@ jobs:
 
     steps:
       - name: Check out repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
 
       - name: Install Linux build dependencies
         if: runner.os == 'Linux'
@@ -67,7 +67,7 @@ jobs:
           rustup target add "${{ matrix.target }}"
 
       - name: Cache Rust build files
-        uses: actions/cache@v4
+        uses: actions/cache@v5
         with:
           path: |
             ~/.cargo/git
@@ -101,7 +101,7 @@ jobs:
             -DestinationPath "dist/${{ matrix.archive }}"
 
       - name: Upload executable
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v6
         with:
           name: ${{ matrix.artifact }}
           path: dist/${{ matrix.archive }}
@@ -118,7 +118,7 @@ jobs:
 
     steps:
       - name: Download executables
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v7
         with:
           path: dist
           merge-multiple: true
