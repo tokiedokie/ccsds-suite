@@ -110,18 +110,26 @@ impl SequenceContainerForm {
         window: &mut Window,
         cx: &mut Context<XtceEditor>,
     ) -> Entity<Self> {
-        let values = ContainerValues::from_container(container);
-        let name_input = input(&values.name, false, window, cx);
-        let name_subscription = cx.subscribe(&name_input, |editor, _, _: &InputEvent, cx| {
-            editor.refresh_tree(cx);
-            cx.notify();
-        });
         let reference_context = Rc::new(RefCell::new(ReferenceContext::new(
             parameter_set,
             parameter_type_set,
             container_set,
         )));
-        let sequence = sequence_container(container);
+        Self::new_with_context(sequence_container(container), reference_context, window, cx)
+    }
+
+    fn new_with_context(
+        sequence: Option<&xtce::SequenceContainerType>,
+        reference_context: Rc<RefCell<ReferenceContext>>,
+        window: &mut Window,
+        cx: &mut Context<XtceEditor>,
+    ) -> Entity<Self> {
+        let values = ContainerValues::from_sequence(sequence);
+        let name_input = input(&values.name, false, window, cx);
+        let name_subscription = cx.subscribe(&name_input, |editor, _, _: &InputEvent, cx| {
+            editor.refresh_tree(cx);
+            cx.notify();
+        });
         let alias_set = AliasSetForm::new(
             sequence.and_then(|value| value.alias_set.as_ref()),
             window,
@@ -212,13 +220,44 @@ impl SequenceContainerForm {
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
-        let values = ContainerValues::from_container(container);
+        self.load_with_context(
+            sequence_container(container),
+            ReferenceContext::new(parameter_set, parameter_type_set, container_set),
+            window,
+            cx,
+        );
+    }
+
+    pub(super) fn load_direct(
+        &mut self,
+        container: Option<&xtce::SequenceContainerType>,
+        parameter_set: Option<&xtce::ParameterSetType>,
+        parameter_type_set: Option<&xtce::ParameterTypeSetType>,
+        container_set: Option<&xtce::CommandContainerSetType>,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        self.load_with_context(
+            container,
+            ReferenceContext::new_for_command(parameter_set, parameter_type_set, container_set),
+            window,
+            cx,
+        );
+    }
+
+    fn load_with_context(
+        &mut self,
+        sequence: Option<&xtce::SequenceContainerType>,
+        reference_context: ReferenceContext,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        let values = ContainerValues::from_sequence(sequence);
         self.advanced_settings_open = false;
         self.documentation_open = false;
         self.metadata_open = false;
         self.stream_rate_open = false;
         self.restriction_open = false;
-        let sequence = sequence_container(container);
         self.alias_set.load(
             sequence.and_then(|value| value.alias_set.as_ref()),
             window,
@@ -244,8 +283,7 @@ impl SequenceContainerForm {
                 cx,
             );
         });
-        *self.reference_context.borrow_mut() =
-            ReferenceContext::new(parameter_set, parameter_type_set, container_set);
+        *self.reference_context.borrow_mut() = reference_context;
         self.base_container_present
             .set(values.base_container_present);
         self.restriction_criteria_editable = values.restriction_criteria_editable;
@@ -290,6 +328,10 @@ impl SequenceContainerForm {
 
     pub(super) fn apply_to(&self, container: &mut xtce::ContainerSetTypeContent, cx: &App) {
         let xtce::ContainerSetTypeContent::SequenceContainer(container) = container;
+        self.apply_to_sequence(container, cx);
+    }
+
+    pub(super) fn apply_to_sequence(&self, container: &mut xtce::SequenceContainerType, cx: &App) {
         container.name = value(&self.name_input, cx);
         container.abstract_ = selected_value(&self.abstract_select, AbstractChoice::Concrete, cx)
             == AbstractChoice::Abstract;
@@ -1886,7 +1928,38 @@ impl ReferenceContext {
         parameter_type_set: Option<&xtce::ParameterTypeSetType>,
         container_set: Option<&xtce::ContainerSetType>,
     ) -> Self {
+        Self::from_sequences(
+            parameter_set,
+            parameter_type_set,
+            container_set.into_iter().flat_map(|set| &set.content).map(
+                |container| match container {
+                    xtce::ContainerSetTypeContent::SequenceContainer(container) => container,
+                },
+            ),
+        )
+    }
+
+    fn new_for_command(
+        parameter_set: Option<&xtce::ParameterSetType>,
+        parameter_type_set: Option<&xtce::ParameterTypeSetType>,
+        container_set: Option<&xtce::CommandContainerSetType>,
+    ) -> Self {
+        Self::from_sequences(
+            parameter_set,
+            parameter_type_set,
+            container_set
+                .into_iter()
+                .flat_map(|set| &set.command_container),
+        )
+    }
+
+    fn from_sequences<'a>(
+        parameter_set: Option<&xtce::ParameterSetType>,
+        parameter_type_set: Option<&xtce::ParameterTypeSetType>,
+        containers: impl IntoIterator<Item = &'a xtce::SequenceContainerType>,
+    ) -> Self {
         let type_sizes = parameter_type_sizes(parameter_type_set);
+        let containers = containers.into_iter().collect::<Vec<_>>();
         Self {
             parameter_names: parameter_set
                 .into_iter()
@@ -1909,20 +1982,14 @@ impl ReferenceContext {
                     xtce::ParameterSetTypeContent::ParameterRef(_) => None,
                 })
                 .collect(),
-            container_names: container_set
-                .into_iter()
-                .flat_map(|set| &set.content)
-                .map(|container| match container {
-                    xtce::ContainerSetTypeContent::SequenceContainer(container) => {
-                        container.name.clone()
-                    }
-                })
+            container_names: containers
+                .iter()
+                .map(|container| container.name.clone())
                 .collect(),
-            container_layouts: container_set
-                .into_iter()
-                .flat_map(|set| &set.content)
-                .map(|container| match container {
-                    xtce::ContainerSetTypeContent::SequenceContainer(container) => (
+            container_layouts: containers
+                .iter()
+                .map(|container| {
+                    (
                         container.name.clone(),
                         ContainerLayoutSource {
                             base_container_ref: container
@@ -1931,7 +1998,7 @@ impl ReferenceContext {
                                 .map(|base| base.container_ref.clone()),
                             rows: rows_from_entry_list(Some(&container.entry_list)),
                         },
-                    ),
+                    )
                 })
                 .collect(),
         }
@@ -2180,10 +2247,7 @@ fn sequence_container(
 }
 
 impl<'a> ContainerValues<'a> {
-    fn from_container(container: Option<&'a xtce::ContainerSetTypeContent>) -> Self {
-        let container = container.map(|container| match container {
-            xtce::ContainerSetTypeContent::SequenceContainer(container) => container,
-        });
+    fn from_sequence(container: Option<&'a xtce::SequenceContainerType>) -> Self {
         let (restriction_criteria, restriction_criteria_editable) = restriction_criteria_values(
             container
                 .and_then(|value| value.base_container.as_ref())

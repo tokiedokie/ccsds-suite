@@ -57,6 +57,7 @@ enum ElementKind {
     MetaCommandSet,
     MetaCommand(usize),
     CommandContainerSet,
+    CommandContainer(usize),
     CommandStreamSet,
     CommandFixedFrameStream(usize),
     CommandVariableFrameStream(usize),
@@ -99,6 +100,7 @@ impl ElementKind {
             Self::MetaCommandSet => "MetaCommandSet",
             Self::MetaCommand(_) => "MetaCommand",
             Self::CommandContainerSet => "CommandContainerSet",
+            Self::CommandContainer(_) => "CommandContainer",
             Self::ServiceSet => "ServiceSet",
         }
     }
@@ -118,6 +120,7 @@ impl ElementKind {
                 | Self::CommandParameterSet
                 | Self::ArgumentTypeSet
                 | Self::MetaCommandSet
+                | Self::CommandContainerSet
         )
     }
 
@@ -134,6 +137,7 @@ impl ElementKind {
                 | Self::CommandParameterSet
                 | Self::ArgumentTypeSet
                 | Self::MetaCommandSet
+                | Self::CommandContainerSet
                 | Self::CommandStreamSet
         )
     }
@@ -148,6 +152,7 @@ impl ElementKind {
                 | Self::CommandParameterSet
                 | Self::ArgumentTypeSet
                 | Self::MetaCommandSet
+                | Self::CommandContainerSet
                 | Self::TelemetryAlgorithmSet
                 | Self::CommandAlgorithmSet
         )
@@ -160,7 +165,9 @@ impl ElementKind {
             Self::CommandMetaData | Self::MetaCommand(_) => IconName::SquareTerminal,
             Self::TelemetryParameterType(_) | Self::CommandParameterType(_) => IconName::Settings2,
             Self::TelemetryParameter(_) | Self::CommandParameter(_) => IconName::Asterisk,
-            Self::SequenceContainer(_) | Self::CommandContainerSet => IconName::Frame,
+            Self::SequenceContainer(_) | Self::CommandContainerSet | Self::CommandContainer(_) => {
+                IconName::Frame
+            }
             Self::MessageSet | Self::Message(_) => IconName::Inbox,
             Self::TelemetryStreamSet
             | Self::CommandStreamSet
@@ -878,6 +885,24 @@ impl XtceDocument {
                 set.content.push(Self::new_meta_command(name));
                 Some(ElementKind::MetaCommand(index))
             }
+            ElementKind::CommandContainerSet => {
+                let set = system
+                    .command_meta_data
+                    .as_mut()?
+                    .command_container_set
+                    .get_or_insert_with(|| xtce::CommandContainerSetType {
+                        command_container: Vec::new(),
+                    });
+                let index = set.command_container.len();
+                let name = Self::next_unique_name("CommandContainer", |candidate| {
+                    set.command_container
+                        .iter()
+                        .any(|container| container.name == candidate)
+                });
+                set.command_container
+                    .push(Self::new_sequence_container_value(name));
+                Some(ElementKind::CommandContainer(index))
+            }
             _ => None,
         }
     }
@@ -1097,7 +1122,11 @@ impl XtceDocument {
     }
 
     fn new_sequence_container(name: String) -> xtce::ContainerSetTypeContent {
-        xtce::ContainerSetTypeContent::SequenceContainer(xtce::SequenceContainerType {
+        xtce::ContainerSetTypeContent::SequenceContainer(Self::new_sequence_container_value(name))
+    }
+
+    fn new_sequence_container_value(name: String) -> xtce::SequenceContainerType {
+        xtce::SequenceContainerType {
             short_description: None,
             name,
             abstract_: xtce::SequenceContainerType::default_abstract_(),
@@ -1112,7 +1141,7 @@ impl XtceDocument {
                 content: Vec::new(),
             },
             base_container: None,
-        })
+        }
     }
 
     fn next_parameter_type_name(content: &[xtce::ParameterTypeSetTypeContent]) -> String {
@@ -1518,13 +1547,25 @@ impl XtceDocument {
                     }
                 }
             }
-            if metadata.command_container_set.is_some() {
-                Self::push_tree_node(
+            let command_containers = metadata
+                .command_container_set
+                .as_ref()
+                .map(|set| set.command_container.as_slice())
+                .unwrap_or_default();
+            Self::push_tree_node(
+                nodes,
+                path,
+                ElementKind::CommandContainerSet,
+                child_level + 1,
+                !command_containers.is_empty(),
+            );
+            for (index, container) in command_containers.iter().enumerate() {
+                Self::push_named_tree_node(
                     nodes,
                     path,
-                    ElementKind::CommandContainerSet,
-                    child_level + 1,
-                    false,
+                    ElementKind::CommandContainer(index),
+                    container.name.clone(),
+                    child_level + 2,
                 );
             }
             let algorithms = metadata
@@ -2803,6 +2844,7 @@ mod tests {
             ElementKind::CommandMetaData,
             ElementKind::ArgumentTypeSet,
             ElementKind::MetaCommandSet,
+            ElementKind::CommandContainerSet,
             ElementKind::TelemetryStreamSet,
             ElementKind::CommandStreamSet,
         ] {
@@ -3447,6 +3489,55 @@ mod tests {
         }));
         let xml = XtceDocument::serialize(&document).expect("container set should serialize");
         assert!(xml.contains("idlePattern=\"0\""));
+    }
+
+    #[test]
+    fn adds_command_containers_to_command_metadata() {
+        let mut document = XtceDocument::untitled().root;
+        assert!(XtceDocument::add_metadata(
+            &mut document,
+            ElementKind::CommandMetaData
+        ));
+
+        let first =
+            XtceDocument::add_collection_item(&mut document, ElementKind::CommandContainerSet);
+        let second =
+            XtceDocument::add_collection_item(&mut document, ElementKind::CommandContainerSet);
+
+        assert_eq!(first, Some(ElementKind::CommandContainer(0)));
+        assert_eq!(second, Some(ElementKind::CommandContainer(1)));
+        let containers = &document
+            .command_meta_data
+            .as_ref()
+            .expect("command metadata")
+            .command_container_set
+            .as_ref()
+            .expect("command container set")
+            .command_container;
+        assert_eq!(containers[0].name, "CommandContainer1");
+        assert_eq!(containers[1].name, "CommandContainer2");
+
+        let mut nodes = Vec::new();
+        XtceDocument::collect_tree_nodes(&document, &mut Vec::new(), 0, &mut nodes);
+        assert!(nodes.iter().any(|node| {
+            node.selection.kind == ElementKind::CommandContainer(0)
+                && node.label == "CommandContainer1"
+        }));
+
+        let xml =
+            XtceDocument::serialize(&document).expect("command container set should serialize");
+        let reopened = XtceDocument::from_xml(&xml, "command-containers.xml".to_owned())
+            .expect("command container set should reopen");
+        assert_eq!(
+            reopened
+                .root
+                .command_meta_data
+                .and_then(|metadata| metadata.command_container_set)
+                .expect("command container set")
+                .command_container
+                .len(),
+            2
+        );
     }
 
     #[test]

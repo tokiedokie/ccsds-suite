@@ -121,7 +121,9 @@ impl CommandMetaDataForm {
                         ]
                     })
                     .collect::<Vec<_>>();
-                let targets = vec![None; rows.len()];
+                let targets = (0..rows.len())
+                    .map(|index| Some(ElementKind::CommandContainer(index)))
+                    .collect();
                 collection_summary(
                     &["Name", "Entries"],
                     rows,

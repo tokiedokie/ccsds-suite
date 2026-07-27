@@ -66,6 +66,10 @@ impl ElementForms {
                 .and_then(|set| set.content.get(index))
                 .map(sequence_container_title)
                 .unwrap_or_else(|| kind.label().to_owned()),
+            ElementKind::CommandContainer(index) => command_container_set(system)
+                .and_then(|set| set.command_container.get(index))
+                .map(|container| container.name.clone())
+                .unwrap_or_else(|| kind.label().to_owned()),
             ElementKind::MetaCommand(index) => system
                 .command_meta_data
                 .as_ref()
@@ -150,6 +154,7 @@ impl ElementForms {
             }
             ElementKind::ArgumentType(_) => Some(self.argument_type.read(cx).name(cx)),
             ElementKind::SequenceContainer(_) => Some(self.sequence_container.read(cx).name(cx)),
+            ElementKind::CommandContainer(_) => Some(self.sequence_container.read(cx).name(cx)),
             ElementKind::MetaCommand(_) => Some(self.meta_command.read(cx).name(cx)),
             ElementKind::Message(_) => Some(self.message.read(cx).name(cx)),
             ElementKind::TelemetryFixedFrameStream(_) | ElementKind::CommandFixedFrameStream(_) => {
@@ -201,6 +206,9 @@ impl ElementForms {
             }
             ElementKind::ArgumentType(_) => Some(self.argument_type.read(cx).render_name_editor()),
             ElementKind::SequenceContainer(_) => {
+                Some(self.sequence_container.read(cx).render_name_editor())
+            }
+            ElementKind::CommandContainer(_) => {
                 Some(self.sequence_container.read(cx).render_name_editor())
             }
             ElementKind::MetaCommand(_) => Some(self.meta_command.read(cx).render_name_editor()),
@@ -366,6 +374,19 @@ impl ElementForms {
                         telemetry_parameter_set(system),
                         telemetry_parameter_type_set(system),
                         telemetry_container_set(system),
+                        window,
+                        cx,
+                    );
+                });
+            }
+            ElementKind::CommandContainer(index) => {
+                self.sequence_container.update(cx, |form, cx| {
+                    form.load_direct(
+                        command_container_set(system)
+                            .and_then(|set| set.command_container.get(index)),
+                        command_parameter_set(system),
+                        command_parameter_type_set(system),
+                        command_container_set(system),
                         window,
                         cx,
                     );
@@ -555,6 +576,15 @@ impl ElementForms {
                     self.sequence_container.read(cx).apply_to(container, cx);
                 }
             }
+            ElementKind::CommandContainer(index) => {
+                if let Some(container) = command_container_set_mut(system)
+                    .and_then(|set| set.command_container.get_mut(index))
+                {
+                    self.sequence_container
+                        .read(cx)
+                        .apply_to_sequence(container, cx);
+                }
+            }
             ElementKind::CommandParameterType(index) => {
                 if let Some(parameter_type) = command_parameter_type_set_mut(system)
                     .and_then(|set| set.content.get_mut(index))
@@ -694,9 +724,11 @@ impl ElementForms {
             ElementKind::ArgumentType(_) => gpui_component::v_flex()
                 .w_full()
                 .child(self.argument_type.clone()),
-            ElementKind::SequenceContainer(_) => gpui_component::v_flex()
-                .w_full()
-                .child(self.sequence_container.clone()),
+            ElementKind::SequenceContainer(_) | ElementKind::CommandContainer(_) => {
+                gpui_component::v_flex()
+                    .w_full()
+                    .child(self.sequence_container.clone())
+            }
             ElementKind::MetaCommand(_) => gpui_component::v_flex()
                 .w_full()
                 .child(self.meta_command.clone()),
@@ -901,6 +933,22 @@ fn telemetry_container_set_mut(
         .telemetry_meta_data
         .as_mut()
         .and_then(|metadata| metadata.container_set.as_mut())
+}
+
+fn command_container_set(system: &xtce::SpaceSystem) -> Option<&xtce::CommandContainerSetType> {
+    system
+        .command_meta_data
+        .as_ref()
+        .and_then(|metadata| metadata.command_container_set.as_ref())
+}
+
+fn command_container_set_mut(
+    system: &mut xtce::SpaceSystem,
+) -> Option<&mut xtce::CommandContainerSetType> {
+    system
+        .command_meta_data
+        .as_mut()
+        .and_then(|metadata| metadata.command_container_set.as_mut())
 }
 
 fn telemetry_parameter_type_set_mut(
