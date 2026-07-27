@@ -196,6 +196,8 @@ pub(super) struct DataEncodingForm {
     variable_string: Entity<VariableStringForm>,
     fixed_termination_present: bool,
     fixed_termination: Entity<InputState>,
+    fixed_leading_size_present: bool,
+    fixed_leading_size: Entity<InputState>,
     change_threshold_input: Entity<InputState>,
     default_calibrator: Entity<DefaultCalibratorForm>,
     _subscriptions: Vec<Subscription>,
@@ -274,6 +276,12 @@ impl DataEncodingForm {
             let fixed_termination_value = string_fixed_size(encoding)
                 .and_then(|size| size.termination_char.clone())
                 .unwrap_or_default();
+            let fixed_leading_size_value = string_fixed_size(encoding)
+                .and_then(|size| size.leading_size.as_ref())
+                .map(|size| size.size_in_bits_of_size_tag.to_string())
+                .unwrap_or_else(|| {
+                    xtce::LeadingSizeType::default_size_in_bits_of_size_tag().to_string()
+                });
             let change_threshold_input = input(&values.change_threshold, window, cx);
             let default_calibrator = DefaultCalibratorForm::new(
                 encoding.and_then(DataEncodingRef::default_calibrator),
@@ -362,6 +370,14 @@ impl DataEncodingForm {
                     this.fixed_termination_present = false;
                     this.fixed_termination
                         .update(cx, |input, cx| input.set_value("", window, cx));
+                    this.fixed_leading_size_present = false;
+                    this.fixed_leading_size.update(cx, |input, cx| {
+                        input.set_value(
+                            xtce::LeadingSizeType::default_size_in_bits_of_size_tag().to_string(),
+                            window,
+                            cx,
+                        )
+                    });
                     cx.notify();
                 },
             );
@@ -402,6 +418,9 @@ impl DataEncodingForm {
                 fixed_termination_present: string_fixed_size(encoding)
                     .is_some_and(|size| size.termination_char.is_some()),
                 fixed_termination: input(&fixed_termination_value, window, cx),
+                fixed_leading_size_present: string_fixed_size(encoding)
+                    .is_some_and(|size| size.leading_size.is_some()),
+                fixed_leading_size: input(&fixed_leading_size_value, window, cx),
                 change_threshold_input,
                 default_calibrator,
                 _subscriptions: vec![
@@ -509,6 +528,20 @@ impl DataEncodingForm {
                 cx,
             )
         });
+        self.fixed_leading_size_present =
+            string_fixed_size(encoding).is_some_and(|size| size.leading_size.is_some());
+        self.fixed_leading_size.update(cx, |input, cx| {
+            input.set_value(
+                string_fixed_size(encoding)
+                    .and_then(|size| size.leading_size.as_ref())
+                    .map(|size| size.size_in_bits_of_size_tag.to_string())
+                    .unwrap_or_else(|| {
+                        xtce::LeadingSizeType::default_size_in_bits_of_size_tag().to_string()
+                    }),
+                window,
+                cx,
+            )
+        });
         self.default_calibrator.update(cx, |form, cx| {
             form.load(
                 encoding.and_then(DataEncodingRef::default_calibrator),
@@ -573,6 +606,16 @@ impl DataEncodingForm {
                 size.termination_char = self
                     .fixed_termination_present
                     .then(|| value(&self.fixed_termination, cx));
+                size.leading_size =
+                    self.fixed_leading_size_present
+                        .then(|| xtce::LeadingSizeType {
+                            size_in_bits_of_size_tag: value(&self.fixed_leading_size, cx)
+                                .trim()
+                                .parse()
+                                .unwrap_or_else(|_| {
+                                    xtce::LeadingSizeType::default_size_in_bits_of_size_tag()
+                                }),
+                        });
             }
         }
         DataEncodingValues {
@@ -814,6 +857,42 @@ impl DataEncodingForm {
                                     "Termination character",
                                     "Required",
                                     &self.fixed_termination,
+                                    cx,
+                                ))
+                            }),
+                    )
+                    .child(
+                        v_flex()
+                            .gap_3()
+                            .child(
+                                h_flex()
+                                    .justify_between()
+                                    .child(div().text_sm().font_medium().child("Leading size"))
+                                    .child(if self.fixed_leading_size_present {
+                                        Button::new("remove-fixed-string-leading-size")
+                                            .small()
+                                            .danger()
+                                            .label("Remove")
+                                            .on_click(cx.listener(|this, _, _, cx| {
+                                                this.fixed_leading_size_present = false;
+                                                cx.notify();
+                                            }))
+                                    } else {
+                                        Button::new("add-fixed-string-leading-size")
+                                            .small()
+                                            .icon(IconName::Plus)
+                                            .label("Add")
+                                            .on_click(cx.listener(|this, _, _, cx| {
+                                                this.fixed_leading_size_present = true;
+                                                cx.notify();
+                                            }))
+                                    }),
+                            )
+                            .when(self.fixed_leading_size_present, |section| {
+                                section.child(field(
+                                    "Size tag width in bits",
+                                    "Defaults to 16",
+                                    &self.fixed_leading_size,
                                     cx,
                                 ))
                             }),
@@ -1800,6 +1879,25 @@ mod tests {
             string_fixed_size(Some(DataEncodingRef::String(&encoding)))
                 .and_then(|size| size.termination_char.as_deref()),
             Some("00")
+        );
+    }
+
+    #[test]
+    fn fixed_string_leading_size_is_available_to_the_form() {
+        let mut encoding = default_string_encoding();
+        let size = encoding.content.iter_mut().find_map(|item| match item {
+            xtce::StringDataEncodingTypeContent::SizeInBits(size) => Some(size),
+            _ => None,
+        });
+        size.unwrap().leading_size = Some(xtce::LeadingSizeType {
+            size_in_bits_of_size_tag: 12,
+        });
+
+        assert_eq!(
+            string_fixed_size(Some(DataEncodingRef::String(&encoding)))
+                .and_then(|size| size.leading_size.as_ref())
+                .map(|size| size.size_in_bits_of_size_tag),
+            Some(12)
         );
     }
 
