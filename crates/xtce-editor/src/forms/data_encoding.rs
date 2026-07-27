@@ -15,7 +15,7 @@ use strum::{Display, EnumString, VariantArray};
 use super::{
     default_calibrator::DefaultCalibratorForm, discrete_lookup::DiscreteLookupListForm,
     dynamic_value::DynamicValueForm, error_detect_correct::ErrorDetectCorrectForm, field,
-    impl_select_item, input_algorithm::InputAlgorithmForm,
+    impl_select_item, input_algorithm::InputAlgorithmForm, variable_string::VariableStringForm,
 };
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -167,6 +167,14 @@ enum BinarySizeKind {
 }
 impl_select_item!(BinarySizeKind);
 
+#[derive(Clone, Copy, Debug, Default, Display, EnumString, VariantArray, PartialEq, Eq)]
+enum StringSizeKind {
+    #[default]
+    Fixed,
+    Variable,
+}
+impl_select_item!(StringSizeKind);
+
 pub(super) struct DataEncodingForm {
     kind_select: Entity<SelectState<Vec<DataEncodingChoice>>>,
     bit_order_select: Entity<SelectState<Vec<BitOrderChoice>>>,
@@ -184,6 +192,8 @@ pub(super) struct DataEncodingForm {
     from_transform: Entity<InputAlgorithmForm>,
     to_transform_present: bool,
     to_transform: Entity<InputAlgorithmForm>,
+    string_size_kind_select: Entity<SelectState<Vec<StringSizeKind>>>,
+    variable_string: Entity<VariableStringForm>,
     change_threshold_input: Entity<InputState>,
     default_calibrator: Entity<DefaultCalibratorForm>,
     _subscriptions: Vec<Subscription>,
@@ -252,6 +262,13 @@ impl DataEncodingForm {
             let from_transform =
                 InputAlgorithmForm::new(binary_from_transform(encoding), window, cx);
             let to_transform = InputAlgorithmForm::new(binary_to_transform(encoding), window, cx);
+            let string_size_kind_select = select(
+                StringSizeKind::VARIANTS,
+                string_size_kind(encoding),
+                window,
+                cx,
+            );
+            let variable_string = VariableStringForm::new(string_variable(encoding), window, cx);
             let change_threshold_input = input(&values.change_threshold, window, cx);
             let default_calibrator = DefaultCalibratorForm::new(
                 encoding.and_then(DataEncodingRef::default_calibrator),
@@ -329,6 +346,14 @@ impl DataEncodingForm {
                     this.to_transform_present = false;
                     this.to_transform
                         .update(cx, |form, cx| form.load(None, window, cx));
+                    sync_select(
+                        &this.string_size_kind_select,
+                        StringSizeKind::Fixed,
+                        window,
+                        cx,
+                    );
+                    this.variable_string
+                        .update(cx, |form, cx| form.load(None, window, cx));
                     cx.notify();
                 },
             );
@@ -336,6 +361,13 @@ impl DataEncodingForm {
                 &binary_size_kind_select,
                 window,
                 |_: &mut DataEncodingForm, _, _: &SelectEvent<Vec<BinarySizeKind>>, _, cx| {
+                    cx.notify();
+                },
+            );
+            let string_size_subscription = cx.subscribe_in(
+                &string_size_kind_select,
+                window,
+                |_: &mut DataEncodingForm, _, _: &SelectEvent<Vec<StringSizeKind>>, _, cx| {
                     cx.notify();
                 },
             );
@@ -357,9 +389,15 @@ impl DataEncodingForm {
                 from_transform,
                 to_transform_present: binary_to_transform(encoding).is_some(),
                 to_transform,
+                string_size_kind_select,
+                variable_string,
                 change_threshold_input,
                 default_calibrator,
-                _subscriptions: vec![kind_subscription, binary_size_subscription],
+                _subscriptions: vec![
+                    kind_subscription,
+                    binary_size_subscription,
+                    string_size_subscription,
+                ],
             }
         })
     }
@@ -440,6 +478,15 @@ impl DataEncodingForm {
         self.to_transform.update(cx, |form, cx| {
             form.load(binary_to_transform(encoding), window, cx)
         });
+        sync_select(
+            &self.string_size_kind_select,
+            string_size_kind(encoding),
+            window,
+            cx,
+        );
+        self.variable_string.update(cx, |form, cx| {
+            form.load(string_variable(encoding), window, cx)
+        });
         self.default_calibrator.update(cx, |form, cx| {
             form.load(
                 encoding.and_then(DataEncodingRef::default_calibrator),
@@ -488,6 +535,15 @@ impl DataEncodingForm {
             binary.to_binary_transform_algorithm = self
                 .to_transform_present
                 .then(|| self.to_transform.read(cx).algorithm(cx));
+        }
+        if let DataEncodingMut::String(string) = &mut encoding {
+            apply_string_size(
+                string,
+                selected_value(&self.string_size_kind_select, StringSizeKind::Fixed, cx),
+                &self.size_in_bits_input,
+                &self.variable_string,
+                cx,
+            );
         }
         DataEncodingValues {
             bit_order: selected_value(
@@ -587,6 +643,13 @@ impl DataEncodingForm {
                         &self.binary_size_kind_select,
                         cx,
                     )
+                } else if kind == DataEncodingKind::String {
+                    select_field(
+                        "Size in bits",
+                        "Required",
+                        &self.string_size_kind_select,
+                        cx,
+                    )
                 } else {
                     field("Size in bits", "Required", &self.size_in_bits_input, cx)
                 })
@@ -675,6 +738,17 @@ impl DataEncodingForm {
                     }),
             );
         }
+        if kind == DataEncodingKind::String {
+            form = match selected_value(&self.string_size_kind_select, StringSizeKind::Fixed, cx) {
+                StringSizeKind::Fixed => form.child(field(
+                    "Fixed size in bits",
+                    "Required",
+                    &self.size_in_bits_input,
+                    cx,
+                )),
+                StringSizeKind::Variable => form.child(self.variable_string.clone()),
+            };
+        }
         form = form.child(self.error_detect_correct.clone());
         if matches!(kind, DataEncodingKind::Float | DataEncodingKind::Integer) {
             form = form.child(self.default_calibrator.clone());
@@ -760,6 +834,88 @@ fn binary_to_transform(encoding: Option<DataEncodingRef<'_>>) -> Option<&xtce::I
     match encoding {
         Some(DataEncodingRef::Binary(value)) => value.to_binary_transform_algorithm.as_ref(),
         _ => None,
+    }
+}
+
+fn string_variable(encoding: Option<DataEncodingRef<'_>>) -> Option<&xtce::VariableStringType> {
+    match encoding {
+        Some(DataEncodingRef::String(value)) => value.content.iter().find_map(|item| match item {
+            xtce::StringDataEncodingTypeContent::Variable(value) => Some(value),
+            _ => None,
+        }),
+        _ => None,
+    }
+}
+
+fn string_size_kind(encoding: Option<DataEncodingRef<'_>>) -> StringSizeKind {
+    if string_variable(encoding).is_some() {
+        StringSizeKind::Variable
+    } else {
+        StringSizeKind::Fixed
+    }
+}
+
+fn apply_string_size(
+    string: &mut xtce::StringDataEncodingType,
+    kind: StringSizeKind,
+    fixed_size: &Entity<InputState>,
+    variable: &Entity<VariableStringForm>,
+    cx: &App,
+) {
+    match kind {
+        StringSizeKind::Fixed => {
+            string
+                .content
+                .retain(|item| !matches!(item, xtce::StringDataEncodingTypeContent::Variable(_)));
+            if !string
+                .content
+                .iter()
+                .any(|item| matches!(item, xtce::StringDataEncodingTypeContent::SizeInBits(_)))
+            {
+                let fixed_value = value(fixed_size, cx).trim().parse().unwrap_or_default();
+                let index = string
+                    .content
+                    .iter()
+                    .take_while(|item| {
+                        matches!(
+                            item,
+                            xtce::StringDataEncodingTypeContent::ErrorDetectCorrect(_)
+                        )
+                    })
+                    .count();
+                string.content.insert(
+                    index,
+                    xtce::StringDataEncodingTypeContent::SizeInBits(xtce::SizeInBitsType {
+                        fixed: xtce::SizeInBitsTypeFixedElementType { fixed_value },
+                        termination_char: None,
+                        leading_size: None,
+                    }),
+                );
+            }
+        }
+        StringSizeKind::Variable => {
+            string.content.retain(|item| {
+                !matches!(
+                    item,
+                    xtce::StringDataEncodingTypeContent::SizeInBits(_)
+                        | xtce::StringDataEncodingTypeContent::Variable(_)
+                )
+            });
+            let index = string
+                .content
+                .iter()
+                .take_while(|item| {
+                    matches!(
+                        item,
+                        xtce::StringDataEncodingTypeContent::ErrorDetectCorrect(_)
+                    )
+                })
+                .count();
+            string.content.insert(
+                index,
+                xtce::StringDataEncodingTypeContent::Variable(variable.read(cx).value(cx)),
+            );
+        }
     }
 }
 

@@ -32,6 +32,7 @@ mod space_system_description;
 mod space_system_identity;
 mod telemetry_metadata;
 pub(super) mod variable_frame_stream;
+mod variable_string;
 
 use std::rc::Rc;
 
