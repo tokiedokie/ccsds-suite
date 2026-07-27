@@ -28,6 +28,7 @@ use strum::{Display, EnumString, VariantArray};
 
 use super::{
     alias_set::AliasSetForm, ancillary_data_set::AncillaryDataSetForm,
+    boolean_expression::BooleanExpressionForm,
     container_binary_encoding::ContainerBinaryEncodingForm, container_rate::ContainerRateForm,
     field, impl_select_item, optional_value,
 };
@@ -69,6 +70,15 @@ enum CalibratedChoice {
 impl_select_item!(CalibratedChoice);
 
 #[derive(Clone, Copy, Debug, Display, EnumString, VariantArray, PartialEq, Eq)]
+enum RestrictionCriteriaKind {
+    #[strum(serialize = "Comparison list")]
+    ComparisonList,
+    #[strum(serialize = "Boolean expression")]
+    BooleanExpression,
+}
+impl_select_item!(RestrictionCriteriaKind);
+
+#[derive(Clone, Copy, Debug, Display, EnumString, VariantArray, PartialEq, Eq)]
 enum EntryKind {
     #[strum(serialize = "ParameterRefEntry")]
     ParameterReference,
@@ -94,7 +104,9 @@ pub(super) struct SequenceContainerForm {
     binary_encoding: Entity<ContainerBinaryEncodingForm>,
     base_container_present: Rc<Cell<bool>>,
     base_container_ref_input: Entity<InputState>,
+    restriction_kind_select: Entity<SelectState<Vec<RestrictionCriteriaKind>>>,
     comparisons: Entity<ComparisonListForm>,
+    restriction_boolean_expression: Entity<BooleanExpressionForm>,
     restriction_criteria_editable: bool,
     reference_context: Rc<RefCell<ReferenceContext>>,
     entry_list: Entity<TelemetryEntryListView>,
@@ -151,6 +163,8 @@ impl SequenceContainerForm {
             window,
             cx,
         );
+        let restriction_boolean_expression =
+            BooleanExpressionForm::new(values.restriction_boolean_expression, window, cx);
 
         cx.new(move |cx| {
             let base_container_ref_input = completion_input(
@@ -175,6 +189,16 @@ impl SequenceContainerForm {
                 reference_context.clone(),
                 window,
                 cx,
+            );
+            let restriction_kind_select = select(
+                RestrictionCriteriaKind::VARIANTS,
+                values.restriction_kind,
+                window,
+                cx,
+            );
+            let restriction_kind_subscription = cx.subscribe(
+                &restriction_kind_select,
+                |_, _, _: &SelectEvent<Vec<RestrictionCriteriaKind>>, cx| cx.notify(),
             );
             Self {
                 name_input,
@@ -202,11 +226,13 @@ impl SequenceContainerForm {
                 binary_encoding,
                 base_container_present: Rc::new(Cell::new(values.base_container_present)),
                 base_container_ref_input,
+                restriction_kind_select,
                 comparisons,
+                restriction_boolean_expression,
                 restriction_criteria_editable: values.restriction_criteria_editable,
                 reference_context,
                 entry_list,
-                _subscriptions: vec![name_subscription],
+                _subscriptions: vec![name_subscription, restriction_kind_subscription],
             }
         })
     }
@@ -288,6 +314,12 @@ impl SequenceContainerForm {
             .set(values.base_container_present);
         self.restriction_criteria_editable = values.restriction_criteria_editable;
         sync_select(
+            &self.restriction_kind_select,
+            values.restriction_kind,
+            window,
+            cx,
+        );
+        sync_select(
             &self.abstract_select,
             if values.abstract_ {
                 AbstractChoice::Abstract
@@ -311,6 +343,9 @@ impl SequenceContainerForm {
         });
         self.comparisons.update(cx, |form, cx| {
             form.load(&values.restriction_criteria, window, cx);
+        });
+        self.restriction_boolean_expression.update(cx, |form, cx| {
+            form.load(values.restriction_boolean_expression, window, cx);
         });
         cx.notify();
     }
@@ -359,7 +394,22 @@ impl SequenceContainerForm {
                 });
             base.container_ref = value(&self.base_container_ref_input, cx);
             if self.restriction_criteria_editable {
-                base.restriction_criteria = self.comparisons.read(cx).to_criteria(cx);
+                base.restriction_criteria = match selected_value(
+                    &self.restriction_kind_select,
+                    RestrictionCriteriaKind::ComparisonList,
+                    cx,
+                ) {
+                    RestrictionCriteriaKind::ComparisonList => {
+                        self.comparisons.read(cx).to_criteria(cx)
+                    }
+                    RestrictionCriteriaKind::BooleanExpression => {
+                        Some(xtce::RestrictionCriteriaType {
+                            content: Some(xtce::RestrictionCriteriaTypeContent::BooleanExpression(
+                                self.restriction_boolean_expression.read(cx).expression(cx),
+                            )),
+                        })
+                    }
+                };
             }
         } else {
             container.base_container = None;
@@ -440,9 +490,36 @@ impl SequenceContainerForm {
                                         })),
                                     )
                                     .content(if self.restriction_criteria_editable {
+                                        let kind = selected_value(
+                                            &self.restriction_kind_select,
+                                            RestrictionCriteriaKind::ComparisonList,
+                                            cx,
+                                        );
                                         v_flex()
                                             .pt_3()
-                                            .child(self.comparisons.clone())
+                                            .gap_3()
+                                            .child(select_field(
+                                                "Criteria type",
+                                                "Required",
+                                                &self.restriction_kind_select,
+                                            ))
+                                            .when(
+                                                kind
+                                                    == RestrictionCriteriaKind::ComparisonList,
+                                                |form| {
+                                                    form.child(self.comparisons.clone())
+                                                },
+                                            )
+                                            .when(
+                                                kind
+                                                    == RestrictionCriteriaKind::BooleanExpression,
+                                                |form| {
+                                                    form.child(
+                                                        self.restriction_boolean_expression
+                                                            .clone(),
+                                                    )
+                                                },
+                                            )
                                             .into_any_element()
                                     } else {
                                         div()
@@ -2234,6 +2311,8 @@ struct ContainerValues<'a> {
     base_container_present: bool,
     base_container_ref: String,
     restriction_criteria: String,
+    restriction_kind: RestrictionCriteriaKind,
+    restriction_boolean_expression: Option<&'a xtce::BooleanExpressionType>,
     restriction_criteria_editable: bool,
     entry_list: Option<&'a xtce::EntryListType>,
 }
@@ -2248,7 +2327,7 @@ fn sequence_container(
 
 impl<'a> ContainerValues<'a> {
     fn from_sequence(container: Option<&'a xtce::SequenceContainerType>) -> Self {
-        let (restriction_criteria, restriction_criteria_editable) = restriction_criteria_values(
+        let restriction = restriction_criteria_values(
             container
                 .and_then(|value| value.base_container.as_ref())
                 .and_then(|base| base.restriction_criteria.as_ref()),
@@ -2272,28 +2351,67 @@ impl<'a> ContainerValues<'a> {
                 .and_then(|value| value.base_container.as_ref())
                 .map(|base| base.container_ref.clone())
                 .unwrap_or_default(),
-            restriction_criteria,
-            restriction_criteria_editable,
+            restriction_criteria: restriction.comparisons,
+            restriction_kind: restriction.kind,
+            restriction_boolean_expression: restriction.boolean_expression,
+            restriction_criteria_editable: restriction.editable,
             entry_list: container.map(|value| &value.entry_list),
         }
     }
 }
 
-fn restriction_criteria_values(criteria: Option<&xtce::RestrictionCriteriaType>) -> (String, bool) {
+struct RestrictionCriteriaValues<'a> {
+    comparisons: String,
+    kind: RestrictionCriteriaKind,
+    boolean_expression: Option<&'a xtce::BooleanExpressionType>,
+    editable: bool,
+}
+
+fn restriction_criteria_values(
+    criteria: Option<&xtce::RestrictionCriteriaType>,
+) -> RestrictionCriteriaValues<'_> {
     match criteria.and_then(|criteria| criteria.content.as_ref()) {
-        None => (String::new(), true),
+        None => RestrictionCriteriaValues {
+            comparisons: String::new(),
+            kind: RestrictionCriteriaKind::ComparisonList,
+            boolean_expression: None,
+            editable: true,
+        },
         Some(xtce::RestrictionCriteriaTypeContent::Comparison(comparison)) => {
-            (encode_comparison(comparison), true)
+            RestrictionCriteriaValues {
+                comparisons: encode_comparison(comparison),
+                kind: RestrictionCriteriaKind::ComparisonList,
+                boolean_expression: None,
+                editable: true,
+            }
         }
-        Some(xtce::RestrictionCriteriaTypeContent::ComparisonList(list)) => (
-            list.comparison
-                .iter()
-                .map(encode_comparison)
-                .collect::<Vec<_>>()
-                .join("\n"),
-            true,
-        ),
-        Some(_) => (String::new(), false),
+        Some(xtce::RestrictionCriteriaTypeContent::ComparisonList(list)) => {
+            RestrictionCriteriaValues {
+                comparisons: list
+                    .comparison
+                    .iter()
+                    .map(encode_comparison)
+                    .collect::<Vec<_>>()
+                    .join("\n"),
+                kind: RestrictionCriteriaKind::ComparisonList,
+                boolean_expression: None,
+                editable: true,
+            }
+        }
+        Some(xtce::RestrictionCriteriaTypeContent::BooleanExpression(expression)) => {
+            RestrictionCriteriaValues {
+                comparisons: String::new(),
+                kind: RestrictionCriteriaKind::BooleanExpression,
+                boolean_expression: Some(expression),
+                editable: true,
+            }
+        }
+        Some(_) => RestrictionCriteriaValues {
+            comparisons: String::new(),
+            kind: RestrictionCriteriaKind::ComparisonList,
+            boolean_expression: None,
+            editable: false,
+        },
     }
 }
 
@@ -2552,9 +2670,10 @@ mod tests {
 
     use super::{
         ContainerLayoutSource, EntryKind, EntryRowContent, EntryRowData, PacketField,
-        apply_entry_rows, binary_encoding_size, decode_restriction_criteria, entry_bit_positions,
-        fixed_integer_value, float_encoding_size, packet_layout, parameter_type_sizes,
-        restriction_criteria_values, rows_from_entry_list, string_encoding_size,
+        RestrictionCriteriaKind, apply_entry_rows, binary_encoding_size,
+        decode_restriction_criteria, entry_bit_positions, fixed_integer_value, float_encoding_size,
+        packet_layout, parameter_type_sizes, restriction_criteria_values, rows_from_entry_list,
+        string_encoding_size,
     };
 
     #[test]
@@ -2813,10 +2932,37 @@ mod tests {
     #[test]
     fn comparison_restrictions_round_trip_through_the_compact_editor() {
         let criteria = decode_restriction_criteria("TLM_ID | == | 2 | 0 | true").expect("criteria");
-        let (encoded, editable) = restriction_criteria_values(Some(&criteria));
+        let values = restriction_criteria_values(Some(&criteria));
 
-        assert!(editable);
-        assert_eq!(encoded, "TLM_ID | == | 2 | 0 | true");
+        assert!(values.editable);
+        assert_eq!(values.comparisons, "TLM_ID | == | 2 | 0 | true");
+        assert_eq!(values.kind, RestrictionCriteriaKind::ComparisonList);
+    }
+
+    #[test]
+    fn boolean_expression_restriction_is_editable() {
+        let criteria = xtce::RestrictionCriteriaType {
+            content: Some(xtce::RestrictionCriteriaTypeContent::BooleanExpression(
+                xtce::BooleanExpressionType::Condition(xtce::ComparisonCheckType {
+                    content: vec![
+                        xtce::ComparisonCheckTypeContent::ParameterInstanceRef(
+                            xtce::ParameterInstanceRefType {
+                                parameter_ref: "P1".to_owned(),
+                                instance: 0,
+                                use_calibrated_value: true,
+                            },
+                        ),
+                        xtce::ComparisonCheckTypeContent::ComparisonOperator("==".to_owned()),
+                        xtce::ComparisonCheckTypeContent::Value("1".to_owned()),
+                    ],
+                }),
+            )),
+        };
+        let values = restriction_criteria_values(Some(&criteria));
+
+        assert!(values.editable);
+        assert_eq!(values.kind, RestrictionCriteriaKind::BooleanExpression);
+        assert!(values.boolean_expression.is_some());
     }
 
     #[test]
