@@ -13,6 +13,7 @@ use gpui::{
 use gpui_component::{
     ActiveTheme, Disableable, IconName, IndexPath, Sizable, StyledExt,
     button::{Button, ButtonVariants},
+    collapsible::Collapsible,
     h_flex,
     input::{CompletionProvider, Input, InputEvent, InputState, Rope, RopeExt},
     select::{Select, SelectEvent, SelectState},
@@ -75,6 +76,10 @@ pub(super) struct MetaCommandForm {
     container_long_description_input: Entity<InputState>,
     container_base_ref_input: Entity<InputState>,
     entry_list: Entity<EntryListView>,
+    documentation_open: bool,
+    inheritance_open: bool,
+    identification_open: bool,
+    container_details_open: bool,
     _subscriptions: Vec<Subscription>,
 }
 
@@ -130,6 +135,7 @@ impl MetaCommandForm {
                 rows: command_argument_models(&values.arguments),
                 editors: HashMap::new(),
                 context: assignment_context.clone(),
+                optional_fields_open: false,
             });
             let command_container_present = Rc::new(Cell::new(values.command_container.present));
             let subscription_context = assignment_context.clone();
@@ -192,6 +198,10 @@ impl MetaCommandForm {
                     cx,
                 ),
                 entry_list,
+                documentation_open: false,
+                inheritance_open: false,
+                identification_open: false,
+                container_details_open: false,
                 _subscriptions: vec![name_subscription, kind_subscription, base_ref_subscription],
             }
         })
@@ -206,6 +216,10 @@ impl MetaCommandForm {
         cx: &mut Context<Self>,
     ) {
         let values = MetaCommandValues::from_command(command);
+        self.documentation_open = false;
+        self.inheritance_open = false;
+        self.identification_open = false;
+        self.container_details_open = false;
         *self.assignment_context.borrow_mut() = AssignmentContext::new(
             &values.base_meta_command_ref,
             meta_command_set,
@@ -242,6 +256,7 @@ impl MetaCommandForm {
             list.rows = command_argument_models(&values.arguments);
             list.editors.clear();
             list.context = self.assignment_context.clone();
+            list.optional_fields_open = false;
             cx.notify();
         });
         self.entry_list.update(cx, |list, cx| {
@@ -324,7 +339,7 @@ impl MetaCommandForm {
 
     fn render_form(&self, cx: &mut Context<Self>) -> Div {
         let selected_kind = selected_value(&self.kind_select, MetaCommandKind::MetaCommand, cx);
-        let mut form = v_flex().gap_5().child(select_field(
+        let form = v_flex().gap_5().child(select_field(
             "Meta command element",
             "Required",
             &self.kind_select,
@@ -338,57 +353,124 @@ impl MetaCommandForm {
                 cx,
             ));
         }
-        form = form
+        match selected_kind {
+            MetaCommandKind::MetaCommand => form
+                .child(self.render_arguments(cx))
+                .child(self.render_command_container(cx))
+                .child(self.render_documentation(cx))
+                .child(self.render_inheritance(cx))
+                .child(self.render_identification(cx)),
+            MetaCommandKind::BlockMetaCommand => form
+                .child(field(
+                    "Meta command steps",
+                    "meta command ref | argument=value, argument=value",
+                    &self.block_steps_input,
+                    cx,
+                ))
+                .child(self.render_documentation(cx)),
+            MetaCommandKind::MetaCommandRef => unreachable!(),
+        }
+    }
+
+    fn render_documentation(&self, cx: &mut Context<Self>) -> Collapsible {
+        Collapsible::new()
+            .open(self.documentation_open)
             .child(
-                h_flex()
+                Button::new("toggle-meta-command-documentation")
+                    .small()
+                    .link()
+                    .icon(if self.documentation_open {
+                        IconName::ChevronDown
+                    } else {
+                        IconName::ChevronRight
+                    })
+                    .label("Documentation")
+                    .on_click(cx.listener(|this, _, _, cx| {
+                        this.documentation_open = !this.documentation_open;
+                        cx.notify();
+                    })),
+            )
+            .content(
+                v_flex()
+                    .pt_3()
                     .gap_4()
-                    .items_start()
                     .child(field(
                         "Short description",
                         "Optional",
                         &self.short_description_input,
                         cx,
                     ))
-                    .when(selected_kind == MetaCommandKind::MetaCommand, |form| {
-                        form.child(select_field(
-                            "Abstract",
-                            "Required",
-                            &self.abstract_select,
-                            cx,
-                        ))
-                    }),
+                    .child(field(
+                        "Long description",
+                        "Optional",
+                        &self.long_description_input,
+                        cx,
+                    )),
             )
-            .child(field(
-                "Long description",
+    }
+
+    fn render_inheritance(&self, cx: &mut Context<Self>) -> Collapsible {
+        Collapsible::new()
+            .open(self.inheritance_open)
+            .child(
+                Button::new("toggle-meta-command-inheritance")
+                    .small()
+                    .link()
+                    .icon(if self.inheritance_open {
+                        IconName::ChevronDown
+                    } else {
+                        IconName::ChevronRight
+                    })
+                    .label("Inheritance")
+                    .on_click(cx.listener(|this, _, _, cx| {
+                        this.inheritance_open = !this.inheritance_open;
+                        cx.notify();
+                    })),
+            )
+            .content(
+                v_flex()
+                    .pt_3()
+                    .gap_4()
+                    .child(select_field(
+                        "Abstract",
+                        "Required",
+                        &self.abstract_select,
+                        cx,
+                    ))
+                    .child(field(
+                        "Base meta command reference",
+                        "Optional",
+                        &self.base_meta_command_ref_input,
+                        cx,
+                    ))
+                    .child(self.render_base_assignments(cx)),
+            )
+    }
+
+    fn render_identification(&self, cx: &mut Context<Self>) -> Collapsible {
+        Collapsible::new()
+            .open(self.identification_open)
+            .child(
+                Button::new("toggle-meta-command-identification")
+                    .small()
+                    .link()
+                    .icon(if self.identification_open {
+                        IconName::ChevronDown
+                    } else {
+                        IconName::ChevronRight
+                    })
+                    .label("Identification")
+                    .on_click(cx.listener(|this, _, _, cx| {
+                        this.identification_open = !this.identification_open;
+                        cx.notify();
+                    })),
+            )
+            .content(v_flex().pt_3().child(field(
+                "System name",
                 "Optional",
-                &self.long_description_input,
+                &self.system_name_input,
                 cx,
-            ));
-        match selected_kind {
-            MetaCommandKind::MetaCommand => form
-                .child(field(
-                    "System name",
-                    "Optional",
-                    &self.system_name_input,
-                    cx,
-                ))
-                .child(field(
-                    "Base meta command reference",
-                    "Optional",
-                    &self.base_meta_command_ref_input,
-                    cx,
-                ))
-                .child(self.render_base_assignments(cx))
-                .child(self.render_arguments(cx))
-                .child(self.render_command_container(cx)),
-            MetaCommandKind::BlockMetaCommand => form.child(field(
-                "Meta command steps",
-                "meta command ref | argument=value, argument=value",
-                &self.block_steps_input,
-                cx,
-            )),
-            MetaCommandKind::MetaCommandRef => unreachable!(),
-        }
+            )))
     }
 
     fn render_base_assignments(&self, _: &App) -> Div {
@@ -449,34 +531,58 @@ impl MetaCommandForm {
                     ),
             )
             .child(
-                h_flex()
-                    .gap_3()
-                    .items_start()
-                    .child(field(
-                        "Container name",
-                        "Required",
-                        &self.container_name_input,
-                        cx,
-                    ))
-                    .child(field(
-                        "Base container reference",
-                        "Optional",
-                        &self.container_base_ref_input,
-                        cx,
-                    )),
+                Collapsible::new()
+                    .open(self.container_details_open)
+                    .child(
+                        Button::new("toggle-command-container-details")
+                            .small()
+                            .link()
+                            .icon(if self.container_details_open {
+                                IconName::ChevronDown
+                            } else {
+                                IconName::ChevronRight
+                            })
+                            .label("Container details")
+                            .on_click(cx.listener(|this, _, _, cx| {
+                                this.container_details_open = !this.container_details_open;
+                                cx.notify();
+                            })),
+                    )
+                    .content(
+                        v_flex()
+                            .pt_3()
+                            .gap_4()
+                            .child(
+                                h_flex()
+                                    .gap_3()
+                                    .items_start()
+                                    .child(field(
+                                        "Container name",
+                                        "Required",
+                                        &self.container_name_input,
+                                        cx,
+                                    ))
+                                    .child(field(
+                                        "Base container reference",
+                                        "Optional",
+                                        &self.container_base_ref_input,
+                                        cx,
+                                    )),
+                            )
+                            .child(field(
+                                "Short description",
+                                "Optional",
+                                &self.container_short_description_input,
+                                cx,
+                            ))
+                            .child(field(
+                                "Long description",
+                                "Optional",
+                                &self.container_long_description_input,
+                                cx,
+                            )),
+                    ),
             )
-            .child(field(
-                "Short description",
-                "Optional",
-                &self.container_short_description_input,
-                cx,
-            ))
-            .child(field(
-                "Long description",
-                "Optional",
-                &self.container_long_description_input,
-                cx,
-            ))
             .child(self.entry_list.clone())
     }
 }
@@ -510,6 +616,7 @@ struct ArgumentListView {
     rows: Vec<CommandArgumentData>,
     editors: HashMap<usize, Entity<CommandArgumentRow>>,
     context: Rc<RefCell<AssignmentContext>>,
+    optional_fields_open: bool,
 }
 
 #[derive(Clone, Default)]
@@ -525,6 +632,7 @@ struct CommandArgumentRow {
     type_ref_input: Entity<InputState>,
     initial_value_input: Entity<InputState>,
     short_description_input: Entity<InputState>,
+    optional_fields_open: bool,
 }
 
 struct EntryListView {
@@ -753,10 +861,8 @@ impl ArgumentListView {
         }
         let data = self.rows[index].clone();
         let editor = new_command_argument_row(
-            &data.name,
-            &data.type_ref,
-            &data.initial_value,
-            &data.short_description,
+            &data,
+            self.optional_fields_open,
             self.context.clone(),
             window,
             cx,
@@ -829,14 +935,35 @@ impl Render for ArgumentListView {
                             ),
                     )
                     .child(
-                        Button::new("add-command-argument")
-                            .small()
-                            .icon(IconName::Plus)
-                            .label("Add argument")
-                            .on_click(cx.listener(|this, _, _, cx| {
-                                this.rows.push(CommandArgumentData::default());
-                                cx.notify();
-                            })),
+                        h_flex()
+                            .gap_2()
+                            .child(
+                                Button::new("toggle-command-argument-optional-fields")
+                                    .small()
+                                    .link()
+                                    .icon(if self.optional_fields_open {
+                                        IconName::ChevronDown
+                                    } else {
+                                        IconName::ChevronRight
+                                    })
+                                    .label("Optional fields")
+                                    .on_click(cx.listener(|this, _, _, cx| {
+                                        this.flush_editors(cx);
+                                        this.editors.clear();
+                                        this.optional_fields_open = !this.optional_fields_open;
+                                        cx.notify();
+                                    })),
+                            )
+                            .child(
+                                Button::new("add-command-argument")
+                                    .small()
+                                    .icon(IconName::Plus)
+                                    .label("Add argument")
+                                    .on_click(cx.listener(|this, _, _, cx| {
+                                        this.rows.push(CommandArgumentData::default());
+                                        cx.notify();
+                                    })),
+                            ),
                     ),
             )
             .when(row_count > 0, |this| {
@@ -861,23 +988,25 @@ impl Render for CommandArgumentRow {
                         cx,
                     )),
             )
-            .child(
-                h_flex()
-                    .gap_3()
-                    .items_start()
-                    .child(field(
-                        "Initial value",
-                        "Optional",
-                        &self.initial_value_input,
-                        cx,
-                    ))
-                    .child(field(
-                        "Short description",
-                        "Optional",
-                        &self.short_description_input,
-                        cx,
-                    )),
-            )
+            .when(self.optional_fields_open, |row| {
+                row.child(
+                    h_flex()
+                        .gap_3()
+                        .items_start()
+                        .child(field(
+                            "Initial value",
+                            "Optional",
+                            &self.initial_value_input,
+                            cx,
+                        ))
+                        .child(field(
+                            "Short description",
+                            "Optional",
+                            &self.short_description_input,
+                            cx,
+                        )),
+                )
+            })
     }
 }
 
@@ -1764,19 +1893,17 @@ fn command_argument_models(value: &str) -> Vec<CommandArgumentData> {
 }
 
 fn new_command_argument_row(
-    name: &str,
-    type_ref: &str,
-    initial_value: &str,
-    short_description: &str,
+    data: &CommandArgumentData,
+    optional_fields_open: bool,
     context: Rc<RefCell<AssignmentContext>>,
     window: &mut Window,
     cx: &mut impl AppContext,
 ) -> Entity<CommandArgumentRow> {
     cx.new(|cx| {
-        let name_input = input_with_context(name, window, cx);
+        let name_input = input_with_context(&data.name, window, cx);
         let type_ref_input = cx.new(|cx| {
             let mut input = InputState::new(window, cx)
-                .default_value(type_ref.to_owned())
+                .default_value(data.type_ref.clone())
                 .placeholder("Start typing an ArgumentType name");
             input.lsp.completion_provider = Some(Rc::new(AssignmentCompletionProvider {
                 context: context.clone(),
@@ -1788,7 +1915,7 @@ fn new_command_argument_row(
         let validation_context = context.clone();
         let initial_value_input = cx.new(|cx| {
             let mut input = InputState::new(window, cx)
-                .default_value(initial_value.to_owned())
+                .default_value(data.initial_value.clone())
                 .validate(move |value, cx| {
                     let type_ref = validation_type_ref.read(cx).value().to_string();
                     validation_context
@@ -1805,7 +1932,8 @@ fn new_command_argument_row(
             name_input,
             type_ref_input,
             initial_value_input,
-            short_description_input: input_with_context(short_description, window, cx),
+            short_description_input: input_with_context(&data.short_description, window, cx),
+            optional_fields_open,
         }
     })
 }

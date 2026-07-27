@@ -3,7 +3,10 @@ use gpui::{
     Subscription, Window,
 };
 use gpui_component::{
-    IndexPath, h_flex,
+    IconName, IndexPath, Sizable,
+    button::{Button, ButtonVariants},
+    collapsible::Collapsible,
+    h_flex,
     input::{Input, InputEvent, InputState},
     select::{Select, SelectEvent, SelectState},
     v_flex,
@@ -112,6 +115,9 @@ pub(super) struct ArgumentTypeForm {
     character_width_select: Entity<SelectState<Vec<CharacterWidthChoice>>>,
     signed_select: Entity<SelectState<Vec<SignedChoice>>>,
     float_size_select: Entity<SelectState<Vec<FloatSizeChoice>>>,
+    base_defaults_open: bool,
+    documentation_open: bool,
+    type_options_open: bool,
     _subscriptions: Vec<Subscription>,
 }
 
@@ -169,6 +175,9 @@ impl ArgumentTypeForm {
                     window,
                     cx,
                 ),
+                base_defaults_open: false,
+                documentation_open: false,
+                type_options_open: false,
                 _subscriptions: vec![name_subscription, kind_subscription],
             }
         })
@@ -181,6 +190,9 @@ impl ArgumentTypeForm {
         cx: &mut Context<Self>,
     ) {
         let values = ArgumentValues::from_type(argument_type);
+        self.base_defaults_open = false;
+        self.documentation_open = false;
+        self.type_options_open = false;
         let selected_kind = argument_type.map(kind).unwrap_or(ArgumentKind::String);
         self.kind_select.update(cx, |select, cx| {
             select.set_selected_value(&selected_kind, window, cx);
@@ -264,7 +276,7 @@ impl ArgumentTypeForm {
         apply_nested_items(argument_type, &value(&self.nested_items_input, cx));
     }
 
-    fn render_form(&self, cx: &App) -> Div {
+    fn render_form(&self, cx: &mut Context<Self>) -> Div {
         let kind = self.selected_kind(cx);
         let mut form = v_flex().gap_5().child(select_field(
             "Argument type",
@@ -272,52 +284,17 @@ impl ArgumentTypeForm {
             &self.kind_select,
             cx,
         ));
-        if let Some((label, hint)) = kind.base_field() {
-            form = form.child(field(label, hint, &self.base_or_ref_input, cx));
-        }
-        form = form
-            .child(
-                h_flex()
-                    .gap_4()
-                    .items_start()
-                    .child(field(
-                        "Initial value",
-                        "Optional",
-                        &self.initial_value_input,
-                        cx,
-                    ))
-                    .child(field(
-                        "Short description",
-                        "Optional",
-                        &self.short_description_input,
-                        cx,
-                    )),
-            )
-            .child(field(
-                "Long description",
-                "Optional",
-                &self.long_description_input,
+        if kind == ArgumentKind::Array {
+            form = form.child(field(
+                "Array type reference",
+                "Required",
+                &self.base_or_ref_input,
                 cx,
             ));
+        }
         match kind {
             ArgumentKind::String => {
-                form = form.child(
-                    h_flex()
-                        .gap_4()
-                        .items_start()
-                        .child(field(
-                            "Restriction pattern",
-                            "Optional",
-                            &self.extra_a_input,
-                            cx,
-                        ))
-                        .child(select_field(
-                            "Character width",
-                            "Optional",
-                            &self.character_width_select,
-                            cx,
-                        )),
-                );
+                form = form.child(self.type_options(cx));
             }
             ArgumentKind::Integer => {
                 form = form.child(
@@ -373,7 +350,116 @@ impl ArgumentTypeForm {
             }
             _ => {}
         }
-        form
+        form.child(self.base_defaults(cx))
+            .child(self.documentation(cx))
+    }
+
+    fn type_options(&self, cx: &mut Context<Self>) -> Collapsible {
+        Collapsible::new()
+            .open(self.type_options_open)
+            .child(
+                Button::new("toggle-argument-type-options")
+                    .small()
+                    .link()
+                    .icon(if self.type_options_open {
+                        IconName::ChevronDown
+                    } else {
+                        IconName::ChevronRight
+                    })
+                    .label("Type options")
+                    .on_click(cx.listener(|this, _, _, cx| {
+                        this.type_options_open = !this.type_options_open;
+                        cx.notify();
+                    })),
+            )
+            .content(
+                h_flex()
+                    .pt_3()
+                    .gap_4()
+                    .items_start()
+                    .child(field(
+                        "Restriction pattern",
+                        "Optional",
+                        &self.extra_a_input,
+                        cx,
+                    ))
+                    .child(select_field(
+                        "Character width",
+                        "Optional",
+                        &self.character_width_select,
+                        cx,
+                    )),
+            )
+    }
+
+    fn base_defaults(&self, cx: &mut Context<Self>) -> Collapsible {
+        let mut content = h_flex().pt_3().gap_4().items_start();
+        if self.selected_kind(cx) != ArgumentKind::Array
+            && let Some((label, hint)) = self.selected_kind(cx).base_field()
+        {
+            content = content.child(field(label, hint, &self.base_or_ref_input, cx));
+        }
+        content = content.child(field(
+            "Initial value",
+            "Optional",
+            &self.initial_value_input,
+            cx,
+        ));
+        Collapsible::new()
+            .open(self.base_defaults_open)
+            .child(
+                Button::new("toggle-argument-type-base-defaults")
+                    .small()
+                    .link()
+                    .icon(if self.base_defaults_open {
+                        IconName::ChevronDown
+                    } else {
+                        IconName::ChevronRight
+                    })
+                    .label("Base and defaults")
+                    .on_click(cx.listener(|this, _, _, cx| {
+                        this.base_defaults_open = !this.base_defaults_open;
+                        cx.notify();
+                    })),
+            )
+            .content(content)
+    }
+
+    fn documentation(&self, cx: &mut Context<Self>) -> Collapsible {
+        Collapsible::new()
+            .open(self.documentation_open)
+            .child(
+                Button::new("toggle-argument-type-documentation")
+                    .small()
+                    .link()
+                    .icon(if self.documentation_open {
+                        IconName::ChevronDown
+                    } else {
+                        IconName::ChevronRight
+                    })
+                    .label("Documentation")
+                    .on_click(cx.listener(|this, _, _, cx| {
+                        this.documentation_open = !this.documentation_open;
+                        cx.notify();
+                    })),
+            )
+            .content(
+                v_flex()
+                    .pt_3()
+                    .gap_4()
+                    .child(field(
+                        "Short description",
+                        "Optional",
+                        &self.short_description_input,
+                        cx,
+                    ))
+                    .child(field(
+                        "Long description",
+                        "Optional",
+                        &self.long_description_input,
+                        cx,
+                    )),
+            )
     }
 
     fn selected_kind(&self, cx: &App) -> ArgumentKind {

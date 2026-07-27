@@ -6,7 +6,9 @@ use gpui::{
     Subscription, Task, Window,
 };
 use gpui_component::{
-    h_flex,
+    IconName, Sizable,
+    button::{Button, ButtonVariants},
+    collapsible::Collapsible,
     input::{CompletionProvider, Input, InputEvent, InputState, Rope, RopeExt},
     v_flex,
 };
@@ -34,6 +36,8 @@ pub(super) struct ParameterForm {
     long_description_input: Entity<InputState>,
     parameter_ref_input: Entity<InputState>,
     parameter_type_names: Rc<RefCell<Vec<String>>>,
+    defaults_open: bool,
+    documentation_open: bool,
     _subscriptions: Vec<Subscription>,
 }
 
@@ -89,6 +93,8 @@ impl ParameterForm {
                 long_description_input: input(&values.long_description, true, window, cx),
                 parameter_ref_input: input(&values.parameter_ref, false, window, cx),
                 parameter_type_names,
+                defaults_open: false,
+                documentation_open: false,
                 _subscriptions: vec![name_subscription],
             }
         })
@@ -102,6 +108,8 @@ impl ParameterForm {
         cx: &mut Context<Self>,
     ) {
         *self.parameter_type_names.borrow_mut() = parameter_type_names(parameter_type_set);
+        self.defaults_open = false;
+        self.documentation_open = false;
         self.element_kind = match parameter {
             Some(xtce::ParameterSetTypeContent::Parameter(_)) => ParameterElementKind::Parameter,
             Some(xtce::ParameterSetTypeContent::ParameterRef(_)) => ParameterElementKind::Reference,
@@ -133,39 +141,77 @@ impl ParameterForm {
         .apply_to(parameter);
     }
 
-    fn render_form(&self, cx: &App) -> Div {
+    fn render_form(&self, cx: &mut Context<Self>) -> Div {
         match self.element_kind {
             ParameterElementKind::Parameter => v_flex()
                 .gap_5()
-                .child(h_flex().gap_4().items_start().child(field(
+                .child(field(
                     "Parameter type reference",
                     "Required",
                     &self.parameter_type_ref_input,
                     cx,
-                )))
+                ))
                 .child(
-                    h_flex()
-                        .gap_4()
-                        .items_start()
-                        .child(field(
+                    Collapsible::new()
+                        .open(self.defaults_open)
+                        .child(
+                            Button::new("toggle-parameter-defaults")
+                                .small()
+                                .link()
+                                .icon(if self.defaults_open {
+                                    IconName::ChevronDown
+                                } else {
+                                    IconName::ChevronRight
+                                })
+                                .label("Defaults")
+                                .on_click(cx.listener(|this, _, _, cx| {
+                                    this.defaults_open = !this.defaults_open;
+                                    cx.notify();
+                                })),
+                        )
+                        .content(v_flex().pt_3().child(field(
                             "Initial value",
                             "Optional",
                             &self.initial_value_input,
                             cx,
-                        ))
-                        .child(field(
-                            "Short description",
-                            "Optional",
-                            &self.short_description_input,
-                            cx,
-                        )),
+                        ))),
                 )
-                .child(field(
-                    "Long description",
-                    "Optional",
-                    &self.long_description_input,
-                    cx,
-                )),
+                .child(
+                    Collapsible::new()
+                        .open(self.documentation_open)
+                        .child(
+                            Button::new("toggle-parameter-documentation")
+                                .small()
+                                .link()
+                                .icon(if self.documentation_open {
+                                    IconName::ChevronDown
+                                } else {
+                                    IconName::ChevronRight
+                                })
+                                .label("Documentation")
+                                .on_click(cx.listener(|this, _, _, cx| {
+                                    this.documentation_open = !this.documentation_open;
+                                    cx.notify();
+                                })),
+                        )
+                        .content(
+                            v_flex()
+                                .pt_3()
+                                .gap_4()
+                                .child(field(
+                                    "Short description",
+                                    "Optional",
+                                    &self.short_description_input,
+                                    cx,
+                                ))
+                                .child(field(
+                                    "Long description",
+                                    "Optional",
+                                    &self.long_description_input,
+                                    cx,
+                                )),
+                        ),
+                ),
             ParameterElementKind::Reference => field(
                 "Parameter reference",
                 "Required",

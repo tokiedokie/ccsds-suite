@@ -1,9 +1,12 @@
 use gpui::{
     App, AppContext, Context, Div, Entity, IntoElement, ParentElement, Render, Styled,
-    Subscription, Window, div,
+    Subscription, Window, div, prelude::FluentBuilder,
 };
 use gpui_component::{
-    IndexPath, StyledExt, h_flex,
+    IconName, IndexPath, Sizable, StyledExt,
+    button::{Button, ButtonVariants},
+    collapsible::Collapsible,
+    h_flex,
     input::{Input, InputEvent, InputState},
     select::{Select, SelectEvent, SelectState},
     v_flex,
@@ -17,6 +20,35 @@ use super::{
     field, impl_select_item, optional_value,
 };
 use crate::XtceEditor;
+
+macro_rules! long_description {
+    ($content:expr, $type:ident) => {
+        $content
+            .iter()
+            .find_map(|item| match item {
+                xtce::$type::LongDescription(value) => Some(value.as_str()),
+                _ => None,
+            })
+            .unwrap_or_default()
+    };
+}
+
+macro_rules! set_long_description {
+    ($content:expr, $type:ident, $description:expr) => {{
+        let existing = $content.iter_mut().find_map(|item| match item {
+            xtce::$type::LongDescription(value) => Some(value),
+            _ => None,
+        });
+        if let Some(existing) = existing {
+            existing.clone_from($description);
+        } else if !$description.is_empty() {
+            $content.insert(0, xtce::$type::LongDescription($description.to_owned()));
+        }
+        if $description.is_empty() {
+            $content.retain(|item| !matches!(item, xtce::$type::LongDescription(_)));
+        }
+    }};
+}
 
 #[derive(Clone, Copy, Debug, Display, EnumString, VariantArray, PartialEq, Eq)]
 enum CharacterWidthChoice {
@@ -66,6 +98,9 @@ pub(super) struct ParameterTypeForm {
     float_size_select: Entity<SelectState<Vec<FloatSizeChoice>>>,
     nested_items_input: Entity<InputState>,
     data_encoding: Entity<DataEncodingForm>,
+    base_defaults_open: bool,
+    documentation_open: bool,
+    type_options_open: bool,
     _subscriptions: Vec<Subscription>,
 }
 
@@ -237,6 +272,9 @@ impl ParameterTypeForm {
                     window,
                     cx,
                 ),
+                base_defaults_open: false,
+                documentation_open: false,
+                type_options_open: false,
                 _subscriptions: subscriptions,
             }
         })
@@ -249,6 +287,9 @@ impl ParameterTypeForm {
         cx: &mut Context<Self>,
     ) {
         let values = ParameterTypeValues::from_type(parameter_type);
+        self.base_defaults_open = false;
+        self.documentation_open = false;
+        self.type_options_open = false;
         self.present = parameter_type.is_some();
         let selected_kind = parameter_type
             .map(kind)
@@ -352,16 +393,11 @@ impl ParameterTypeForm {
         }
     }
 
-    fn render_form(&self, cx: &App) -> Div {
+    fn render_form(&self, cx: &mut Context<Self>) -> Div {
         if !self.present {
             return v_flex();
         }
         let kind = self.kind;
-        let mut identity_fields = h_flex().gap_4().items_start();
-        if let Some((label, hint)) = kind.base_field() {
-            identity_fields =
-                identity_fields.child(field(label, hint, &self.base_or_ref_input, cx));
-        }
 
         let mut form = v_flex().gap_5().child(
             v_flex()
@@ -369,45 +405,17 @@ impl ParameterTypeForm {
                 .child(div().text_sm().font_medium().child("Parameter type"))
                 .child(Select::new(&self.kind_select).w_full()),
         );
-        if kind.base_field().is_some() {
-            form = form.child(identity_fields);
+        if kind == ParameterTypeKind::Array {
+            form = form.child(field(
+                "Array type reference",
+                "Required",
+                &self.base_or_ref_input,
+                cx,
+            ));
         }
-        form = form.child(
-            h_flex()
-                .gap_4()
-                .items_start()
-                .child(field(
-                    "Initial value",
-                    "Optional",
-                    &self.initial_value_input,
-                    cx,
-                ))
-                .child(field(
-                    "Short description",
-                    "Optional",
-                    &self.short_description_input,
-                    cx,
-                )),
-        );
         match kind {
             ParameterTypeKind::String => {
-                form = form.child(
-                    h_flex()
-                        .gap_4()
-                        .items_start()
-                        .child(field(
-                            "Restriction pattern",
-                            "Optional",
-                            &self.extra_a_input,
-                            cx,
-                        ))
-                        .child(select_field(
-                            "Character width",
-                            "Optional",
-                            &self.character_width_select,
-                            cx,
-                        )),
-                );
+                form = form.child(self.type_options(cx));
             }
             ParameterTypeKind::Integer => {
                 form = form.child(
@@ -447,14 +455,6 @@ impl ParameterTypeForm {
             }
             _ => {}
         }
-        if kind.has_direct_long_description() {
-            form = form.child(field(
-                "Long description",
-                "Optional",
-                &self.long_description_input,
-                cx,
-            ));
-        }
         match kind {
             ParameterTypeKind::Array => {
                 form = form.child(field(
@@ -479,7 +479,119 @@ impl ParameterTypeForm {
                 .child(div().text_lg().font_semibold().child("Data encoding"))
                 .child(self.data_encoding.clone());
         }
-        form
+        form.child(self.base_defaults(cx))
+            .child(self.documentation(cx))
+    }
+
+    fn type_options(&self, cx: &mut Context<Self>) -> Collapsible {
+        Collapsible::new()
+            .open(self.type_options_open)
+            .child(
+                Button::new("toggle-parameter-type-options")
+                    .small()
+                    .link()
+                    .icon(if self.type_options_open {
+                        IconName::ChevronDown
+                    } else {
+                        IconName::ChevronRight
+                    })
+                    .label("Type options")
+                    .on_click(cx.listener(|this, _, _, cx| {
+                        this.type_options_open = !this.type_options_open;
+                        cx.notify();
+                    })),
+            )
+            .content(
+                h_flex()
+                    .pt_3()
+                    .gap_4()
+                    .items_start()
+                    .child(field(
+                        "Restriction pattern",
+                        "Optional",
+                        &self.extra_a_input,
+                        cx,
+                    ))
+                    .child(select_field(
+                        "Character width",
+                        "Optional",
+                        &self.character_width_select,
+                        cx,
+                    )),
+            )
+    }
+
+    fn base_defaults(&self, cx: &mut Context<Self>) -> Collapsible {
+        let content = h_flex()
+            .pt_3()
+            .gap_4()
+            .items_start()
+            .when(self.kind != ParameterTypeKind::Array, |content| {
+                content.when_some(self.kind.base_field(), |content, (label, hint)| {
+                    content.child(field(label, hint, &self.base_or_ref_input, cx))
+                })
+            })
+            .child(field(
+                "Initial value",
+                "Optional",
+                &self.initial_value_input,
+                cx,
+            ));
+        Collapsible::new()
+            .open(self.base_defaults_open)
+            .child(
+                Button::new("toggle-parameter-type-base-defaults")
+                    .small()
+                    .link()
+                    .icon(if self.base_defaults_open {
+                        IconName::ChevronDown
+                    } else {
+                        IconName::ChevronRight
+                    })
+                    .label("Base and defaults")
+                    .on_click(cx.listener(|this, _, _, cx| {
+                        this.base_defaults_open = !this.base_defaults_open;
+                        cx.notify();
+                    })),
+            )
+            .content(content)
+    }
+
+    fn documentation(&self, cx: &mut Context<Self>) -> Collapsible {
+        Collapsible::new()
+            .open(self.documentation_open)
+            .child(
+                Button::new("toggle-parameter-type-documentation")
+                    .small()
+                    .link()
+                    .icon(if self.documentation_open {
+                        IconName::ChevronDown
+                    } else {
+                        IconName::ChevronRight
+                    })
+                    .label("Documentation")
+                    .on_click(cx.listener(|this, _, _, cx| {
+                        this.documentation_open = !this.documentation_open;
+                        cx.notify();
+                    })),
+            )
+            .content(
+                v_flex()
+                    .pt_3()
+                    .gap_4()
+                    .child(field(
+                        "Short description",
+                        "Optional",
+                        &self.short_description_input,
+                        cx,
+                    ))
+                    .child(field(
+                        "Long description",
+                        "Optional",
+                        &self.long_description_input,
+                        cx,
+                    )),
+            )
     }
 }
 
@@ -558,13 +670,6 @@ impl ParameterTypeKind {
             _ => Some(("Base type", "Optional; used only for type inheritance")),
         }
     }
-
-    fn has_direct_long_description(self) -> bool {
-        matches!(
-            self,
-            Self::RelativeTime | Self::AbsoluteTime | Self::Array | Self::Aggregate
-        )
-    }
 }
 
 struct ParameterTypeValues {
@@ -582,67 +687,60 @@ impl ParameterTypeValues {
         let Some(parameter_type) = parameter_type else {
             return Self::empty();
         };
+        macro_rules! common_content {
+            ($value:expr, $content:ident) => {
+                Self::common(
+                    &$value.name,
+                    $value.base_type.as_deref(),
+                    $value
+                        .initial_value
+                        .as_ref()
+                        .map(ToString::to_string)
+                        .as_deref(),
+                    $value.short_description.as_deref(),
+                    long_description!($value.content, $content),
+                    "",
+                    "",
+                )
+            };
+        }
         match parameter_type {
-            xtce::ParameterTypeSetTypeContent::StringParameterType(value) => Self::common(
-                &value.name,
-                value.base_type.as_deref(),
-                value.initial_value.as_deref(),
-                value.short_description.as_deref(),
-                "",
-                value.restriction_pattern.as_deref().unwrap_or_default(),
-                character_width_label(value.character_width.as_ref()),
-            ),
+            xtce::ParameterTypeSetTypeContent::StringParameterType(value) => {
+                let mut values = common_content!(value, StringParameterTypeContent);
+                values.extra_a = value.restriction_pattern.clone().unwrap_or_default();
+                values.extra_b = character_width_label(value.character_width.as_ref()).to_owned();
+                values
+            }
             xtce::ParameterTypeSetTypeContent::EnumeratedParameterType(value) => Self::common(
                 &value.name,
                 value.base_type.as_deref(),
                 value.initial_value.as_deref(),
                 value.short_description.as_deref(),
-                "",
-                "",
-                "",
-            ),
-            xtce::ParameterTypeSetTypeContent::IntegerParameterType(value) => Self::common(
-                &value.name,
-                value.base_type.as_deref(),
-                value
-                    .initial_value
-                    .map(|value| value.to_string())
-                    .as_deref(),
-                value.short_description.as_deref(),
-                "",
-                &value.size_in_bits.to_string(),
-                &value.signed.to_string(),
-            ),
-            xtce::ParameterTypeSetTypeContent::BinaryParameterType(value) => Self::common(
-                &value.name,
-                value.base_type.as_deref(),
-                value.initial_value.as_deref(),
-                value.short_description.as_deref(),
-                "",
+                long_description!(value.content, EnumeratedParameterTypeContent),
                 "",
                 "",
             ),
-            xtce::ParameterTypeSetTypeContent::FloatParameterType(value) => Self::common(
-                &value.name,
-                value.base_type.as_deref(),
-                value
-                    .initial_value
-                    .map(|value| value.to_string())
-                    .as_deref(),
-                value.short_description.as_deref(),
-                "",
-                float_size_label(&value.size_in_bits),
-                "Float",
-            ),
-            xtce::ParameterTypeSetTypeContent::BooleanParameterType(value) => Self::common(
-                &value.name,
-                value.base_type.as_deref(),
-                value.initial_value.as_deref(),
-                value.short_description.as_deref(),
-                "",
-                &value.one_string_value,
-                &value.zero_string_value,
-            ),
+            xtce::ParameterTypeSetTypeContent::IntegerParameterType(value) => {
+                let mut values = common_content!(value, IntegerParameterTypeContent);
+                values.extra_a = value.size_in_bits.to_string();
+                values.extra_b = value.signed.to_string();
+                values
+            }
+            xtce::ParameterTypeSetTypeContent::BinaryParameterType(value) => {
+                common_content!(value, BinaryParameterTypeContent)
+            }
+            xtce::ParameterTypeSetTypeContent::FloatParameterType(value) => {
+                let mut values = common_content!(value, FloatParameterTypeContent);
+                values.extra_a = float_size_label(&value.size_in_bits).to_owned();
+                values.extra_b = "Float".to_owned();
+                values
+            }
+            xtce::ParameterTypeSetTypeContent::BooleanParameterType(value) => {
+                let mut values = common_content!(value, BooleanParameterTypeContent);
+                values.extra_a.clone_from(&value.one_string_value);
+                values.extra_b.clone_from(&value.zero_string_value);
+                values
+            }
             xtce::ParameterTypeSetTypeContent::RelativeTimeParameterType(value) => Self::common(
                 &value.name,
                 value.base_type.as_deref(),
@@ -714,19 +812,25 @@ impl ParameterTypeValues {
                 $value.short_description = optional_value(self.short_description.clone());
             }};
         }
+        macro_rules! content {
+            ($value:expr, $content:ident) => {{
+                common!($value);
+                set_long_description!($value.content, $content, &self.long_description);
+            }};
+        }
         match parameter_type {
             xtce::ParameterTypeSetTypeContent::StringParameterType(value) => {
-                common!(value);
+                content!(value, StringParameterTypeContent);
                 value.initial_value = optional_value(self.initial_value.clone());
                 value.restriction_pattern = optional_value(self.extra_a.clone());
                 value.character_width = character_width_from_str(&self.extra_b);
             }
             xtce::ParameterTypeSetTypeContent::EnumeratedParameterType(value) => {
-                common!(value);
+                content!(value, EnumeratedParameterTypeContent);
                 value.initial_value = optional_value(self.initial_value.clone());
             }
             xtce::ParameterTypeSetTypeContent::IntegerParameterType(value) => {
-                common!(value);
+                content!(value, IntegerParameterTypeContent);
                 value.initial_value = self.initial_value.parse().ok();
                 if let Ok(size) = self.extra_a.parse() {
                     value.size_in_bits = size;
@@ -736,18 +840,18 @@ impl ParameterTypeValues {
                 }
             }
             xtce::ParameterTypeSetTypeContent::BinaryParameterType(value) => {
-                common!(value);
+                content!(value, BinaryParameterTypeContent);
                 value.initial_value = optional_value(self.initial_value.clone());
             }
             xtce::ParameterTypeSetTypeContent::FloatParameterType(value) => {
-                common!(value);
+                content!(value, FloatParameterTypeContent);
                 value.initial_value = self.initial_value.parse().ok();
                 if let Some(size) = float_size_from_str(&self.extra_a) {
                     value.size_in_bits = size;
                 }
             }
             xtce::ParameterTypeSetTypeContent::BooleanParameterType(value) => {
-                common!(value);
+                content!(value, BooleanParameterTypeContent);
                 value.initial_value = optional_value(self.initial_value.clone());
                 value.one_string_value.clone_from(&self.extra_a);
                 value.zero_string_value.clone_from(&self.extra_b);
@@ -1250,6 +1354,50 @@ mod tests {
             }
             _ => panic!("expected a BooleanParameterType"),
         }
+    }
+
+    #[test]
+    fn long_description_is_editable_for_scalar_parameter_types() {
+        let mut parameter_type =
+            xtce::ParameterTypeSetTypeContent::StringParameterType(xtce::StringParameterType {
+                short_description: None,
+                name: "ModeType".to_owned(),
+                base_type: None,
+                initial_value: None,
+                restriction_pattern: None,
+                character_width: None,
+                content: vec![
+                    xtce::StringParameterTypeContent::LongDescription(
+                        "Original description".to_owned(),
+                    ),
+                    xtce::StringParameterTypeContent::AncillaryDataSet(
+                        xtce::AncillaryDataSetType {
+                            ancillary_data: Vec::new(),
+                        },
+                    ),
+                ],
+            });
+        let mut values = ParameterTypeValues::from_type(Some(&parameter_type));
+        assert_eq!(values.long_description, "Original description");
+
+        values.long_description = "Updated description".to_owned();
+        values.apply_to(&mut parameter_type);
+
+        let xtce::ParameterTypeSetTypeContent::StringParameterType(parameter_type) = parameter_type
+        else {
+            panic!("expected a StringParameterType");
+        };
+        assert!(parameter_type.content.iter().any(|item| matches!(
+            item,
+            xtce::StringParameterTypeContent::LongDescription(value)
+                if value == "Updated description"
+        )));
+        assert!(
+            parameter_type
+                .content
+                .iter()
+                .any(|item| matches!(item, xtce::StringParameterTypeContent::AncillaryDataSet(_)))
+        );
     }
 
     #[test]
