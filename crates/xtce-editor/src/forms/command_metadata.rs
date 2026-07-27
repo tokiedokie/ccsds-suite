@@ -151,7 +151,9 @@ impl CommandMetaDataForm {
                         xtce::StreamSetTypeContent::VariableFrameStream(_) => {
                             Some(ElementKind::CommandVariableFrameStream(index))
                         }
-                        xtce::StreamSetTypeContent::CustomStream(_) => None,
+                        xtce::StreamSetTypeContent::CustomStream(_) => {
+                            Some(ElementKind::CommandCustomStream(index))
+                        }
                     })
                     .collect();
                 collection_summary(

@@ -43,6 +43,7 @@ enum ElementKind {
     TelemetryStreamSet,
     TelemetryFixedFrameStream(usize),
     TelemetryVariableFrameStream(usize),
+    TelemetryCustomStream(usize),
     TelemetryAlgorithmSet,
     CommandMetaData,
     CommandParameterTypeSet,
@@ -57,6 +58,7 @@ enum ElementKind {
     CommandStreamSet,
     CommandFixedFrameStream(usize),
     CommandVariableFrameStream(usize),
+    CommandCustomStream(usize),
     CommandAlgorithmSet,
     ServiceSet,
 }
@@ -81,6 +83,7 @@ impl ElementKind {
             Self::TelemetryVariableFrameStream(_) | Self::CommandVariableFrameStream(_) => {
                 "VariableFrameStream"
             }
+            Self::TelemetryCustomStream(_) | Self::CommandCustomStream(_) => "CustomStream",
             Self::TelemetryAlgorithmSet | Self::CommandAlgorithmSet => "AlgorithmSet",
             Self::CommandMetaData => "CommandMetaData",
             Self::ArgumentTypeSet => "ArgumentTypeSet",
@@ -152,7 +155,9 @@ impl ElementKind {
             | Self::TelemetryFixedFrameStream(_)
             | Self::CommandFixedFrameStream(_)
             | Self::TelemetryVariableFrameStream(_)
-            | Self::CommandVariableFrameStream(_) => IconName::GalleryVerticalEnd,
+            | Self::CommandVariableFrameStream(_)
+            | Self::TelemetryCustomStream(_)
+            | Self::CommandCustomStream(_) => IconName::GalleryVerticalEnd,
             Self::TelemetryAlgorithmSet | Self::CommandAlgorithmSet => IconName::Bot,
             Self::ArgumentType(_) => IconName::CaseSensitive,
             Self::ServiceSet => IconName::Building2,
@@ -172,6 +177,7 @@ impl ElementKind {
 enum StreamChildKind {
     Fixed,
     Variable,
+    Custom,
 }
 
 #[derive(Clone, Debug, Hash, PartialEq, Eq)]
@@ -857,6 +863,7 @@ impl XtceDocument {
         let prefix = match child_kind {
             StreamChildKind::Fixed => "FixedFrameStream",
             StreamChildKind::Variable => "VariableFrameStream",
+            StreamChildKind::Custom => "CustomStream",
         };
         let name = Self::next_unique_name(prefix, |candidate| {
             set.content.iter().any(|stream| match stream {
@@ -870,12 +877,15 @@ impl XtceDocument {
             StreamChildKind::Variable => {
                 forms::variable_frame_stream::default_variable_frame_stream(name)
             }
+            StreamChildKind::Custom => forms::custom_stream::default_custom_stream(name),
         });
         Some(match (telemetry, child_kind) {
             (true, StreamChildKind::Fixed) => ElementKind::TelemetryFixedFrameStream(index),
             (true, StreamChildKind::Variable) => ElementKind::TelemetryVariableFrameStream(index),
+            (true, StreamChildKind::Custom) => ElementKind::TelemetryCustomStream(index),
             (false, StreamChildKind::Fixed) => ElementKind::CommandFixedFrameStream(index),
             (false, StreamChildKind::Variable) => ElementKind::CommandVariableFrameStream(index),
+            (false, StreamChildKind::Custom) => ElementKind::CommandCustomStream(index),
         })
     }
 
@@ -1196,6 +1206,7 @@ impl XtceDocument {
                         stream,
                         xtce::StreamSetTypeContent::FixedFrameStream(_)
                             | xtce::StreamSetTypeContent::VariableFrameStream(_)
+                            | xtce::StreamSetTypeContent::CustomStream(_)
                     )
                 })
                 .count();
@@ -1226,7 +1237,15 @@ impl XtceDocument {
                             child_level + 2,
                         );
                     }
-                    xtce::StreamSetTypeContent::CustomStream(_) => {}
+                    xtce::StreamSetTypeContent::CustomStream(stream) => {
+                        Self::push_named_tree_node(
+                            nodes,
+                            path,
+                            ElementKind::TelemetryCustomStream(index),
+                            stream.name.clone(),
+                            child_level + 2,
+                        );
+                    }
                 }
             }
             for (present, kind) in [(
@@ -1330,6 +1349,7 @@ impl XtceDocument {
                         stream,
                         xtce::StreamSetTypeContent::FixedFrameStream(_)
                             | xtce::StreamSetTypeContent::VariableFrameStream(_)
+                            | xtce::StreamSetTypeContent::CustomStream(_)
                     )
                 })
                 .count();
@@ -1360,7 +1380,15 @@ impl XtceDocument {
                             child_level + 2,
                         );
                     }
-                    xtce::StreamSetTypeContent::CustomStream(_) => {}
+                    xtce::StreamSetTypeContent::CustomStream(stream) => {
+                        Self::push_named_tree_node(
+                            nodes,
+                            path,
+                            ElementKind::CommandCustomStream(index),
+                            stream.name.clone(),
+                            child_level + 2,
+                        );
+                    }
                 }
             }
             for (present, kind) in [
@@ -1750,6 +1778,8 @@ impl ElementTree {
                                     let fixed_parent = stream_parent.clone();
                                     let variable_editor = stream_editor.clone();
                                     let variable_parent = stream_parent.clone();
+                                    let custom_editor = stream_editor.clone();
+                                    let custom_parent = stream_parent.clone();
                                     menu.item(PopupMenuItem::new("FixedFrameStream").on_click(
                                         move |_, window, cx| {
                                             _ = fixed_editor.update(cx, |this, cx| {
@@ -1762,13 +1792,25 @@ impl ElementTree {
                                             });
                                         },
                                     ))
+                                    .item(PopupMenuItem::new("VariableFrameStream").on_click(
+                                        move |_, window, cx| {
+                                            _ = variable_editor.update(cx, |this, cx| {
+                                                this.add_stream_child(
+                                                    &variable_parent,
+                                                    StreamChildKind::Variable,
+                                                    window,
+                                                    cx,
+                                                );
+                                            });
+                                        },
+                                    ))
                                     .item(
-                                        PopupMenuItem::new("VariableFrameStream").on_click(
+                                        PopupMenuItem::new("CustomStream").on_click(
                                             move |_, window, cx| {
-                                                _ = variable_editor.update(cx, |this, cx| {
+                                                _ = custom_editor.update(cx, |this, cx| {
                                                     this.add_stream_child(
-                                                        &variable_parent,
-                                                        StreamChildKind::Variable,
+                                                        &custom_parent,
+                                                        StreamChildKind::Custom,
                                                         window,
                                                         cx,
                                                     );
@@ -2950,6 +2992,60 @@ mod tests {
                 && node.label == "VariableFrameStream1"
         }));
         XtceDocument::serialize(&root).expect("variable frame streams should serialize");
+    }
+
+    #[test]
+    fn adds_custom_streams_to_telemetry_and_command_metadata() {
+        let mut root = XtceDocument::untitled().root;
+        assert!(XtceDocument::add_metadata(
+            &mut root,
+            ElementKind::TelemetryMetaData
+        ));
+        assert!(XtceDocument::add_metadata(
+            &mut root,
+            ElementKind::CommandMetaData
+        ));
+
+        assert_eq!(
+            XtceDocument::add_stream_item(
+                &mut root,
+                ElementKind::TelemetryStreamSet,
+                StreamChildKind::Custom,
+            ),
+            Some(ElementKind::TelemetryCustomStream(0))
+        );
+        assert_eq!(
+            XtceDocument::add_stream_item(
+                &mut root,
+                ElementKind::CommandStreamSet,
+                StreamChildKind::Custom,
+            ),
+            Some(ElementKind::CommandCustomStream(0))
+        );
+
+        let mut nodes = Vec::new();
+        XtceDocument::collect_tree_nodes(&root, &mut Vec::new(), 0, &mut nodes);
+        assert!(nodes.iter().any(|node| {
+            node.selection.kind == ElementKind::TelemetryCustomStream(0)
+                && node.label == "CustomStream1"
+        }));
+        assert!(nodes.iter().any(|node| {
+            node.selection.kind == ElementKind::CommandCustomStream(0)
+                && node.label == "CustomStream1"
+        }));
+
+        let xml = XtceDocument::serialize(&root).expect("custom streams should serialize");
+        let reopened =
+            XtceDocument::from_xml(&xml, "custom-stream.xml".to_owned()).expect("should reopen");
+        assert!(matches!(
+            reopened
+                .root
+                .telemetry_meta_data
+                .and_then(|metadata| metadata.stream_set)
+                .and_then(|set| set.content.into_iter().next()),
+            Some(xtce::StreamSetTypeContent::CustomStream(stream))
+                if stream.name == "CustomStream1"
+        ));
     }
 
     #[test]

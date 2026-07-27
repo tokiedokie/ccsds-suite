@@ -134,7 +134,9 @@ impl TelemetryMetaDataForm {
                         xtce::StreamSetTypeContent::VariableFrameStream(_) => {
                             Some(ElementKind::TelemetryVariableFrameStream(index))
                         }
-                        xtce::StreamSetTypeContent::CustomStream(_) => None,
+                        xtce::StreamSetTypeContent::CustomStream(_) => {
+                            Some(ElementKind::TelemetryCustomStream(index))
+                        }
                     })
                     .collect();
                 collection_summary(

@@ -3,11 +3,12 @@ use gpui::{App, Context, Div, Entity, ParentElement, Styled, WeakEntity, Window}
 use super::{
     alias_set::AliasSetForm, ancillary_data_set::AncillaryDataSetForm,
     argument_type::ArgumentTypeForm, command_metadata::CommandMetaDataForm,
-    fixed_frame_stream::FixedFrameStreamForm, header::HeaderForm, message::MessageForm,
-    message_set::MessageSetForm, meta_command::MetaCommandForm, parameter::ParameterForm,
-    parameter_type::ParameterTypeForm, sequence_container::SequenceContainerForm,
-    service_set::ServiceSetForm, space_system::SpaceSystemForm,
-    telemetry_metadata::TelemetryMetaDataForm, variable_frame_stream::VariableFrameStreamForm,
+    custom_stream::CustomStreamForm, fixed_frame_stream::FixedFrameStreamForm, header::HeaderForm,
+    message::MessageForm, message_set::MessageSetForm, meta_command::MetaCommandForm,
+    parameter::ParameterForm, parameter_type::ParameterTypeForm,
+    sequence_container::SequenceContainerForm, service_set::ServiceSetForm,
+    space_system::SpaceSystemForm, telemetry_metadata::TelemetryMetaDataForm,
+    variable_frame_stream::VariableFrameStreamForm,
 };
 use crate::{ElementKind, XtceDocument, XtceEditor};
 
@@ -23,6 +24,7 @@ pub(crate) struct ElementForms {
     message: Entity<MessageForm>,
     fixed_frame_stream: Entity<FixedFrameStreamForm>,
     variable_frame_stream: Entity<VariableFrameStreamForm>,
+    custom_stream: Entity<CustomStreamForm>,
     parameter: Entity<ParameterForm>,
     parameter_type: Entity<ParameterTypeForm>,
     sequence_container: Entity<SequenceContainerForm>,
@@ -88,6 +90,14 @@ impl ElementForms {
                 .and_then(|set| set.content.get(index))
                 .map(stream_title)
                 .unwrap_or_else(|| kind.label().to_owned()),
+            ElementKind::TelemetryCustomStream(index) => telemetry_stream_set(system)
+                .and_then(|set| set.content.get(index))
+                .map(stream_title)
+                .unwrap_or_else(|| kind.label().to_owned()),
+            ElementKind::CommandCustomStream(index) => command_stream_set(system)
+                .and_then(|set| set.content.get(index))
+                .map(stream_title)
+                .unwrap_or_else(|| kind.label().to_owned()),
             _ => kind.label().to_owned(),
         }
     }
@@ -129,6 +139,9 @@ impl ElementForms {
             ElementKind::TelemetryVariableFrameStream(_)
             | ElementKind::CommandVariableFrameStream(_) => {
                 Some(self.variable_frame_stream.read(cx).name(cx))
+            }
+            ElementKind::TelemetryCustomStream(_) | ElementKind::CommandCustomStream(_) => {
+                Some(self.custom_stream.read(cx).name(cx))
             }
             _ => None,
         }
@@ -174,6 +187,9 @@ impl ElementForms {
             | ElementKind::CommandVariableFrameStream(_) => {
                 Some(self.variable_frame_stream.read(cx).render_name_editor())
             }
+            ElementKind::TelemetryCustomStream(_) | ElementKind::CommandCustomStream(_) => {
+                Some(self.custom_stream.read(cx).render_name_editor())
+            }
             _ => None,
         }
     }
@@ -214,6 +230,11 @@ impl ElementForms {
                 cx,
             ),
             variable_frame_stream: VariableFrameStreamForm::new(
+                telemetry_stream_set(system).and_then(|set| set.content.first()),
+                window,
+                cx,
+            ),
+            custom_stream: CustomStreamForm::new(
                 telemetry_stream_set(system).and_then(|set| set.content.first()),
                 window,
                 cx,
@@ -393,6 +414,24 @@ impl ElementForms {
                     );
                 });
             }
+            ElementKind::TelemetryCustomStream(index) => {
+                self.custom_stream.update(cx, |form, cx| {
+                    form.load(
+                        telemetry_stream_set(system).and_then(|set| set.content.get(index)),
+                        window,
+                        cx,
+                    );
+                });
+            }
+            ElementKind::CommandCustomStream(index) => {
+                self.custom_stream.update(cx, |form, cx| {
+                    form.load(
+                        command_stream_set(system).and_then(|set| set.content.get(index)),
+                        window,
+                        cx,
+                    );
+                });
+            }
             ElementKind::ServiceSet => {
                 self.service_set.update(cx, |form, cx| {
                     form.load(system.service_set.as_ref(), window, cx);
@@ -500,6 +539,20 @@ impl ElementForms {
                     self.variable_frame_stream.read(cx).apply_to(stream, cx);
                 }
             }
+            ElementKind::TelemetryCustomStream(index) => {
+                if let Some(stream) =
+                    telemetry_stream_set_mut(system).and_then(|set| set.content.get_mut(index))
+                {
+                    self.custom_stream.read(cx).apply_to(stream, cx);
+                }
+            }
+            ElementKind::CommandCustomStream(index) => {
+                if let Some(stream) =
+                    command_stream_set_mut(system).and_then(|set| set.content.get_mut(index))
+                {
+                    self.custom_stream.read(cx).apply_to(stream, cx);
+                }
+            }
             ElementKind::ServiceSet => {
                 self.service_set
                     .read(cx)
@@ -555,6 +608,11 @@ impl ElementForms {
             | ElementKind::CommandVariableFrameStream(_) => gpui_component::v_flex()
                 .w_full()
                 .child(self.variable_frame_stream.clone()),
+            ElementKind::TelemetryCustomStream(_) | ElementKind::CommandCustomStream(_) => {
+                gpui_component::v_flex()
+                    .w_full()
+                    .child(self.custom_stream.clone())
+            }
             ElementKind::TelemetryMetaData
             | ElementKind::TelemetryParameterTypeSet
             | ElementKind::ContainerSet
