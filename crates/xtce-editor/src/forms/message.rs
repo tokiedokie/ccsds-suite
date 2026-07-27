@@ -202,7 +202,7 @@ impl Render for MessageForm {
     }
 }
 
-struct MessageCriteriaForm {
+pub(super) struct MessageCriteriaForm {
     kind_select: Entity<SelectState<Vec<CriteriaKind>>>,
     rows: Vec<Entity<ComparisonRow>>,
     boolean_expression: Entity<BooleanExpressionForm>,
@@ -217,6 +217,22 @@ impl MessageCriteriaForm {
         cx: &mut impl AppContext,
     ) -> Entity<Self> {
         let values = CriteriaValues::from_criteria(criteria);
+        Self::new_values(values, window, cx)
+    }
+
+    pub(super) fn new_context(
+        criteria: Option<&xtce::ContextMatchType>,
+        window: &mut Window,
+        cx: &mut impl AppContext,
+    ) -> Entity<Self> {
+        Self::new_values(CriteriaValues::from_context(criteria), window, cx)
+    }
+
+    fn new_values(
+        values: CriteriaValues<'_>,
+        window: &mut Window,
+        cx: &mut impl AppContext,
+    ) -> Entity<Self> {
         let boolean_expression = BooleanExpressionForm::new(values.boolean_expression, window, cx);
         let custom_algorithm = InputAlgorithmForm::new(values.custom_algorithm, window, cx);
         cx.new(move |cx| {
@@ -270,6 +286,25 @@ impl MessageCriteriaForm {
                 self.custom_algorithm.read(cx).algorithm(cx),
             ),
         };
+    }
+
+    pub(super) fn context_match(&self, cx: &App) -> xtce::ContextMatchType {
+        match selected_value(&self.kind_select, CriteriaKind::Comparison, cx) {
+            CriteriaKind::BooleanExpression => xtce::ContextMatchType::BooleanExpression(
+                self.boolean_expression.read(cx).expression(cx),
+            ),
+            CriteriaKind::Comparison => {
+                xtce::ContextMatchType::Comparison(self.comparisons(cx).remove(0))
+            }
+            CriteriaKind::ComparisonList => {
+                xtce::ContextMatchType::ComparisonList(xtce::ComparisonListType {
+                    comparison: self.comparisons(cx),
+                })
+            }
+            CriteriaKind::CustomAlgorithm => xtce::ContextMatchType::CustomAlgorithm(
+                self.custom_algorithm.read(cx).algorithm(cx),
+            ),
+        }
     }
 
     fn comparisons(&self, cx: &App) -> Vec<xtce::ComparisonType> {
@@ -533,6 +568,41 @@ impl<'a> CriteriaValues<'a> {
                 custom_algorithm: None,
             },
             Some(xtce::MatchCriteriaType::CustomAlgorithm(algorithm)) => Self {
+                kind: CriteriaKind::CustomAlgorithm,
+                comparisons: Vec::new(),
+                boolean_expression: None,
+                custom_algorithm: Some(algorithm),
+            },
+            None => Self {
+                kind: CriteriaKind::Comparison,
+                comparisons: Vec::new(),
+                boolean_expression: None,
+                custom_algorithm: None,
+            },
+        }
+    }
+
+    fn from_context(criteria: Option<&'a xtce::ContextMatchType>) -> Self {
+        match criteria {
+            Some(xtce::ContextMatchType::Comparison(comparison)) => Self {
+                kind: CriteriaKind::Comparison,
+                comparisons: vec![comparison],
+                boolean_expression: None,
+                custom_algorithm: None,
+            },
+            Some(xtce::ContextMatchType::ComparisonList(list)) => Self {
+                kind: CriteriaKind::ComparisonList,
+                comparisons: list.comparison.iter().collect(),
+                boolean_expression: None,
+                custom_algorithm: None,
+            },
+            Some(xtce::ContextMatchType::BooleanExpression(expression)) => Self {
+                kind: CriteriaKind::BooleanExpression,
+                comparisons: Vec::new(),
+                boolean_expression: Some(expression),
+                custom_algorithm: None,
+            },
+            Some(xtce::ContextMatchType::CustomAlgorithm(algorithm)) => Self {
                 kind: CriteriaKind::CustomAlgorithm,
                 comparisons: Vec::new(),
                 boolean_expression: None,

@@ -6,6 +6,7 @@ mod boolean_expression;
 mod command_metadata;
 mod container_binary_encoding;
 mod container_rate;
+mod context_calibrator;
 pub(super) mod custom_algorithm;
 pub(super) mod custom_stream;
 mod data_encoding;

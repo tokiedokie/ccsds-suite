@@ -41,6 +41,7 @@ struct CalibratorRow {
 
 pub(super) struct DefaultCalibratorForm {
     present: bool,
+    required: bool,
     kind: CalibratorKind,
     kind_select: Entity<SelectState<Vec<CalibratorKind>>>,
     name: Entity<InputState>,
@@ -66,6 +67,23 @@ impl DefaultCalibratorForm {
         window: &mut Window,
         cx: &mut impl AppContext,
     ) -> Entity<Self> {
+        Self::new_with_requirement(calibrator, false, window, cx)
+    }
+
+    pub(super) fn new_required(
+        calibrator: Option<&xtce::CalibratorType>,
+        window: &mut Window,
+        cx: &mut impl AppContext,
+    ) -> Entity<Self> {
+        Self::new_with_requirement(calibrator, true, window, cx)
+    }
+
+    fn new_with_requirement(
+        calibrator: Option<&xtce::CalibratorType>,
+        required: bool,
+        window: &mut Window,
+        cx: &mut impl AppContext,
+    ) -> Entity<Self> {
         let values = CalibratorValues::from_calibrator(calibrator);
         cx.new(move |cx| {
             let kind_select = select(values.kind, window, cx);
@@ -88,7 +106,8 @@ impl DefaultCalibratorForm {
             );
             kind_subscription.detach();
             Self {
-                present: calibrator.is_some(),
+                present: required || calibrator.is_some(),
+                required,
                 kind: values.kind,
                 kind_select,
                 name: input(&values.name, window, cx),
@@ -108,7 +127,7 @@ impl DefaultCalibratorForm {
         cx: &mut Context<Self>,
     ) {
         let values = CalibratorValues::from_calibrator(calibrator);
-        self.present = calibrator.is_some();
+        self.present = self.required || calibrator.is_some();
         self.kind = values.kind;
         self.kind_select.update(cx, |select, cx| {
             select.set_selected_value(&values.kind, window, cx);
@@ -139,7 +158,7 @@ impl DefaultCalibratorForm {
     }
 
     pub(super) fn apply_to(&self, calibrator: &mut Option<xtce::CalibratorType>, cx: &App) {
-        if !self.present {
+        if !self.required && !self.present {
             *calibrator = None;
             return;
         }
@@ -300,6 +319,16 @@ impl DefaultCalibratorForm {
         }
     }
 
+    pub(super) fn calibrator(&self, cx: &App) -> xtce::CalibratorType {
+        let mut calibrator = None;
+        self.apply_to(&mut calibrator, cx);
+        calibrator.unwrap_or_else(|| xtce::CalibratorType {
+            name: None,
+            short_description: None,
+            content: Vec::new(),
+        })
+    }
+
     fn formula_preview(&self, cx: &App) -> String {
         let rows = self.rows.iter().map(|row| {
             let row = row.read(cx);
@@ -362,30 +391,32 @@ impl Render for DefaultCalibratorForm {
         v_flex()
             .w_full()
             .gap_3()
-            .child(
-                h_flex()
-                    .justify_between()
-                    .child(div().text_sm().font_medium().child("Default calibrator"))
-                    .child(if present {
-                        Button::new("remove-default-calibrator")
-                            .small()
-                            .danger()
-                            .label("Remove default calibrator")
-                            .on_click(cx.listener(|this, _, _, cx| {
-                                this.present = false;
-                                cx.notify();
-                            }))
-                    } else {
-                        Button::new("add-default-calibrator")
-                            .small()
-                            .icon(IconName::Plus)
-                            .label("Add default calibrator")
-                            .on_click(cx.listener(|this, _, _, cx| {
-                                this.present = true;
-                                cx.notify();
-                            }))
-                    }),
-            )
+            .when(!self.required, |form| {
+                form.child(
+                    h_flex()
+                        .justify_between()
+                        .child(div().text_sm().font_medium().child("Default calibrator"))
+                        .child(if present {
+                            Button::new("remove-default-calibrator")
+                                .small()
+                                .danger()
+                                .label("Remove default calibrator")
+                                .on_click(cx.listener(|this, _, _, cx| {
+                                    this.present = false;
+                                    cx.notify();
+                                }))
+                        } else {
+                            Button::new("add-default-calibrator")
+                                .small()
+                                .icon(IconName::Plus)
+                                .label("Add default calibrator")
+                                .on_click(cx.listener(|this, _, _, cx| {
+                                    this.present = true;
+                                    cx.notify();
+                                }))
+                        }),
+                )
+            })
             .when(present, |form| {
                 form.child(
                     v_flex()

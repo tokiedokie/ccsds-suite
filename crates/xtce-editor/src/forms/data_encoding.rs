@@ -13,9 +13,10 @@ use gpui_component::{
 use strum::{Display, EnumString, VariantArray};
 
 use super::{
-    default_calibrator::DefaultCalibratorForm, discrete_lookup::DiscreteLookupListForm,
-    dynamic_value::DynamicValueForm, error_detect_correct::ErrorDetectCorrectForm, field,
-    impl_select_item, input_algorithm::InputAlgorithmForm, variable_string::VariableStringForm,
+    context_calibrator::ContextCalibratorListForm, default_calibrator::DefaultCalibratorForm,
+    discrete_lookup::DiscreteLookupListForm, dynamic_value::DynamicValueForm,
+    error_detect_correct::ErrorDetectCorrectForm, field, impl_select_item,
+    input_algorithm::InputAlgorithmForm, variable_string::VariableStringForm,
 };
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -200,6 +201,7 @@ pub(super) struct DataEncodingForm {
     fixed_leading_size: Entity<InputState>,
     change_threshold_input: Entity<InputState>,
     default_calibrator: Entity<DefaultCalibratorForm>,
+    context_calibrators: Entity<ContextCalibratorListForm>,
     _subscriptions: Vec<Subscription>,
 }
 
@@ -285,6 +287,11 @@ impl DataEncodingForm {
             let change_threshold_input = input(&values.change_threshold, window, cx);
             let default_calibrator = DefaultCalibratorForm::new(
                 encoding.and_then(DataEncodingRef::default_calibrator),
+                window,
+                cx,
+            );
+            let context_calibrators = ContextCalibratorListForm::new(
+                encoding.and_then(DataEncodingRef::context_calibrator_list),
                 window,
                 cx,
             );
@@ -378,6 +385,8 @@ impl DataEncodingForm {
                             cx,
                         )
                     });
+                    this.context_calibrators
+                        .update(cx, |form, cx| form.load(None, window, cx));
                     cx.notify();
                 },
             );
@@ -423,6 +432,7 @@ impl DataEncodingForm {
                 fixed_leading_size: input(&fixed_leading_size_value, window, cx),
                 change_threshold_input,
                 default_calibrator,
+                context_calibrators,
                 _subscriptions: vec![
                     kind_subscription,
                     binary_size_subscription,
@@ -549,6 +559,13 @@ impl DataEncodingForm {
                 cx,
             );
         });
+        self.context_calibrators.update(cx, |form, cx| {
+            form.load(
+                encoding.and_then(DataEncodingRef::context_calibrator_list),
+                window,
+                cx,
+            );
+        });
         cx.notify();
     }
 
@@ -564,6 +581,17 @@ impl DataEncodingForm {
     pub(super) fn apply_to(&self, mut encoding: DataEncodingMut<'_>, cx: &App) {
         if let Some(calibrator) = encoding.default_calibrator_mut() {
             self.default_calibrator.read(cx).apply_to(calibrator, cx);
+        }
+        match &mut encoding {
+            DataEncodingMut::Float(value) => self
+                .context_calibrators
+                .read(cx)
+                .apply_to(&mut value.context_calibrator_list, cx),
+            DataEncodingMut::Integer(value) => self
+                .context_calibrators
+                .read(cx)
+                .apply_to(&mut value.context_calibrator_list, cx),
+            DataEncodingMut::Binary(_) | DataEncodingMut::String(_) => {}
         }
         apply_data_error_detect_correct(&mut encoding, self.error_detect_correct.read(cx), cx);
         if let DataEncodingMut::Binary(binary) = &mut encoding {
@@ -902,7 +930,9 @@ impl DataEncodingForm {
         }
         form = form.child(self.error_detect_correct.clone());
         if matches!(kind, DataEncodingKind::Float | DataEncodingKind::Integer) {
-            form = form.child(self.default_calibrator.clone());
+            form = form
+                .child(self.default_calibrator.clone())
+                .child(self.context_calibrators.clone());
         }
         form
     }
@@ -936,6 +966,14 @@ impl<'a> DataEncodingRef<'a> {
         match self {
             Self::Float(value) => value.default_calibrator.as_ref(),
             Self::Integer(value) => value.default_calibrator.as_ref(),
+            Self::Binary(_) | Self::String(_) => None,
+        }
+    }
+
+    fn context_calibrator_list(self) -> Option<&'a xtce::ContextCalibratorListType> {
+        match self {
+            Self::Float(value) => value.context_calibrator_list.as_ref(),
+            Self::Integer(value) => value.context_calibrator_list.as_ref(),
             Self::Binary(_) | Self::String(_) => None,
         }
     }
