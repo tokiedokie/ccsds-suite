@@ -165,7 +165,9 @@ impl TelemetryMetaDataForm {
                         xtce::AlgorithmSetTypeContent::CustomAlgorithm(_) => {
                             Some(ElementKind::TelemetryCustomAlgorithm(index))
                         }
-                        xtce::AlgorithmSetTypeContent::MathAlgorithm(_) => None,
+                        xtce::AlgorithmSetTypeContent::MathAlgorithm(_) => {
+                            Some(ElementKind::TelemetryMathAlgorithm(index))
+                        }
                     })
                     .collect();
                 collection_summary(

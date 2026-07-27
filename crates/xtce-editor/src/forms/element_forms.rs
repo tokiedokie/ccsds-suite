@@ -4,11 +4,12 @@ use super::{
     alias_set::AliasSetForm, ancillary_data_set::AncillaryDataSetForm,
     argument_type::ArgumentTypeForm, command_metadata::CommandMetaDataForm,
     custom_algorithm::CustomAlgorithmForm, custom_stream::CustomStreamForm,
-    fixed_frame_stream::FixedFrameStreamForm, header::HeaderForm, message::MessageForm,
-    message_set::MessageSetForm, meta_command::MetaCommandForm, parameter::ParameterForm,
-    parameter_type::ParameterTypeForm, sequence_container::SequenceContainerForm,
-    service_set::ServiceSetForm, space_system::SpaceSystemForm,
-    telemetry_metadata::TelemetryMetaDataForm, variable_frame_stream::VariableFrameStreamForm,
+    fixed_frame_stream::FixedFrameStreamForm, header::HeaderForm,
+    math_algorithm::MathAlgorithmForm, message::MessageForm, message_set::MessageSetForm,
+    meta_command::MetaCommandForm, parameter::ParameterForm, parameter_type::ParameterTypeForm,
+    sequence_container::SequenceContainerForm, service_set::ServiceSetForm,
+    space_system::SpaceSystemForm, telemetry_metadata::TelemetryMetaDataForm,
+    variable_frame_stream::VariableFrameStreamForm,
 };
 use crate::{ElementKind, XtceDocument, XtceEditor};
 
@@ -26,6 +27,7 @@ pub(crate) struct ElementForms {
     variable_frame_stream: Entity<VariableFrameStreamForm>,
     custom_stream: Entity<CustomStreamForm>,
     custom_algorithm: Entity<CustomAlgorithmForm>,
+    math_algorithm: Entity<MathAlgorithmForm>,
     parameter: Entity<ParameterForm>,
     parameter_type: Entity<ParameterTypeForm>,
     sequence_container: Entity<SequenceContainerForm>,
@@ -107,6 +109,14 @@ impl ElementForms {
                 .and_then(|set| set.content.get(index))
                 .map(XtceDocument::algorithm_label)
                 .unwrap_or_else(|| kind.label().to_owned()),
+            ElementKind::TelemetryMathAlgorithm(index) => telemetry_algorithm_set(system)
+                .and_then(|set| set.content.get(index))
+                .map(XtceDocument::algorithm_label)
+                .unwrap_or_else(|| kind.label().to_owned()),
+            ElementKind::CommandMathAlgorithm(index) => command_algorithm_set(system)
+                .and_then(|set| set.content.get(index))
+                .map(XtceDocument::algorithm_label)
+                .unwrap_or_else(|| kind.label().to_owned()),
             _ => kind.label().to_owned(),
         }
     }
@@ -154,6 +164,9 @@ impl ElementForms {
             }
             ElementKind::TelemetryCustomAlgorithm(_) | ElementKind::CommandCustomAlgorithm(_) => {
                 Some(self.custom_algorithm.read(cx).name(cx))
+            }
+            ElementKind::TelemetryMathAlgorithm(_) | ElementKind::CommandMathAlgorithm(_) => {
+                Some(self.math_algorithm.read(cx).name(cx))
             }
             _ => None,
         }
@@ -205,6 +218,9 @@ impl ElementForms {
             ElementKind::TelemetryCustomAlgorithm(_) | ElementKind::CommandCustomAlgorithm(_) => {
                 Some(self.custom_algorithm.read(cx).render_name_editor())
             }
+            ElementKind::TelemetryMathAlgorithm(_) | ElementKind::CommandMathAlgorithm(_) => {
+                Some(self.math_algorithm.read(cx).render_name_editor())
+            }
             _ => None,
         }
     }
@@ -255,6 +271,11 @@ impl ElementForms {
                 cx,
             ),
             custom_algorithm: CustomAlgorithmForm::new(
+                telemetry_algorithm_set(system).and_then(|set| set.content.first()),
+                window,
+                cx,
+            ),
+            math_algorithm: MathAlgorithmForm::new(
                 telemetry_algorithm_set(system).and_then(|set| set.content.first()),
                 window,
                 cx,
@@ -470,6 +491,24 @@ impl ElementForms {
                     );
                 });
             }
+            ElementKind::TelemetryMathAlgorithm(index) => {
+                self.math_algorithm.update(cx, |form, cx| {
+                    form.load(
+                        telemetry_algorithm_set(system).and_then(|set| set.content.get(index)),
+                        window,
+                        cx,
+                    );
+                });
+            }
+            ElementKind::CommandMathAlgorithm(index) => {
+                self.math_algorithm.update(cx, |form, cx| {
+                    form.load(
+                        command_algorithm_set(system).and_then(|set| set.content.get(index)),
+                        window,
+                        cx,
+                    );
+                });
+            }
             ElementKind::ServiceSet => {
                 self.service_set.update(cx, |form, cx| {
                     form.load(system.service_set.as_ref(), window, cx);
@@ -605,6 +644,20 @@ impl ElementForms {
                     self.custom_algorithm.read(cx).apply_to(algorithm, cx);
                 }
             }
+            ElementKind::TelemetryMathAlgorithm(index) => {
+                if let Some(algorithm) =
+                    telemetry_algorithm_set_mut(system).and_then(|set| set.content.get_mut(index))
+                {
+                    self.math_algorithm.read(cx).apply_to(algorithm, cx);
+                }
+            }
+            ElementKind::CommandMathAlgorithm(index) => {
+                if let Some(algorithm) =
+                    command_algorithm_set_mut(system).and_then(|set| set.content.get_mut(index))
+                {
+                    self.math_algorithm.read(cx).apply_to(algorithm, cx);
+                }
+            }
             ElementKind::ServiceSet => {
                 self.service_set
                     .read(cx)
@@ -669,6 +722,11 @@ impl ElementForms {
                 gpui_component::v_flex()
                     .w_full()
                     .child(self.custom_algorithm.clone())
+            }
+            ElementKind::TelemetryMathAlgorithm(_) | ElementKind::CommandMathAlgorithm(_) => {
+                gpui_component::v_flex()
+                    .w_full()
+                    .child(self.math_algorithm.clone())
             }
             ElementKind::TelemetryMetaData
             | ElementKind::TelemetryParameterTypeSet

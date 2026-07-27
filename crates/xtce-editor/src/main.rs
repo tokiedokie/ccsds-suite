@@ -46,6 +46,7 @@ enum ElementKind {
     TelemetryCustomStream(usize),
     TelemetryAlgorithmSet,
     TelemetryCustomAlgorithm(usize),
+    TelemetryMathAlgorithm(usize),
     CommandMetaData,
     CommandParameterTypeSet,
     CommandParameterType(usize),
@@ -62,6 +63,7 @@ enum ElementKind {
     CommandCustomStream(usize),
     CommandAlgorithmSet,
     CommandCustomAlgorithm(usize),
+    CommandMathAlgorithm(usize),
     ServiceSet,
 }
 
@@ -90,6 +92,7 @@ impl ElementKind {
             Self::TelemetryCustomAlgorithm(_) | Self::CommandCustomAlgorithm(_) => {
                 "CustomAlgorithm"
             }
+            Self::TelemetryMathAlgorithm(_) | Self::CommandMathAlgorithm(_) => "MathAlgorithm",
             Self::CommandMetaData => "CommandMetaData",
             Self::ArgumentTypeSet => "ArgumentTypeSet",
             Self::ArgumentType(_) => "ArgumentType",
@@ -170,7 +173,9 @@ impl ElementKind {
             Self::TelemetryAlgorithmSet
             | Self::CommandAlgorithmSet
             | Self::TelemetryCustomAlgorithm(_)
-            | Self::CommandCustomAlgorithm(_) => IconName::Bot,
+            | Self::CommandCustomAlgorithm(_)
+            | Self::TelemetryMathAlgorithm(_)
+            | Self::CommandMathAlgorithm(_) => IconName::Bot,
             Self::ArgumentType(_) => IconName::CaseSensitive,
             Self::ServiceSet => IconName::Building2,
             kind if kind.uses_folder_icon() => {
@@ -190,6 +195,12 @@ enum StreamChildKind {
     Fixed,
     Variable,
     Custom,
+}
+
+#[derive(Clone, Copy)]
+enum AlgorithmChildKind {
+    Custom,
+    Math,
 }
 
 #[derive(Clone, Debug, Hash, PartialEq, Eq)]
@@ -570,6 +581,28 @@ impl XtceEditor {
         self.load_selected_element(window, cx);
     }
 
+    fn add_algorithm_child(
+        &mut self,
+        parent: &ElementSelection,
+        child_kind: AlgorithmChildKind,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        self.save_selected_element(cx);
+        let system = XtceDocument::system_at_path_mut(&mut self.document.root, &parent.system_path);
+        let Some(kind) = XtceDocument::add_algorithm_item(system, parent.kind, child_kind) else {
+            return;
+        };
+        self.tree.update(cx, |tree, _| {
+            tree.collapsed.remove(parent);
+        });
+        self.document.selection = ElementSelection {
+            system_path: parent.system_path.clone(),
+            kind,
+        };
+        self.load_selected_element(window, cx);
+    }
+
     fn add_metadata(
         &mut self,
         parent: &ElementSelection,
@@ -800,40 +833,10 @@ impl XtceDocument {
                 Self::add_stream_item(system, collection, StreamChildKind::Fixed)
             }
             ElementKind::TelemetryAlgorithmSet => {
-                let set = system
-                    .telemetry_meta_data
-                    .as_mut()?
-                    .algorithm_set
-                    .get_or_insert_with(|| xtce::AlgorithmSetType {
-                        content: Vec::new(),
-                    });
-                let index = set.content.len();
-                let name = Self::next_unique_name("CustomAlgorithm", |candidate| {
-                    set.content
-                        .iter()
-                        .any(|algorithm| Self::algorithm_label(algorithm) == candidate)
-                });
-                set.content
-                    .push(forms::custom_algorithm::default_custom_algorithm(name));
-                Some(ElementKind::TelemetryCustomAlgorithm(index))
+                Self::add_algorithm_item(system, collection, AlgorithmChildKind::Custom)
             }
             ElementKind::CommandAlgorithmSet => {
-                let set = system
-                    .command_meta_data
-                    .as_mut()?
-                    .algorithm_set
-                    .get_or_insert_with(|| xtce::AlgorithmSetType {
-                        content: Vec::new(),
-                    });
-                let index = set.content.len();
-                let name = Self::next_unique_name("CustomAlgorithm", |candidate| {
-                    set.content
-                        .iter()
-                        .any(|algorithm| Self::algorithm_label(algorithm) == candidate)
-                });
-                set.content
-                    .push(forms::custom_algorithm::default_custom_algorithm(name));
-                Some(ElementKind::CommandCustomAlgorithm(index))
+                Self::add_algorithm_item(system, collection, AlgorithmChildKind::Custom)
             }
             ElementKind::CommandParameterSet => {
                 let type_ref = system
@@ -934,6 +937,56 @@ impl XtceDocument {
             (false, StreamChildKind::Fixed) => ElementKind::CommandFixedFrameStream(index),
             (false, StreamChildKind::Variable) => ElementKind::CommandVariableFrameStream(index),
             (false, StreamChildKind::Custom) => ElementKind::CommandCustomStream(index),
+        })
+    }
+
+    fn add_algorithm_item(
+        system: &mut xtce::SpaceSystem,
+        collection: ElementKind,
+        child_kind: AlgorithmChildKind,
+    ) -> Option<ElementKind> {
+        let (set, telemetry) = match collection {
+            ElementKind::TelemetryAlgorithmSet => (
+                system
+                    .telemetry_meta_data
+                    .as_mut()?
+                    .algorithm_set
+                    .get_or_insert_with(|| xtce::AlgorithmSetType {
+                        content: Vec::new(),
+                    }),
+                true,
+            ),
+            ElementKind::CommandAlgorithmSet => (
+                system
+                    .command_meta_data
+                    .as_mut()?
+                    .algorithm_set
+                    .get_or_insert_with(|| xtce::AlgorithmSetType {
+                        content: Vec::new(),
+                    }),
+                false,
+            ),
+            _ => return None,
+        };
+        let index = set.content.len();
+        let prefix = match child_kind {
+            AlgorithmChildKind::Custom => "CustomAlgorithm",
+            AlgorithmChildKind::Math => "MathAlgorithm",
+        };
+        let name = Self::next_unique_name(prefix, |candidate| {
+            set.content
+                .iter()
+                .any(|algorithm| Self::algorithm_label(algorithm) == candidate)
+        });
+        set.content.push(match child_kind {
+            AlgorithmChildKind::Custom => forms::custom_algorithm::default_custom_algorithm(name),
+            AlgorithmChildKind::Math => forms::math_algorithm::default_math_algorithm(name),
+        });
+        Some(match (telemetry, child_kind) {
+            (true, AlgorithmChildKind::Custom) => ElementKind::TelemetryCustomAlgorithm(index),
+            (true, AlgorithmChildKind::Math) => ElementKind::TelemetryMathAlgorithm(index),
+            (false, AlgorithmChildKind::Custom) => ElementKind::CommandCustomAlgorithm(index),
+            (false, AlgorithmChildKind::Math) => ElementKind::CommandMathAlgorithm(index),
         })
     }
 
@@ -1301,28 +1354,33 @@ impl XtceDocument {
                 .as_ref()
                 .map(|set| set.content.as_slice())
                 .unwrap_or_default();
-            let custom_count = algorithms
-                .iter()
-                .filter(|algorithm| {
-                    matches!(algorithm, xtce::AlgorithmSetTypeContent::CustomAlgorithm(_))
-                })
-                .count();
             Self::push_tree_node(
                 nodes,
                 path,
                 ElementKind::TelemetryAlgorithmSet,
                 child_level + 1,
-                custom_count > 0,
+                !algorithms.is_empty(),
             );
             for (index, algorithm) in algorithms.iter().enumerate() {
-                if let xtce::AlgorithmSetTypeContent::CustomAlgorithm(algorithm) = algorithm {
-                    Self::push_named_tree_node(
-                        nodes,
-                        path,
-                        ElementKind::TelemetryCustomAlgorithm(index),
-                        algorithm.name.clone(),
-                        child_level + 2,
-                    );
+                match algorithm {
+                    xtce::AlgorithmSetTypeContent::CustomAlgorithm(algorithm) => {
+                        Self::push_named_tree_node(
+                            nodes,
+                            path,
+                            ElementKind::TelemetryCustomAlgorithm(index),
+                            algorithm.name.clone(),
+                            child_level + 2,
+                        );
+                    }
+                    xtce::AlgorithmSetTypeContent::MathAlgorithm(algorithm) => {
+                        Self::push_named_tree_node(
+                            nodes,
+                            path,
+                            ElementKind::TelemetryMathAlgorithm(index),
+                            algorithm.name.clone(),
+                            child_level + 2,
+                        );
+                    }
                 }
             }
         }
@@ -1474,28 +1532,33 @@ impl XtceDocument {
                 .as_ref()
                 .map(|set| set.content.as_slice())
                 .unwrap_or_default();
-            let custom_count = algorithms
-                .iter()
-                .filter(|algorithm| {
-                    matches!(algorithm, xtce::AlgorithmSetTypeContent::CustomAlgorithm(_))
-                })
-                .count();
             Self::push_tree_node(
                 nodes,
                 path,
                 ElementKind::CommandAlgorithmSet,
                 child_level + 1,
-                custom_count > 0,
+                !algorithms.is_empty(),
             );
             for (index, algorithm) in algorithms.iter().enumerate() {
-                if let xtce::AlgorithmSetTypeContent::CustomAlgorithm(algorithm) = algorithm {
-                    Self::push_named_tree_node(
-                        nodes,
-                        path,
-                        ElementKind::CommandCustomAlgorithm(index),
-                        algorithm.name.clone(),
-                        child_level + 2,
-                    );
+                match algorithm {
+                    xtce::AlgorithmSetTypeContent::CustomAlgorithm(algorithm) => {
+                        Self::push_named_tree_node(
+                            nodes,
+                            path,
+                            ElementKind::CommandCustomAlgorithm(index),
+                            algorithm.name.clone(),
+                            child_level + 2,
+                        );
+                    }
+                    xtce::AlgorithmSetTypeContent::MathAlgorithm(algorithm) => {
+                        Self::push_named_tree_node(
+                            nodes,
+                            path,
+                            ElementKind::CommandMathAlgorithm(index),
+                            algorithm.name.clone(),
+                            child_level + 2,
+                        );
+                    }
                 }
             }
         }
@@ -1818,11 +1881,16 @@ impl ElementTree {
         let selection = node.selection.clone();
         let add_parent = node.selection.clone();
         let stream_parent = node.selection.clone();
+        let algorithm_parent = node.selection.clone();
         let metadata_parent = node.selection.clone();
         let can_add_child = node.selection.kind.can_add_child();
         let can_add_stream = matches!(
             node.selection.kind,
             ElementKind::TelemetryStreamSet | ElementKind::CommandStreamSet
+        );
+        let can_add_algorithm = matches!(
+            node.selection.kind,
+            ElementKind::TelemetryAlgorithmSet | ElementKind::CommandAlgorithmSet
         );
         let can_add_element = node.selection.kind == ElementKind::SpaceSystem;
         let directory_only = node.selection.kind.is_directory_only();
@@ -1851,21 +1919,24 @@ impl ElementTree {
                     })
                     .child(Icon::new(icon).small())
                     .child(div().flex_1().truncate().child(item.label.clone()))
-                    .when(can_add_child && !can_add_stream, |row| {
-                        let editor = editor.clone();
-                        row.child(
-                            Button::new(format!("{}-add", item.id))
-                                .ghost()
-                                .xsmall()
-                                .icon(IconName::Plus)
-                                .on_click(move |_, window, cx| {
-                                    cx.stop_propagation();
-                                    _ = editor.update(cx, |this, cx| {
-                                        this.add_tree_child(&add_parent, window, cx);
-                                    });
-                                }),
-                        )
-                    })
+                    .when(
+                        can_add_child && !can_add_stream && !can_add_algorithm,
+                        |row| {
+                            let editor = editor.clone();
+                            row.child(
+                                Button::new(format!("{}-add", item.id))
+                                    .ghost()
+                                    .xsmall()
+                                    .icon(IconName::Plus)
+                                    .on_click(move |_, window, cx| {
+                                        cx.stop_propagation();
+                                        _ = editor.update(cx, |this, cx| {
+                                            this.add_tree_child(&add_parent, window, cx);
+                                        });
+                                    }),
+                            )
+                        },
+                    )
                     .when(can_add_stream, |row| {
                         let stream_editor = editor.clone();
                         row.child(
@@ -1911,6 +1982,47 @@ impl ElementTree {
                                                     this.add_stream_child(
                                                         &custom_parent,
                                                         StreamChildKind::Custom,
+                                                        window,
+                                                        cx,
+                                                    );
+                                                });
+                                            },
+                                        ),
+                                    )
+                                }),
+                        )
+                    })
+                    .when(can_add_algorithm, |row| {
+                        let algorithm_editor = editor.clone();
+                        row.child(
+                            Button::new(format!("{}-add-algorithm", item.id))
+                                .ghost()
+                                .xsmall()
+                                .icon(IconName::Plus)
+                                .dropdown_menu(move |menu, _, _| {
+                                    let custom_editor = algorithm_editor.clone();
+                                    let custom_parent = algorithm_parent.clone();
+                                    let math_editor = algorithm_editor.clone();
+                                    let math_parent = algorithm_parent.clone();
+                                    menu.item(PopupMenuItem::new("CustomAlgorithm").on_click(
+                                        move |_, window, cx| {
+                                            _ = custom_editor.update(cx, |this, cx| {
+                                                this.add_algorithm_child(
+                                                    &custom_parent,
+                                                    AlgorithmChildKind::Custom,
+                                                    window,
+                                                    cx,
+                                                );
+                                            });
+                                        },
+                                    ))
+                                    .item(
+                                        PopupMenuItem::new("MathAlgorithm").on_click(
+                                            move |_, window, cx| {
+                                                _ = math_editor.update(cx, |this, cx| {
+                                                    this.add_algorithm_child(
+                                                        &math_parent,
+                                                        AlgorithmChildKind::Math,
                                                         window,
                                                         cx,
                                                     );
@@ -2676,8 +2788,8 @@ mod tests {
     use std::collections::HashSet;
 
     use super::{
-        ElementKind, ElementSelection, ElementTree, IconName, StreamChildKind, XtceDocument,
-        startup_document,
+        AlgorithmChildKind, ElementKind, ElementSelection, ElementTree, IconName, StreamChildKind,
+        XtceDocument, startup_document,
     };
 
     #[test]
@@ -3191,6 +3303,60 @@ mod tests {
                 .and_then(|set| set.content.into_iter().next()),
             Some(xtce::AlgorithmSetTypeContent::CustomAlgorithm(algorithm))
                 if algorithm.name == "CustomAlgorithm1"
+        ));
+    }
+
+    #[test]
+    fn adds_math_algorithms_to_telemetry_and_command_metadata() {
+        let mut root = XtceDocument::untitled().root;
+        assert!(XtceDocument::add_metadata(
+            &mut root,
+            ElementKind::TelemetryMetaData
+        ));
+        assert!(XtceDocument::add_metadata(
+            &mut root,
+            ElementKind::CommandMetaData
+        ));
+
+        assert_eq!(
+            XtceDocument::add_algorithm_item(
+                &mut root,
+                ElementKind::TelemetryAlgorithmSet,
+                AlgorithmChildKind::Math,
+            ),
+            Some(ElementKind::TelemetryMathAlgorithm(0))
+        );
+        assert_eq!(
+            XtceDocument::add_algorithm_item(
+                &mut root,
+                ElementKind::CommandAlgorithmSet,
+                AlgorithmChildKind::Math,
+            ),
+            Some(ElementKind::CommandMathAlgorithm(0))
+        );
+
+        let mut nodes = Vec::new();
+        XtceDocument::collect_tree_nodes(&root, &mut Vec::new(), 0, &mut nodes);
+        assert!(nodes.iter().any(|node| {
+            node.selection.kind == ElementKind::TelemetryMathAlgorithm(0)
+                && node.label == "MathAlgorithm1"
+        }));
+        assert!(nodes.iter().any(|node| {
+            node.selection.kind == ElementKind::CommandMathAlgorithm(0)
+                && node.label == "MathAlgorithm1"
+        }));
+
+        let xml = XtceDocument::serialize(&root).expect("math algorithms should serialize");
+        let reopened =
+            XtceDocument::from_xml(&xml, "math-algorithm.xml".to_owned()).expect("should reopen");
+        assert!(matches!(
+            reopened
+                .root
+                .telemetry_meta_data
+                .and_then(|metadata| metadata.algorithm_set)
+                .and_then(|set| set.content.into_iter().next()),
+            Some(xtce::AlgorithmSetTypeContent::MathAlgorithm(algorithm))
+                if algorithm.name == "MathAlgorithm1"
         ));
     }
 

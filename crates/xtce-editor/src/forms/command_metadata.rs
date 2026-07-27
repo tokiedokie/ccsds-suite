@@ -182,7 +182,9 @@ impl CommandMetaDataForm {
                         xtce::AlgorithmSetTypeContent::CustomAlgorithm(_) => {
                             Some(ElementKind::CommandCustomAlgorithm(index))
                         }
-                        xtce::AlgorithmSetTypeContent::MathAlgorithm(_) => None,
+                        xtce::AlgorithmSetTypeContent::MathAlgorithm(_) => {
+                            Some(ElementKind::CommandMathAlgorithm(index))
+                        }
                     })
                     .collect();
                 collection_summary(

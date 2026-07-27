@@ -13,6 +13,7 @@ mod element_forms;
 mod enumeration_list;
 pub(super) mod fixed_frame_stream;
 mod header;
+pub(super) mod math_algorithm;
 mod message;
 pub(super) mod message_set;
 mod meta_command;
