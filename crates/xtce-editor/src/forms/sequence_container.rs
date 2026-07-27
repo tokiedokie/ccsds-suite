@@ -30,7 +30,7 @@ use super::{
     alias_set::AliasSetForm, ancillary_data_set::AncillaryDataSetForm,
     boolean_expression::BooleanExpressionForm,
     container_binary_encoding::ContainerBinaryEncodingForm, container_rate::ContainerRateForm,
-    field, impl_select_item, optional_value,
+    field, impl_select_item, input_algorithm::InputAlgorithmForm, optional_value,
 };
 use crate::{DraggedTelemetryParameter, XtceEditor};
 
@@ -75,6 +75,8 @@ enum RestrictionCriteriaKind {
     ComparisonList,
     #[strum(serialize = "Boolean expression")]
     BooleanExpression,
+    #[strum(serialize = "Custom algorithm")]
+    CustomAlgorithm,
 }
 impl_select_item!(RestrictionCriteriaKind);
 
@@ -107,6 +109,7 @@ pub(super) struct SequenceContainerForm {
     restriction_kind_select: Entity<SelectState<Vec<RestrictionCriteriaKind>>>,
     comparisons: Entity<ComparisonListForm>,
     restriction_boolean_expression: Entity<BooleanExpressionForm>,
+    restriction_custom_algorithm: Entity<InputAlgorithmForm>,
     restriction_criteria_editable: bool,
     reference_context: Rc<RefCell<ReferenceContext>>,
     entry_list: Entity<TelemetryEntryListView>,
@@ -165,6 +168,8 @@ impl SequenceContainerForm {
         );
         let restriction_boolean_expression =
             BooleanExpressionForm::new(values.restriction_boolean_expression, window, cx);
+        let restriction_custom_algorithm =
+            InputAlgorithmForm::new(values.restriction_custom_algorithm, window, cx);
 
         cx.new(move |cx| {
             let base_container_ref_input = completion_input(
@@ -229,6 +234,7 @@ impl SequenceContainerForm {
                 restriction_kind_select,
                 comparisons,
                 restriction_boolean_expression,
+                restriction_custom_algorithm,
                 restriction_criteria_editable: values.restriction_criteria_editable,
                 reference_context,
                 entry_list,
@@ -347,6 +353,9 @@ impl SequenceContainerForm {
         self.restriction_boolean_expression.update(cx, |form, cx| {
             form.load(values.restriction_boolean_expression, window, cx);
         });
+        self.restriction_custom_algorithm.update(cx, |form, cx| {
+            form.load(values.restriction_custom_algorithm, window, cx);
+        });
         cx.notify();
     }
 
@@ -406,6 +415,13 @@ impl SequenceContainerForm {
                         Some(xtce::RestrictionCriteriaType {
                             content: Some(xtce::RestrictionCriteriaTypeContent::BooleanExpression(
                                 self.restriction_boolean_expression.read(cx).expression(cx),
+                            )),
+                        })
+                    }
+                    RestrictionCriteriaKind::CustomAlgorithm => {
+                        Some(xtce::RestrictionCriteriaType {
+                            content: Some(xtce::RestrictionCriteriaTypeContent::CustomAlgorithm(
+                                self.restriction_custom_algorithm.read(cx).algorithm(cx),
                             )),
                         })
                     }
@@ -516,6 +532,16 @@ impl SequenceContainerForm {
                                                 |form| {
                                                     form.child(
                                                         self.restriction_boolean_expression
+                                                            .clone(),
+                                                    )
+                                                },
+                                            )
+                                            .when(
+                                                kind
+                                                    == RestrictionCriteriaKind::CustomAlgorithm,
+                                                |form| {
+                                                    form.child(
+                                                        self.restriction_custom_algorithm
                                                             .clone(),
                                                     )
                                                 },
@@ -2313,6 +2339,7 @@ struct ContainerValues<'a> {
     restriction_criteria: String,
     restriction_kind: RestrictionCriteriaKind,
     restriction_boolean_expression: Option<&'a xtce::BooleanExpressionType>,
+    restriction_custom_algorithm: Option<&'a xtce::InputAlgorithmType>,
     restriction_criteria_editable: bool,
     entry_list: Option<&'a xtce::EntryListType>,
 }
@@ -2354,6 +2381,7 @@ impl<'a> ContainerValues<'a> {
             restriction_criteria: restriction.comparisons,
             restriction_kind: restriction.kind,
             restriction_boolean_expression: restriction.boolean_expression,
+            restriction_custom_algorithm: restriction.custom_algorithm,
             restriction_criteria_editable: restriction.editable,
             entry_list: container.map(|value| &value.entry_list),
         }
@@ -2364,6 +2392,7 @@ struct RestrictionCriteriaValues<'a> {
     comparisons: String,
     kind: RestrictionCriteriaKind,
     boolean_expression: Option<&'a xtce::BooleanExpressionType>,
+    custom_algorithm: Option<&'a xtce::InputAlgorithmType>,
     editable: bool,
 }
 
@@ -2375,6 +2404,7 @@ fn restriction_criteria_values(
             comparisons: String::new(),
             kind: RestrictionCriteriaKind::ComparisonList,
             boolean_expression: None,
+            custom_algorithm: None,
             editable: true,
         },
         Some(xtce::RestrictionCriteriaTypeContent::Comparison(comparison)) => {
@@ -2382,6 +2412,7 @@ fn restriction_criteria_values(
                 comparisons: encode_comparison(comparison),
                 kind: RestrictionCriteriaKind::ComparisonList,
                 boolean_expression: None,
+                custom_algorithm: None,
                 editable: true,
             }
         }
@@ -2395,6 +2426,7 @@ fn restriction_criteria_values(
                     .join("\n"),
                 kind: RestrictionCriteriaKind::ComparisonList,
                 boolean_expression: None,
+                custom_algorithm: None,
                 editable: true,
             }
         }
@@ -2403,6 +2435,16 @@ fn restriction_criteria_values(
                 comparisons: String::new(),
                 kind: RestrictionCriteriaKind::BooleanExpression,
                 boolean_expression: Some(expression),
+                custom_algorithm: None,
+                editable: true,
+            }
+        }
+        Some(xtce::RestrictionCriteriaTypeContent::CustomAlgorithm(algorithm)) => {
+            RestrictionCriteriaValues {
+                comparisons: String::new(),
+                kind: RestrictionCriteriaKind::CustomAlgorithm,
+                boolean_expression: None,
+                custom_algorithm: Some(algorithm),
                 editable: true,
             }
         }
@@ -2410,6 +2452,7 @@ fn restriction_criteria_values(
             comparisons: String::new(),
             kind: RestrictionCriteriaKind::ComparisonList,
             boolean_expression: None,
+            custom_algorithm: None,
             editable: false,
         },
     }
@@ -2963,6 +3006,34 @@ mod tests {
         assert!(values.editable);
         assert_eq!(values.kind, RestrictionCriteriaKind::BooleanExpression);
         assert!(values.boolean_expression.is_some());
+    }
+
+    #[test]
+    fn custom_algorithm_restriction_is_editable() {
+        let criteria = xtce::RestrictionCriteriaType {
+            content: Some(xtce::RestrictionCriteriaTypeContent::CustomAlgorithm(
+                xtce::InputAlgorithmType {
+                    short_description: None,
+                    name: "containerFilter".to_owned(),
+                    long_description: None,
+                    alias_set: None,
+                    ancillary_data_set: None,
+                    algorithm_text: None,
+                    external_algorithm_set: None,
+                    input_set: None,
+                },
+            )),
+        };
+        let values = restriction_criteria_values(Some(&criteria));
+
+        assert!(values.editable);
+        assert_eq!(values.kind, RestrictionCriteriaKind::CustomAlgorithm);
+        assert_eq!(
+            values
+                .custom_algorithm
+                .map(|algorithm| algorithm.name.as_str()),
+            Some("containerFilter")
+        );
     }
 
     #[test]
