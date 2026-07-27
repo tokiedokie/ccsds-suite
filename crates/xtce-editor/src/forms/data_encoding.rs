@@ -1,9 +1,11 @@
 use gpui::{
     App, AppContext, Context, Div, Entity, IntoElement, ParentElement, Render, Styled,
-    Subscription, Window, div,
+    Subscription, Window, div, prelude::FluentBuilder,
 };
 use gpui_component::{
-    IndexPath, StyledExt, h_flex,
+    IconName, IndexPath, Sizable, StyledExt,
+    button::{Button, ButtonVariants},
+    h_flex,
     input::InputState,
     select::{Select, SelectEvent, SelectState},
     v_flex,
@@ -13,7 +15,7 @@ use strum::{Display, EnumString, VariantArray};
 use super::{
     default_calibrator::DefaultCalibratorForm, discrete_lookup::DiscreteLookupListForm,
     dynamic_value::DynamicValueForm, error_detect_correct::ErrorDetectCorrectForm, field,
-    impl_select_item,
+    impl_select_item, input_algorithm::InputAlgorithmForm,
 };
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -178,6 +180,8 @@ pub(super) struct DataEncodingForm {
     binary_dynamic_size: Entity<DynamicValueForm>,
     binary_discrete_size: Entity<DiscreteLookupListForm>,
     error_detect_correct: Entity<ErrorDetectCorrectForm>,
+    from_transform_present: bool,
+    from_transform: Entity<InputAlgorithmForm>,
     change_threshold_input: Entity<InputState>,
     default_calibrator: Entity<DefaultCalibratorForm>,
     _subscriptions: Vec<Subscription>,
@@ -243,6 +247,8 @@ impl DataEncodingForm {
                 DiscreteLookupListForm::new(binary_discrete_value(encoding), window, cx);
             let error_detect_correct =
                 ErrorDetectCorrectForm::new(data_error_detect_correct(encoding), window, cx);
+            let from_transform =
+                InputAlgorithmForm::new(binary_from_transform(encoding), window, cx);
             let change_threshold_input = input(&values.change_threshold, window, cx);
             let default_calibrator = DefaultCalibratorForm::new(
                 encoding.and_then(DataEncodingRef::default_calibrator),
@@ -314,6 +320,9 @@ impl DataEncodingForm {
                         .update(cx, |form, cx| form.load(None, window, cx));
                     this.error_detect_correct
                         .update(cx, |form, cx| form.load(None, window, cx));
+                    this.from_transform_present = false;
+                    this.from_transform
+                        .update(cx, |form, cx| form.load(None, window, cx));
                     cx.notify();
                 },
             );
@@ -338,6 +347,8 @@ impl DataEncodingForm {
                 binary_dynamic_size,
                 binary_discrete_size,
                 error_detect_correct,
+                from_transform_present: binary_from_transform(encoding).is_some(),
+                from_transform,
                 change_threshold_input,
                 default_calibrator,
                 _subscriptions: vec![kind_subscription, binary_size_subscription],
@@ -413,6 +424,10 @@ impl DataEncodingForm {
         self.error_detect_correct.update(cx, |form, cx| {
             form.load(data_error_detect_correct(encoding), window, cx)
         });
+        self.from_transform_present = binary_from_transform(encoding).is_some();
+        self.from_transform.update(cx, |form, cx| {
+            form.load(binary_from_transform(encoding), window, cx)
+        });
         self.default_calibrator.update(cx, |form, cx| {
             form.load(
                 encoding.and_then(DataEncodingRef::default_calibrator),
@@ -455,6 +470,9 @@ impl DataEncodingForm {
                     );
                 }
             }
+            binary.from_binary_transform_algorithm = self
+                .from_transform_present
+                .then(|| self.from_transform.read(cx).algorithm(cx));
         }
         DataEncodingValues {
             bit_order: selected_value(
@@ -498,7 +516,7 @@ impl DataEncodingForm {
         .apply_to(encoding);
     }
 
-    fn render_form(&self, cx: &App) -> Div {
+    fn render_form(&self, cx: &mut Context<Self>) -> Div {
         let kind = self.selected_kind(cx);
         let mut form = v_flex().gap_5().child(
             v_flex()
@@ -579,6 +597,37 @@ impl DataEncodingForm {
                 BinarySizeKind::Dynamic => form.child(self.binary_dynamic_size.clone()),
                 BinarySizeKind::DiscreteLookup => form.child(self.binary_discrete_size.clone()),
             };
+            form = form.child(
+                v_flex()
+                    .gap_3()
+                    .child(
+                        h_flex()
+                            .justify_between()
+                            .child(div().text_sm().font_medium().child("From-binary transform"))
+                            .child(if self.from_transform_present {
+                                Button::new("remove-data-from-binary-transform")
+                                    .small()
+                                    .danger()
+                                    .label("Remove")
+                                    .on_click(cx.listener(|this, _, _, cx| {
+                                        this.from_transform_present = false;
+                                        cx.notify();
+                                    }))
+                            } else {
+                                Button::new("add-data-from-binary-transform")
+                                    .small()
+                                    .icon(IconName::Plus)
+                                    .label("Add")
+                                    .on_click(cx.listener(|this, _, _, cx| {
+                                        this.from_transform_present = true;
+                                        cx.notify();
+                                    }))
+                            }),
+                    )
+                    .when(self.from_transform_present, |section| {
+                        section.child(self.from_transform.clone())
+                    }),
+            );
         }
         form = form.child(self.error_detect_correct.clone());
         if matches!(kind, DataEncodingKind::Float | DataEncodingKind::Integer) {
@@ -648,6 +697,15 @@ fn binary_discrete_value(
 ) -> Option<&xtce::DiscreteLookupListType> {
     match binary_size(encoding) {
         Some(xtce::IntegerValueType::DiscreteLookupList(value)) => Some(value),
+        _ => None,
+    }
+}
+
+fn binary_from_transform(
+    encoding: Option<DataEncodingRef<'_>>,
+) -> Option<&xtce::InputAlgorithmType> {
+    match encoding {
+        Some(DataEncodingRef::Binary(value)) => value.from_binary_transform_algorithm.as_ref(),
         _ => None,
     }
 }
@@ -1320,9 +1378,9 @@ fn value(input: &Entity<InputState>, cx: &impl AppContext) -> String {
 mod tests {
     use super::{
         BinarySizeKind, DataEncodingKind, DataEncodingMut, DataEncodingRef, DataEncodingValues,
-        binary_size_kind, byte_order_from_str, byte_order_label, data_error_detect_correct,
-        default_binary_encoding, default_integer_encoding, default_string_encoding,
-        set_data_encoding_kind,
+        binary_from_transform, binary_size_kind, byte_order_from_str, byte_order_label,
+        data_error_detect_correct, default_binary_encoding, default_integer_encoding,
+        default_string_encoding, set_data_encoding_kind,
     };
 
     #[test]
@@ -1435,6 +1493,27 @@ mod tests {
         );
 
         assert!(data_error_detect_correct(Some(DataEncodingRef::String(&encoding))).is_some());
+    }
+
+    #[test]
+    fn binary_from_transform_is_available_to_the_form() {
+        let mut encoding = default_binary_encoding();
+        encoding.from_binary_transform_algorithm = Some(xtce::InputAlgorithmType {
+            short_description: None,
+            name: "decodeValue".to_owned(),
+            long_description: None,
+            alias_set: None,
+            ancillary_data_set: None,
+            algorithm_text: None,
+            external_algorithm_set: None,
+            input_set: None,
+        });
+
+        assert_eq!(
+            binary_from_transform(Some(DataEncodingRef::Binary(&encoding)))
+                .map(|algorithm| algorithm.name.as_str()),
+            Some("decodeValue")
+        );
     }
 
     #[test]
