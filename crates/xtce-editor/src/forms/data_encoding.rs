@@ -12,7 +12,8 @@ use strum::{Display, EnumString, VariantArray};
 
 use super::{
     default_calibrator::DefaultCalibratorForm, discrete_lookup::DiscreteLookupListForm,
-    dynamic_value::DynamicValueForm, field, impl_select_item,
+    dynamic_value::DynamicValueForm, error_detect_correct::ErrorDetectCorrectForm, field,
+    impl_select_item,
 };
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -176,6 +177,7 @@ pub(super) struct DataEncodingForm {
     size_in_bits_input: Entity<InputState>,
     binary_dynamic_size: Entity<DynamicValueForm>,
     binary_discrete_size: Entity<DiscreteLookupListForm>,
+    error_detect_correct: Entity<ErrorDetectCorrectForm>,
     change_threshold_input: Entity<InputState>,
     default_calibrator: Entity<DefaultCalibratorForm>,
     _subscriptions: Vec<Subscription>,
@@ -239,6 +241,8 @@ impl DataEncodingForm {
                 DynamicValueForm::new(binary_dynamic_value(encoding), window, cx);
             let binary_discrete_size =
                 DiscreteLookupListForm::new(binary_discrete_value(encoding), window, cx);
+            let error_detect_correct =
+                ErrorDetectCorrectForm::new(data_error_detect_correct(encoding), window, cx);
             let change_threshold_input = input(&values.change_threshold, window, cx);
             let default_calibrator = DefaultCalibratorForm::new(
                 encoding.and_then(DataEncodingRef::default_calibrator),
@@ -308,6 +312,8 @@ impl DataEncodingForm {
                         .update(cx, |form, cx| form.load(None, window, cx));
                     this.binary_discrete_size
                         .update(cx, |form, cx| form.load(None, window, cx));
+                    this.error_detect_correct
+                        .update(cx, |form, cx| form.load(None, window, cx));
                     cx.notify();
                 },
             );
@@ -331,6 +337,7 @@ impl DataEncodingForm {
                 size_in_bits_input,
                 binary_dynamic_size,
                 binary_discrete_size,
+                error_detect_correct,
                 change_threshold_input,
                 default_calibrator,
                 _subscriptions: vec![kind_subscription, binary_size_subscription],
@@ -403,6 +410,9 @@ impl DataEncodingForm {
         self.binary_discrete_size.update(cx, |form, cx| {
             form.load(binary_discrete_value(encoding), window, cx)
         });
+        self.error_detect_correct.update(cx, |form, cx| {
+            form.load(data_error_detect_correct(encoding), window, cx)
+        });
         self.default_calibrator.update(cx, |form, cx| {
             form.load(
                 encoding.and_then(DataEncodingRef::default_calibrator),
@@ -426,6 +436,7 @@ impl DataEncodingForm {
         if let Some(calibrator) = encoding.default_calibrator_mut() {
             self.default_calibrator.read(cx).apply_to(calibrator, cx);
         }
+        apply_data_error_detect_correct(&mut encoding, self.error_detect_correct.read(cx), cx);
         if let DataEncodingMut::Binary(binary) = &mut encoding {
             match selected_value(&self.binary_size_kind_select, BinarySizeKind::Fixed, cx) {
                 BinarySizeKind::Fixed => {
@@ -569,6 +580,7 @@ impl DataEncodingForm {
                 BinarySizeKind::DiscreteLookup => form.child(self.binary_discrete_size.clone()),
             };
         }
+        form = form.child(self.error_detect_correct.clone());
         if matches!(kind, DataEncodingKind::Float | DataEncodingKind::Integer) {
             form = form.child(self.default_calibrator.clone());
         }
@@ -637,6 +649,57 @@ fn binary_discrete_value(
     match binary_size(encoding) {
         Some(xtce::IntegerValueType::DiscreteLookupList(value)) => Some(value),
         _ => None,
+    }
+}
+
+fn data_error_detect_correct(
+    encoding: Option<DataEncodingRef<'_>>,
+) -> Option<&xtce::ErrorDetectCorrectType> {
+    match encoding {
+        Some(DataEncodingRef::Binary(value)) => value.error_detect_correct.as_ref(),
+        Some(DataEncodingRef::Float(value)) => value.error_detect_correct.as_ref(),
+        Some(DataEncodingRef::Integer(value)) => value.error_detect_correct.as_ref(),
+        Some(DataEncodingRef::String(value)) => value.content.iter().find_map(|item| match item {
+            xtce::StringDataEncodingTypeContent::ErrorDetectCorrect(value) => Some(value),
+            _ => None,
+        }),
+        None => None,
+    }
+}
+
+fn apply_data_error_detect_correct(
+    encoding: &mut DataEncodingMut<'_>,
+    form: &ErrorDetectCorrectForm,
+    cx: &App,
+) {
+    let mut error_detect_correct = None;
+    form.apply_to(&mut error_detect_correct, cx);
+    match encoding {
+        DataEncodingMut::Binary(value) => value.error_detect_correct = error_detect_correct,
+        DataEncodingMut::Float(value) => value.error_detect_correct = error_detect_correct,
+        DataEncodingMut::Integer(value) => value.error_detect_correct = error_detect_correct,
+        DataEncodingMut::String(string) => {
+            let current = string.content.iter().position(|item| {
+                matches!(
+                    item,
+                    xtce::StringDataEncodingTypeContent::ErrorDetectCorrect(_)
+                )
+            });
+            match (current, error_detect_correct) {
+                (Some(index), Some(error)) => {
+                    string.content[index] =
+                        xtce::StringDataEncodingTypeContent::ErrorDetectCorrect(error);
+                }
+                (None, Some(error)) => string.content.insert(
+                    0,
+                    xtce::StringDataEncodingTypeContent::ErrorDetectCorrect(error),
+                ),
+                (Some(index), None) => {
+                    string.content.remove(index);
+                }
+                (None, None) => {}
+            }
+        }
     }
 }
 
@@ -1257,8 +1320,9 @@ fn value(input: &Entity<InputState>, cx: &impl AppContext) -> String {
 mod tests {
     use super::{
         BinarySizeKind, DataEncodingKind, DataEncodingMut, DataEncodingRef, DataEncodingValues,
-        binary_size_kind, byte_order_from_str, byte_order_label, default_binary_encoding,
-        default_integer_encoding, set_data_encoding_kind,
+        binary_size_kind, byte_order_from_str, byte_order_label, data_error_detect_correct,
+        default_binary_encoding, default_integer_encoding, default_string_encoding,
+        set_data_encoding_kind,
     };
 
     #[test]
@@ -1358,6 +1422,19 @@ mod tests {
             binary_size_kind(Some(DataEncodingRef::Binary(&encoding))),
             BinarySizeKind::DiscreteLookup
         );
+    }
+
+    #[test]
+    fn string_error_detection_is_available_to_the_common_form() {
+        let mut encoding = default_string_encoding();
+        encoding.content.insert(
+            0,
+            xtce::StringDataEncodingTypeContent::ErrorDetectCorrect(xtce::ErrorDetectCorrectType {
+                content: Vec::new(),
+            }),
+        );
+
+        assert!(data_error_detect_correct(Some(DataEncodingRef::String(&encoding))).is_some());
     }
 
     #[test]
