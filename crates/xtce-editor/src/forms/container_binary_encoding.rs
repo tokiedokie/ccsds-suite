@@ -10,14 +10,15 @@ use gpui_component::{
     v_flex,
 };
 
-use super::field;
+use super::{field, input_algorithm::InputAlgorithmForm};
 
 pub(super) struct ContainerBinaryEncodingForm {
     present: bool,
     size_in_bits: Entity<InputState>,
     preserve_complex_size: bool,
     error_detection_summary: String,
-    from_transform_summary: String,
+    from_transform_present: bool,
+    from_transform: Entity<InputAlgorithmForm>,
     to_transform_summary: String,
 }
 
@@ -28,13 +29,19 @@ impl ContainerBinaryEncodingForm {
         cx: &mut impl AppContext,
     ) -> Entity<Self> {
         let values = EncodingValues::from_encoding(encoding);
-        cx.new(|cx| Self {
+        let from_transform = InputAlgorithmForm::new(
+            encoding.and_then(|encoding| encoding.from_binary_transform_algorithm.as_ref()),
+            window,
+            cx,
+        );
+        cx.new(move |cx| Self {
             present: encoding.is_some(),
             size_in_bits: cx
                 .new(|cx| InputState::new(window, cx).default_value(values.size_in_bits)),
             preserve_complex_size: values.preserve_complex_size,
             error_detection_summary: values.error_detection_summary,
-            from_transform_summary: values.from_transform_summary,
+            from_transform_present: values.from_transform_present,
+            from_transform,
             to_transform_summary: values.to_transform_summary,
         })
     }
@@ -49,10 +56,17 @@ impl ContainerBinaryEncodingForm {
         self.present = encoding.is_some();
         self.preserve_complex_size = values.preserve_complex_size;
         self.error_detection_summary = values.error_detection_summary;
-        self.from_transform_summary = values.from_transform_summary;
+        self.from_transform_present = values.from_transform_present;
         self.to_transform_summary = values.to_transform_summary;
         self.size_in_bits.update(cx, |input, cx| {
             input.set_value(values.size_in_bits, window, cx)
+        });
+        self.from_transform.update(cx, |form, cx| {
+            form.load(
+                encoding.and_then(|encoding| encoding.from_binary_transform_algorithm.as_ref()),
+                window,
+                cx,
+            );
         });
         cx.notify();
     }
@@ -82,6 +96,9 @@ impl ContainerBinaryEncodingForm {
             }
             Err(_) => {}
         }
+        encoding.from_binary_transform_algorithm = self
+            .from_transform_present
+            .then(|| self.from_transform.read(cx).algorithm(cx));
     }
 }
 
@@ -143,15 +160,41 @@ impl Render for ContainerBinaryEncodingForm {
                             cx,
                         ))
                         .child(summary_row(
-                            "From-binary transform",
-                            &self.from_transform_summary,
-                            cx,
-                        ))
-                        .child(summary_row(
                             "To-binary transform",
                             &self.to_transform_summary,
                             cx,
                         )),
+                )
+                .child(
+                    v_flex()
+                        .gap_3()
+                        .child(
+                            h_flex()
+                                .justify_between()
+                                .child(div().text_sm().font_medium().child("From-binary transform"))
+                                .child(if self.from_transform_present {
+                                    Button::new("remove-container-from-binary-transform")
+                                        .small()
+                                        .danger()
+                                        .label("Remove")
+                                        .on_click(cx.listener(|this, _, _, cx| {
+                                            this.from_transform_present = false;
+                                            cx.notify();
+                                        }))
+                                } else {
+                                    Button::new("add-container-from-binary-transform")
+                                        .small()
+                                        .icon(IconName::Plus)
+                                        .label("Add")
+                                        .on_click(cx.listener(|this, _, _, cx| {
+                                            this.from_transform_present = true;
+                                            cx.notify();
+                                        }))
+                                }),
+                        )
+                        .when(self.from_transform_present, |section| {
+                            section.child(self.from_transform.clone())
+                        }),
                 )
             })
     }
@@ -161,7 +204,7 @@ struct EncodingValues {
     size_in_bits: String,
     preserve_complex_size: bool,
     error_detection_summary: String,
-    from_transform_summary: String,
+    from_transform_present: bool,
     to_transform_summary: String,
 }
 
@@ -183,9 +226,8 @@ impl EncodingValues {
             error_detection_summary: presence(
                 encoding.and_then(|encoding| encoding.error_detect_correct.as_ref()),
             ),
-            from_transform_summary: algorithm_name(
-                encoding.and_then(|encoding| encoding.from_binary_transform_algorithm.as_ref()),
-            ),
+            from_transform_present: encoding
+                .is_some_and(|encoding| encoding.from_binary_transform_algorithm.is_some()),
             to_transform_summary: algorithm_name(
                 encoding.and_then(|encoding| encoding.to_binary_transform_algorithm.as_ref()),
             ),
@@ -235,5 +277,28 @@ mod tests {
 
         assert_eq!(values.size_in_bits, "128");
         assert!(!values.preserve_complex_size);
+    }
+
+    #[test]
+    fn from_binary_transform_is_available_to_the_form() {
+        let encoding = xtce::ContainerBinaryDataEncodingType {
+            error_detect_correct: None,
+            size_in_bits: None,
+            from_binary_transform_algorithm: Some(xtce::InputAlgorithmType {
+                short_description: None,
+                name: "decodeFrame".to_owned(),
+                long_description: None,
+                alias_set: None,
+                ancillary_data_set: None,
+                algorithm_text: None,
+                external_algorithm_set: None,
+                input_set: None,
+            }),
+            to_binary_transform_algorithm: None,
+        };
+
+        let values = EncodingValues::from_encoding(Some(&encoding));
+
+        assert!(values.from_transform_present);
     }
 }
