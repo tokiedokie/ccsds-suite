@@ -194,6 +194,8 @@ pub(super) struct DataEncodingForm {
     to_transform: Entity<InputAlgorithmForm>,
     string_size_kind_select: Entity<SelectState<Vec<StringSizeKind>>>,
     variable_string: Entity<VariableStringForm>,
+    fixed_termination_present: bool,
+    fixed_termination: Entity<InputState>,
     change_threshold_input: Entity<InputState>,
     default_calibrator: Entity<DefaultCalibratorForm>,
     _subscriptions: Vec<Subscription>,
@@ -269,6 +271,9 @@ impl DataEncodingForm {
                 cx,
             );
             let variable_string = VariableStringForm::new(string_variable(encoding), window, cx);
+            let fixed_termination_value = string_fixed_size(encoding)
+                .and_then(|size| size.termination_char.clone())
+                .unwrap_or_default();
             let change_threshold_input = input(&values.change_threshold, window, cx);
             let default_calibrator = DefaultCalibratorForm::new(
                 encoding.and_then(DataEncodingRef::default_calibrator),
@@ -354,6 +359,9 @@ impl DataEncodingForm {
                     );
                     this.variable_string
                         .update(cx, |form, cx| form.load(None, window, cx));
+                    this.fixed_termination_present = false;
+                    this.fixed_termination
+                        .update(cx, |input, cx| input.set_value("", window, cx));
                     cx.notify();
                 },
             );
@@ -391,6 +399,9 @@ impl DataEncodingForm {
                 to_transform,
                 string_size_kind_select,
                 variable_string,
+                fixed_termination_present: string_fixed_size(encoding)
+                    .is_some_and(|size| size.termination_char.is_some()),
+                fixed_termination: input(&fixed_termination_value, window, cx),
                 change_threshold_input,
                 default_calibrator,
                 _subscriptions: vec![
@@ -487,6 +498,17 @@ impl DataEncodingForm {
         self.variable_string.update(cx, |form, cx| {
             form.load(string_variable(encoding), window, cx)
         });
+        self.fixed_termination_present =
+            string_fixed_size(encoding).is_some_and(|size| size.termination_char.is_some());
+        self.fixed_termination.update(cx, |input, cx| {
+            input.set_value(
+                string_fixed_size(encoding)
+                    .and_then(|size| size.termination_char.clone())
+                    .unwrap_or_default(),
+                window,
+                cx,
+            )
+        });
         self.default_calibrator.update(cx, |form, cx| {
             form.load(
                 encoding.and_then(DataEncodingRef::default_calibrator),
@@ -544,6 +566,14 @@ impl DataEncodingForm {
                 &self.variable_string,
                 cx,
             );
+            if let Some(size) = string.content.iter_mut().find_map(|item| match item {
+                xtce::StringDataEncodingTypeContent::SizeInBits(size) => Some(size),
+                _ => None,
+            }) {
+                size.termination_char = self
+                    .fixed_termination_present
+                    .then(|| value(&self.fixed_termination, cx));
+            }
         }
         DataEncodingValues {
             bit_order: selected_value(
@@ -740,12 +770,54 @@ impl DataEncodingForm {
         }
         if kind == DataEncodingKind::String {
             form = match selected_value(&self.string_size_kind_select, StringSizeKind::Fixed, cx) {
-                StringSizeKind::Fixed => form.child(field(
-                    "Fixed size in bits",
-                    "Required",
-                    &self.size_in_bits_input,
-                    cx,
-                )),
+                StringSizeKind::Fixed => form
+                    .child(field(
+                        "Fixed size in bits",
+                        "Required",
+                        &self.size_in_bits_input,
+                        cx,
+                    ))
+                    .child(
+                        v_flex()
+                            .gap_3()
+                            .child(
+                                h_flex()
+                                    .justify_between()
+                                    .child(
+                                        div()
+                                            .text_sm()
+                                            .font_medium()
+                                            .child("Termination character"),
+                                    )
+                                    .child(if self.fixed_termination_present {
+                                        Button::new("remove-fixed-string-termination")
+                                            .small()
+                                            .danger()
+                                            .label("Remove")
+                                            .on_click(cx.listener(|this, _, _, cx| {
+                                                this.fixed_termination_present = false;
+                                                cx.notify();
+                                            }))
+                                    } else {
+                                        Button::new("add-fixed-string-termination")
+                                            .small()
+                                            .icon(IconName::Plus)
+                                            .label("Add")
+                                            .on_click(cx.listener(|this, _, _, cx| {
+                                                this.fixed_termination_present = true;
+                                                cx.notify();
+                                            }))
+                                    }),
+                            )
+                            .when(self.fixed_termination_present, |section| {
+                                section.child(field(
+                                    "Termination character",
+                                    "Required",
+                                    &self.fixed_termination,
+                                    cx,
+                                ))
+                            }),
+                    ),
                 StringSizeKind::Variable => form.child(self.variable_string.clone()),
             };
         }
@@ -833,6 +905,16 @@ fn binary_from_transform(
 fn binary_to_transform(encoding: Option<DataEncodingRef<'_>>) -> Option<&xtce::InputAlgorithmType> {
     match encoding {
         Some(DataEncodingRef::Binary(value)) => value.to_binary_transform_algorithm.as_ref(),
+        _ => None,
+    }
+}
+
+fn string_fixed_size(encoding: Option<DataEncodingRef<'_>>) -> Option<&xtce::SizeInBitsType> {
+    match encoding {
+        Some(DataEncodingRef::String(value)) => value.content.iter().find_map(|item| match item {
+            xtce::StringDataEncodingTypeContent::SizeInBits(value) => Some(value),
+            _ => None,
+        }),
         _ => None,
     }
 }
@@ -1590,6 +1672,7 @@ mod tests {
         binary_from_transform, binary_size_kind, binary_to_transform, byte_order_from_str,
         byte_order_label, data_error_detect_correct, default_binary_encoding,
         default_integer_encoding, default_string_encoding, set_data_encoding_kind,
+        string_fixed_size,
     };
 
     #[test]
@@ -1702,6 +1785,22 @@ mod tests {
         );
 
         assert!(data_error_detect_correct(Some(DataEncodingRef::String(&encoding))).is_some());
+    }
+
+    #[test]
+    fn fixed_string_termination_is_available_to_the_form() {
+        let mut encoding = default_string_encoding();
+        let size = encoding.content.iter_mut().find_map(|item| match item {
+            xtce::StringDataEncodingTypeContent::SizeInBits(size) => Some(size),
+            _ => None,
+        });
+        size.unwrap().termination_char = Some("00".to_owned());
+
+        assert_eq!(
+            string_fixed_size(Some(DataEncodingRef::String(&encoding)))
+                .and_then(|size| size.termination_char.as_deref()),
+            Some("00")
+        );
     }
 
     #[test]
