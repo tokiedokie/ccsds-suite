@@ -1,0 +1,138 @@
+name: Build executables
+
+on:
+  push:
+    branches:
+      - main
+    tags:
+      - "v*"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    name: Build ${{ matrix.artifact }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - runner: ubuntu-24.04
+            target: x86_64-unknown-linux-gnu
+            artifact: xtce-editor-linux-x86_64
+            archive: xtce-editor-linux-x86_64.tar.gz
+          - runner: windows-2025
+            target: x86_64-pc-windows-msvc
+            artifact: xtce-editor-windows-x86_64
+            archive: xtce-editor-windows-x86_64.zip
+          - runner: macos-15-intel
+            target: x86_64-apple-darwin
+            artifact: xtce-editor-macos-x86_64
+            archive: xtce-editor-macos-x86_64.tar.gz
+          - runner: macos-15
+            target: aarch64-apple-darwin
+            artifact: xtce-editor-macos-aarch64
+            archive: xtce-editor-macos-aarch64.tar.gz
+
+    runs-on: ${{ matrix.runner }}
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Install Linux build dependencies
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install --yes \
+            clang \
+            g++ \
+            gcc \
+            libfontconfig-dev \
+            libssl-dev \
+            libvulkan1 \
+            libwayland-dev \
+            libwebkit2gtk-4.1-dev \
+            libx11-xcb-dev \
+            libxkbcommon-x11-dev \
+            libzstd-dev \
+            vulkan-validationlayers
+
+      - name: Install Rust
+        shell: bash
+        run: |
+          rustup update stable
+          rustup default stable
+          rustup target add "${{ matrix.target }}"
+
+      - name: Cache Rust build files
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/git
+            ~/.cargo/registry
+            target
+          key: rust-${{ runner.os }}-${{ matrix.target }}-${{ hashFiles('Cargo.lock') }}
+          restore-keys: |
+            rust-${{ runner.os }}-${{ matrix.target }}-
+
+      - name: Build release executable
+        run: cargo build --locked --release --package xtce-editor --target ${{ matrix.target }}
+
+      - name: Package executable
+        if: runner.os != 'Windows'
+        shell: bash
+        run: |
+          mkdir -p dist/package
+          cp "target/${{ matrix.target }}/release/xtce-editor" dist/package/xtce-editor
+          tar -C dist/package -czf "dist/${{ matrix.archive }}" xtce-editor
+
+      - name: Package executable
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force "dist/package" | Out-Null
+          Copy-Item `
+            "target/${{ matrix.target }}/release/xtce-editor.exe" `
+            "dist/package/xtce-editor.exe"
+          Compress-Archive `
+            -Path "dist/package/xtce-editor.exe" `
+            -DestinationPath "dist/${{ matrix.archive }}"
+
+      - name: Upload executable
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.artifact }}
+          path: dist/${{ matrix.archive }}
+          if-no-files-found: error
+          retention-days: 14
+
+  release:
+    name: Attach executables to release
+    if: startsWith(github.ref, 'refs/tags/v')
+    needs: build
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: write
+
+    steps:
+      - name: Download executables
+        uses: actions/download-artifact@v4
+        with:
+          path: dist
+          merge-multiple: true
+
+      - name: Create or update GitHub Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+        shell: bash
+        run: |
+          if gh release view "$GITHUB_REF_NAME" >/dev/null 2>&1; then
+            gh release upload "$GITHUB_REF_NAME" dist/* --clobber
+          else
+            gh release create "$GITHUB_REF_NAME" dist/* \
+              --title "$GITHUB_REF_NAME" \
+              --generate-notes
+          fi
