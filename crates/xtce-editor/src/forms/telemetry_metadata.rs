@@ -22,7 +22,7 @@ impl TelemetryMetaDataForm {
                     None,
                     None,
                     Some(ElementKind::MessageSet),
-                    Some(ElementKind::TelemetryStreamSet),
+                    None,
                     Some(ElementKind::TelemetryAlgorithmSet),
                 ],
                 editor,
@@ -127,9 +127,14 @@ impl TelemetryMetaDataForm {
                 let targets = streams
                     .iter()
                     .enumerate()
-                    .map(|(index, stream)| {
-                        matches!(stream, xtce::StreamSetTypeContent::FixedFrameStream(_))
-                            .then_some(ElementKind::TelemetryFixedFrameStream(index))
+                    .map(|(index, stream)| match stream {
+                        xtce::StreamSetTypeContent::FixedFrameStream(_) => {
+                            Some(ElementKind::TelemetryFixedFrameStream(index))
+                        }
+                        xtce::StreamSetTypeContent::VariableFrameStream(_) => {
+                            Some(ElementKind::TelemetryVariableFrameStream(index))
+                        }
+                        xtce::StreamSetTypeContent::CustomStream(_) => None,
                     })
                     .collect();
                 collection_summary(

@@ -26,7 +26,7 @@ impl CommandMetaDataForm {
                     Some(ElementKind::ArgumentTypeSet),
                     Some(ElementKind::MetaCommandSet),
                     Some(ElementKind::CommandContainerSet),
-                    Some(ElementKind::CommandStreamSet),
+                    None,
                     Some(ElementKind::CommandAlgorithmSet),
                 ],
                 editor,
@@ -144,9 +144,14 @@ impl CommandMetaDataForm {
                 let targets = streams
                     .iter()
                     .enumerate()
-                    .map(|(index, stream)| {
-                        matches!(stream, xtce::StreamSetTypeContent::FixedFrameStream(_))
-                            .then_some(ElementKind::CommandFixedFrameStream(index))
+                    .map(|(index, stream)| match stream {
+                        xtce::StreamSetTypeContent::FixedFrameStream(_) => {
+                            Some(ElementKind::CommandFixedFrameStream(index))
+                        }
+                        xtce::StreamSetTypeContent::VariableFrameStream(_) => {
+                            Some(ElementKind::CommandVariableFrameStream(index))
+                        }
+                        xtce::StreamSetTypeContent::CustomStream(_) => None,
                     })
                     .collect();
                 collection_summary(

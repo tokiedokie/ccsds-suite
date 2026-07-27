@@ -42,6 +42,7 @@ enum ElementKind {
     Message(usize),
     TelemetryStreamSet,
     TelemetryFixedFrameStream(usize),
+    TelemetryVariableFrameStream(usize),
     TelemetryAlgorithmSet,
     CommandMetaData,
     CommandParameterTypeSet,
@@ -55,6 +56,7 @@ enum ElementKind {
     CommandContainerSet,
     CommandStreamSet,
     CommandFixedFrameStream(usize),
+    CommandVariableFrameStream(usize),
     CommandAlgorithmSet,
     ServiceSet,
 }
@@ -75,6 +77,9 @@ impl ElementKind {
             Self::TelemetryStreamSet | Self::CommandStreamSet => "StreamSet",
             Self::TelemetryFixedFrameStream(_) | Self::CommandFixedFrameStream(_) => {
                 "FixedFrameStream"
+            }
+            Self::TelemetryVariableFrameStream(_) | Self::CommandVariableFrameStream(_) => {
+                "VariableFrameStream"
             }
             Self::TelemetryAlgorithmSet | Self::CommandAlgorithmSet => "AlgorithmSet",
             Self::CommandMetaData => "CommandMetaData",
@@ -110,11 +115,13 @@ impl ElementKind {
                 | Self::TelemetryParameterTypeSet
                 | Self::TelemetryParameterSet
                 | Self::ContainerSet
+                | Self::TelemetryStreamSet
                 | Self::CommandMetaData
                 | Self::CommandParameterTypeSet
                 | Self::CommandParameterSet
                 | Self::ArgumentTypeSet
                 | Self::MetaCommandSet
+                | Self::CommandStreamSet
         )
     }
 
@@ -143,7 +150,9 @@ impl ElementKind {
             Self::TelemetryStreamSet
             | Self::CommandStreamSet
             | Self::TelemetryFixedFrameStream(_)
-            | Self::CommandFixedFrameStream(_) => IconName::GalleryVerticalEnd,
+            | Self::CommandFixedFrameStream(_)
+            | Self::TelemetryVariableFrameStream(_)
+            | Self::CommandVariableFrameStream(_) => IconName::GalleryVerticalEnd,
             Self::TelemetryAlgorithmSet | Self::CommandAlgorithmSet => IconName::Bot,
             Self::ArgumentType(_) => IconName::CaseSensitive,
             Self::ServiceSet => IconName::Building2,
@@ -157,6 +166,12 @@ impl ElementKind {
             _ => IconName::File,
         }
     }
+}
+
+#[derive(Clone, Copy)]
+enum StreamChildKind {
+    Fixed,
+    Variable,
 }
 
 #[derive(Clone, Debug, Hash, PartialEq, Eq)]
@@ -515,6 +530,28 @@ impl XtceEditor {
         self.load_selected_element(window, cx);
     }
 
+    fn add_stream_child(
+        &mut self,
+        parent: &ElementSelection,
+        child_kind: StreamChildKind,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        self.save_selected_element(cx);
+        let system = XtceDocument::system_at_path_mut(&mut self.document.root, &parent.system_path);
+        let Some(kind) = XtceDocument::add_stream_item(system, parent.kind, child_kind) else {
+            return;
+        };
+        self.tree.update(cx, |tree, _| {
+            tree.collapsed.remove(parent);
+        });
+        self.document.selection = ElementSelection {
+            system_path: parent.system_path.clone(),
+            kind,
+        };
+        self.load_selected_element(window, cx);
+    }
+
     fn add_metadata(
         &mut self,
         parent: &ElementSelection,
@@ -739,32 +776,10 @@ impl XtceDocument {
                 Some(ElementKind::Message(index))
             }
             ElementKind::TelemetryStreamSet => {
-                let set = system
-                    .telemetry_meta_data
-                    .as_mut()?
-                    .stream_set
-                    .get_or_insert_with(|| xtce::StreamSetType {
-                        content: Vec::new(),
-                    });
-                let index = set.content.len();
-                let name = Self::next_stream_name(&set.content);
-                set.content
-                    .push(forms::fixed_frame_stream::default_fixed_frame_stream(name));
-                Some(ElementKind::TelemetryFixedFrameStream(index))
+                Self::add_stream_item(system, collection, StreamChildKind::Fixed)
             }
             ElementKind::CommandStreamSet => {
-                let set = system
-                    .command_meta_data
-                    .as_mut()?
-                    .stream_set
-                    .get_or_insert_with(|| xtce::StreamSetType {
-                        content: Vec::new(),
-                    });
-                let index = set.content.len();
-                let name = Self::next_stream_name(&set.content);
-                set.content
-                    .push(forms::fixed_frame_stream::default_fixed_frame_stream(name));
-                Some(ElementKind::CommandFixedFrameStream(index))
+                Self::add_stream_item(system, collection, StreamChildKind::Fixed)
             }
             ElementKind::CommandParameterSet => {
                 let type_ref = system
@@ -808,6 +823,60 @@ impl XtceDocument {
             }
             _ => None,
         }
+    }
+
+    fn add_stream_item(
+        system: &mut xtce::SpaceSystem,
+        collection: ElementKind,
+        child_kind: StreamChildKind,
+    ) -> Option<ElementKind> {
+        let (set, telemetry) = match collection {
+            ElementKind::TelemetryStreamSet => (
+                system
+                    .telemetry_meta_data
+                    .as_mut()?
+                    .stream_set
+                    .get_or_insert_with(|| xtce::StreamSetType {
+                        content: Vec::new(),
+                    }),
+                true,
+            ),
+            ElementKind::CommandStreamSet => (
+                system
+                    .command_meta_data
+                    .as_mut()?
+                    .stream_set
+                    .get_or_insert_with(|| xtce::StreamSetType {
+                        content: Vec::new(),
+                    }),
+                false,
+            ),
+            _ => return None,
+        };
+        let index = set.content.len();
+        let prefix = match child_kind {
+            StreamChildKind::Fixed => "FixedFrameStream",
+            StreamChildKind::Variable => "VariableFrameStream",
+        };
+        let name = Self::next_unique_name(prefix, |candidate| {
+            set.content.iter().any(|stream| match stream {
+                xtce::StreamSetTypeContent::FixedFrameStream(stream) => stream.name == candidate,
+                xtce::StreamSetTypeContent::VariableFrameStream(stream) => stream.name == candidate,
+                xtce::StreamSetTypeContent::CustomStream(stream) => stream.name == candidate,
+            })
+        });
+        set.content.push(match child_kind {
+            StreamChildKind::Fixed => forms::fixed_frame_stream::default_fixed_frame_stream(name),
+            StreamChildKind::Variable => {
+                forms::variable_frame_stream::default_variable_frame_stream(name)
+            }
+        });
+        Some(match (telemetry, child_kind) {
+            (true, StreamChildKind::Fixed) => ElementKind::TelemetryFixedFrameStream(index),
+            (true, StreamChildKind::Variable) => ElementKind::TelemetryVariableFrameStream(index),
+            (false, StreamChildKind::Fixed) => ElementKind::CommandFixedFrameStream(index),
+            (false, StreamChildKind::Variable) => ElementKind::CommandVariableFrameStream(index),
+        })
     }
 
     fn add_metadata(system: &mut xtce::SpaceSystem, kind: ElementKind) -> bool {
@@ -979,16 +1048,6 @@ impl XtceDocument {
         })
     }
 
-    fn next_stream_name(content: &[xtce::StreamSetTypeContent]) -> String {
-        Self::next_unique_name("FixedFrameStream", |candidate| {
-            content.iter().any(|stream| match stream {
-                xtce::StreamSetTypeContent::FixedFrameStream(stream) => stream.name == candidate,
-                xtce::StreamSetTypeContent::VariableFrameStream(stream) => stream.name == candidate,
-                xtce::StreamSetTypeContent::CustomStream(stream) => stream.name == candidate,
-            })
-        })
-    }
-
     fn next_unique_name(prefix: &str, exists: impl Fn(&str) -> bool) -> String {
         (1..)
             .map(|index| format!("{prefix}{index}"))
@@ -1130,26 +1189,44 @@ impl XtceDocument {
                 .as_ref()
                 .map(|set| set.content.as_slice())
                 .unwrap_or_default();
-            let fixed_stream_count = streams
+            let editable_stream_count = streams
                 .iter()
-                .filter(|stream| matches!(stream, xtce::StreamSetTypeContent::FixedFrameStream(_)))
+                .filter(|stream| {
+                    matches!(
+                        stream,
+                        xtce::StreamSetTypeContent::FixedFrameStream(_)
+                            | xtce::StreamSetTypeContent::VariableFrameStream(_)
+                    )
+                })
                 .count();
             Self::push_tree_node(
                 nodes,
                 path,
                 ElementKind::TelemetryStreamSet,
                 child_level + 1,
-                fixed_stream_count > 0,
+                editable_stream_count > 0,
             );
             for (index, stream) in streams.iter().enumerate() {
-                if let xtce::StreamSetTypeContent::FixedFrameStream(stream) = stream {
-                    Self::push_named_tree_node(
-                        nodes,
-                        path,
-                        ElementKind::TelemetryFixedFrameStream(index),
-                        stream.name.clone(),
-                        child_level + 2,
-                    );
+                match stream {
+                    xtce::StreamSetTypeContent::FixedFrameStream(stream) => {
+                        Self::push_named_tree_node(
+                            nodes,
+                            path,
+                            ElementKind::TelemetryFixedFrameStream(index),
+                            stream.name.clone(),
+                            child_level + 2,
+                        );
+                    }
+                    xtce::StreamSetTypeContent::VariableFrameStream(stream) => {
+                        Self::push_named_tree_node(
+                            nodes,
+                            path,
+                            ElementKind::TelemetryVariableFrameStream(index),
+                            stream.name.clone(),
+                            child_level + 2,
+                        );
+                    }
+                    xtce::StreamSetTypeContent::CustomStream(_) => {}
                 }
             }
             for (present, kind) in [(
@@ -1246,26 +1323,44 @@ impl XtceDocument {
                 .as_ref()
                 .map(|set| set.content.as_slice())
                 .unwrap_or_default();
-            let fixed_stream_count = streams
+            let editable_stream_count = streams
                 .iter()
-                .filter(|stream| matches!(stream, xtce::StreamSetTypeContent::FixedFrameStream(_)))
+                .filter(|stream| {
+                    matches!(
+                        stream,
+                        xtce::StreamSetTypeContent::FixedFrameStream(_)
+                            | xtce::StreamSetTypeContent::VariableFrameStream(_)
+                    )
+                })
                 .count();
             Self::push_tree_node(
                 nodes,
                 path,
                 ElementKind::CommandStreamSet,
                 child_level + 1,
-                fixed_stream_count > 0,
+                editable_stream_count > 0,
             );
             for (index, stream) in streams.iter().enumerate() {
-                if let xtce::StreamSetTypeContent::FixedFrameStream(stream) = stream {
-                    Self::push_named_tree_node(
-                        nodes,
-                        path,
-                        ElementKind::CommandFixedFrameStream(index),
-                        stream.name.clone(),
-                        child_level + 2,
-                    );
+                match stream {
+                    xtce::StreamSetTypeContent::FixedFrameStream(stream) => {
+                        Self::push_named_tree_node(
+                            nodes,
+                            path,
+                            ElementKind::CommandFixedFrameStream(index),
+                            stream.name.clone(),
+                            child_level + 2,
+                        );
+                    }
+                    xtce::StreamSetTypeContent::VariableFrameStream(stream) => {
+                        Self::push_named_tree_node(
+                            nodes,
+                            path,
+                            ElementKind::CommandVariableFrameStream(index),
+                            stream.name.clone(),
+                            child_level + 2,
+                        );
+                    }
+                    xtce::StreamSetTypeContent::CustomStream(_) => {}
                 }
             }
             for (present, kind) in [
@@ -1594,8 +1689,13 @@ impl ElementTree {
         let editor = self.editor.clone();
         let selection = node.selection.clone();
         let add_parent = node.selection.clone();
+        let stream_parent = node.selection.clone();
         let metadata_parent = node.selection.clone();
         let can_add_child = node.selection.kind.can_add_child();
+        let can_add_stream = matches!(
+            node.selection.kind,
+            ElementKind::TelemetryStreamSet | ElementKind::CommandStreamSet
+        );
         let can_add_element = node.selection.kind == ElementKind::SpaceSystem;
         let directory_only = node.selection.kind.is_directory_only();
         let dragged_parameter = node
@@ -1623,7 +1723,7 @@ impl ElementTree {
                     })
                     .child(Icon::new(icon).small())
                     .child(div().flex_1().truncate().child(item.label.clone()))
-                    .when(can_add_child, |row| {
+                    .when(can_add_child && !can_add_stream, |row| {
                         let editor = editor.clone();
                         row.child(
                             Button::new(format!("{}-add", item.id))
@@ -1635,6 +1735,47 @@ impl ElementTree {
                                     _ = editor.update(cx, |this, cx| {
                                         this.add_tree_child(&add_parent, window, cx);
                                     });
+                                }),
+                        )
+                    })
+                    .when(can_add_stream, |row| {
+                        let stream_editor = editor.clone();
+                        row.child(
+                            Button::new(format!("{}-add-stream", item.id))
+                                .ghost()
+                                .xsmall()
+                                .icon(IconName::Plus)
+                                .dropdown_menu(move |menu, _, _| {
+                                    let fixed_editor = stream_editor.clone();
+                                    let fixed_parent = stream_parent.clone();
+                                    let variable_editor = stream_editor.clone();
+                                    let variable_parent = stream_parent.clone();
+                                    menu.item(PopupMenuItem::new("FixedFrameStream").on_click(
+                                        move |_, window, cx| {
+                                            _ = fixed_editor.update(cx, |this, cx| {
+                                                this.add_stream_child(
+                                                    &fixed_parent,
+                                                    StreamChildKind::Fixed,
+                                                    window,
+                                                    cx,
+                                                );
+                                            });
+                                        },
+                                    ))
+                                    .item(
+                                        PopupMenuItem::new("VariableFrameStream").on_click(
+                                            move |_, window, cx| {
+                                                _ = variable_editor.update(cx, |this, cx| {
+                                                    this.add_stream_child(
+                                                        &variable_parent,
+                                                        StreamChildKind::Variable,
+                                                        window,
+                                                        cx,
+                                                    );
+                                                });
+                                            },
+                                        ),
+                                    )
                                 }),
                         )
                     })
@@ -2393,7 +2534,8 @@ mod tests {
     use std::collections::HashSet;
 
     use super::{
-        ElementKind, ElementSelection, ElementTree, IconName, XtceDocument, startup_document,
+        ElementKind, ElementSelection, ElementTree, IconName, StreamChildKind, XtceDocument,
+        startup_document,
     };
 
     #[test]
@@ -2407,6 +2549,8 @@ mod tests {
             ElementKind::CommandMetaData,
             ElementKind::ArgumentTypeSet,
             ElementKind::MetaCommandSet,
+            ElementKind::TelemetryStreamSet,
+            ElementKind::CommandStreamSet,
         ] {
             assert!(kind.is_directory_only());
         }
@@ -2750,6 +2894,62 @@ mod tests {
                 && node.label == "FixedFrameStream1"
         }));
         XtceDocument::serialize(&root).expect("fixed frame streams should serialize");
+    }
+
+    #[test]
+    fn adds_variable_frame_streams_to_telemetry_and_command_metadata() {
+        let mut root = XtceDocument::untitled().root;
+        assert!(XtceDocument::add_metadata(
+            &mut root,
+            ElementKind::TelemetryMetaData
+        ));
+        assert!(XtceDocument::add_metadata(
+            &mut root,
+            ElementKind::CommandMetaData
+        ));
+
+        assert_eq!(
+            XtceDocument::add_stream_item(
+                &mut root,
+                ElementKind::TelemetryStreamSet,
+                StreamChildKind::Variable,
+            ),
+            Some(ElementKind::TelemetryVariableFrameStream(0))
+        );
+        assert_eq!(
+            XtceDocument::add_stream_item(
+                &mut root,
+                ElementKind::CommandStreamSet,
+                StreamChildKind::Variable,
+            ),
+            Some(ElementKind::CommandVariableFrameStream(0))
+        );
+
+        let telemetry_stream = &root
+            .telemetry_meta_data
+            .as_ref()
+            .unwrap()
+            .stream_set
+            .as_ref()
+            .unwrap()
+            .content[0];
+        assert!(matches!(
+            telemetry_stream,
+            xtce::StreamSetTypeContent::VariableFrameStream(stream)
+                if stream.name == "VariableFrameStream1"
+        ));
+
+        let mut nodes = Vec::new();
+        XtceDocument::collect_tree_nodes(&root, &mut Vec::new(), 0, &mut nodes);
+        assert!(nodes.iter().any(|node| {
+            node.selection.kind == ElementKind::TelemetryVariableFrameStream(0)
+                && node.label == "VariableFrameStream1"
+        }));
+        assert!(nodes.iter().any(|node| {
+            node.selection.kind == ElementKind::CommandVariableFrameStream(0)
+                && node.label == "VariableFrameStream1"
+        }));
+        XtceDocument::serialize(&root).expect("variable frame streams should serialize");
     }
 
     #[test]
