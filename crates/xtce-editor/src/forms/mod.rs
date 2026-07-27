@@ -10,6 +10,7 @@ pub(super) mod custom_algorithm;
 pub(super) mod custom_stream;
 mod data_encoding;
 mod default_calibrator;
+mod discrete_lookup;
 mod dynamic_value;
 mod element_forms;
 mod enumeration_list;

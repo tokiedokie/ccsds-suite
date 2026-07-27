@@ -13,8 +13,9 @@ use gpui_component::{
 use strum::{Display, EnumString, VariantArray};
 
 use super::{
-    dynamic_value::DynamicValueForm, error_detect_correct::ErrorDetectCorrectForm, field,
-    impl_select_item, input_algorithm::InputAlgorithmForm,
+    discrete_lookup::DiscreteLookupListForm, dynamic_value::DynamicValueForm,
+    error_detect_correct::ErrorDetectCorrectForm, field, impl_select_item,
+    input_algorithm::InputAlgorithmForm,
 };
 
 #[derive(Clone, Copy, Debug, Default, Display, EnumString, VariantArray, PartialEq, Eq)]
@@ -23,7 +24,7 @@ enum SizeKind {
     None,
     Fixed,
     Dynamic,
-    #[strum(serialize = "Discrete lookup (preserved)")]
+    #[strum(serialize = "Discrete lookup")]
     DiscreteLookup,
 }
 impl_select_item!(SizeKind);
@@ -34,6 +35,7 @@ pub(super) struct ContainerBinaryEncodingForm {
     size_kind_select: Entity<SelectState<Vec<SizeKind>>>,
     size_in_bits: Entity<InputState>,
     dynamic_size: Entity<DynamicValueForm>,
+    discrete_size: Entity<DiscreteLookupListForm>,
     error_detection: Entity<ErrorDetectCorrectForm>,
     from_transform_present: bool,
     from_transform: Entity<InputAlgorithmForm>,
@@ -53,6 +55,16 @@ impl ContainerBinaryEncodingForm {
                 .and_then(|encoding| encoding.size_in_bits.as_ref())
                 .and_then(|size| match size {
                     xtce::IntegerValueType::DynamicValue(value) => Some(value),
+                    _ => None,
+                }),
+            window,
+            cx,
+        );
+        let discrete_size = DiscreteLookupListForm::new(
+            encoding
+                .and_then(|encoding| encoding.size_in_bits.as_ref())
+                .and_then(|size| match size {
+                    xtce::IntegerValueType::DiscreteLookupList(value) => Some(value),
                     _ => None,
                 }),
             window,
@@ -93,6 +105,7 @@ impl ContainerBinaryEncodingForm {
                 size_in_bits: cx
                     .new(|cx| InputState::new(window, cx).default_value(values.size_in_bits)),
                 dynamic_size,
+                discrete_size,
                 error_detection,
                 from_transform_present: values.from_transform_present,
                 from_transform,
@@ -125,6 +138,18 @@ impl ContainerBinaryEncodingForm {
                     .and_then(|encoding| encoding.size_in_bits.as_ref())
                     .and_then(|size| match size {
                         xtce::IntegerValueType::DynamicValue(value) => Some(value),
+                        _ => None,
+                    }),
+                window,
+                cx,
+            );
+        });
+        self.discrete_size.update(cx, |form, cx| {
+            form.load(
+                encoding
+                    .and_then(|encoding| encoding.size_in_bits.as_ref())
+                    .and_then(|size| match size {
+                        xtce::IntegerValueType::DiscreteLookupList(value) => Some(value),
                         _ => None,
                     }),
                 window,
@@ -188,17 +213,9 @@ impl ContainerBinaryEncodingForm {
                 ));
             }
             SizeKind::DiscreteLookup => {
-                if !matches!(
-                    encoding.size_in_bits,
-                    Some(xtce::IntegerValueType::DiscreteLookupList(_))
-                ) {
-                    encoding.size_in_bits = Some(xtce::IntegerValueType::DiscreteLookupList(
-                        xtce::DiscreteLookupListType {
-                            default_value: 0,
-                            discrete_lookup: Vec::new(),
-                        },
-                    ));
-                }
+                encoding.size_in_bits = Some(xtce::IntegerValueType::DiscreteLookupList(
+                    self.discrete_size.read(cx).value(cx),
+                ));
             }
         }
         self.error_detection
@@ -253,88 +270,90 @@ impl Render for ContainerBinaryEncodingForm {
             )
             .when(self.present, |form| {
                 form.child(size_kind_field(&self.size_kind_select))
-                .when(self.size_kind == SizeKind::Fixed, |form| {
-                    form.child(field(
-                        "Size in bits",
-                        "Required fixed size",
-                        &self.size_in_bits,
-                        cx,
-                    ))
-                })
-                .when(self.size_kind == SizeKind::Dynamic, |form| {
-                    form.child(self.dynamic_size.clone())
-                })
-                .when(self.size_kind == SizeKind::DiscreteLookup, |form| {
-                    form.child(
-                        div()
-                            .text_xs()
-                            .text_color(cx.theme().muted_foreground)
-                            .child("Discrete lookup values are preserved; editing will be added separately"),
+                    .when(self.size_kind == SizeKind::Fixed, |form| {
+                        form.child(field(
+                            "Size in bits",
+                            "Required fixed size",
+                            &self.size_in_bits,
+                            cx,
+                        ))
+                    })
+                    .when(self.size_kind == SizeKind::Dynamic, |form| {
+                        form.child(self.dynamic_size.clone())
+                    })
+                    .when(self.size_kind == SizeKind::DiscreteLookup, |form| {
+                        form.child(self.discrete_size.clone())
+                    })
+                    .child(self.error_detection.clone())
+                    .child(
+                        v_flex()
+                            .gap_3()
+                            .child(
+                                h_flex()
+                                    .justify_between()
+                                    .child(
+                                        div()
+                                            .text_sm()
+                                            .font_medium()
+                                            .child("From-binary transform"),
+                                    )
+                                    .child(if self.from_transform_present {
+                                        Button::new("remove-container-from-binary-transform")
+                                            .small()
+                                            .danger()
+                                            .label("Remove")
+                                            .on_click(cx.listener(|this, _, _, cx| {
+                                                this.from_transform_present = false;
+                                                cx.notify();
+                                            }))
+                                    } else {
+                                        Button::new("add-container-from-binary-transform")
+                                            .small()
+                                            .icon(IconName::Plus)
+                                            .label("Add")
+                                            .on_click(cx.listener(|this, _, _, cx| {
+                                                this.from_transform_present = true;
+                                                cx.notify();
+                                            }))
+                                    }),
+                            )
+                            .when(self.from_transform_present, |section| {
+                                section.child(self.from_transform.clone())
+                            }),
                     )
-                })
-                .child(self.error_detection.clone())
-                .child(
-                    v_flex()
-                        .gap_3()
-                        .child(
-                            h_flex()
-                                .justify_between()
-                                .child(div().text_sm().font_medium().child("From-binary transform"))
-                                .child(if self.from_transform_present {
-                                    Button::new("remove-container-from-binary-transform")
-                                        .small()
-                                        .danger()
-                                        .label("Remove")
-                                        .on_click(cx.listener(|this, _, _, cx| {
-                                            this.from_transform_present = false;
-                                            cx.notify();
-                                        }))
-                                } else {
-                                    Button::new("add-container-from-binary-transform")
-                                        .small()
-                                        .icon(IconName::Plus)
-                                        .label("Add")
-                                        .on_click(cx.listener(|this, _, _, cx| {
-                                            this.from_transform_present = true;
-                                            cx.notify();
-                                        }))
-                                }),
-                        )
-                        .when(self.from_transform_present, |section| {
-                            section.child(self.from_transform.clone())
-                        }),
-                )
-                .child(
-                    v_flex()
-                        .gap_3()
-                        .child(
-                            h_flex()
-                                .justify_between()
-                                .child(div().text_sm().font_medium().child("To-binary transform"))
-                                .child(if self.to_transform_present {
-                                    Button::new("remove-container-to-binary-transform")
-                                        .small()
-                                        .danger()
-                                        .label("Remove")
-                                        .on_click(cx.listener(|this, _, _, cx| {
-                                            this.to_transform_present = false;
-                                            cx.notify();
-                                        }))
-                                } else {
-                                    Button::new("add-container-to-binary-transform")
-                                        .small()
-                                        .icon(IconName::Plus)
-                                        .label("Add")
-                                        .on_click(cx.listener(|this, _, _, cx| {
-                                            this.to_transform_present = true;
-                                            cx.notify();
-                                        }))
-                                }),
-                        )
-                        .when(self.to_transform_present, |section| {
-                            section.child(self.to_transform.clone())
-                        }),
-                )
+                    .child(
+                        v_flex()
+                            .gap_3()
+                            .child(
+                                h_flex()
+                                    .justify_between()
+                                    .child(
+                                        div().text_sm().font_medium().child("To-binary transform"),
+                                    )
+                                    .child(if self.to_transform_present {
+                                        Button::new("remove-container-to-binary-transform")
+                                            .small()
+                                            .danger()
+                                            .label("Remove")
+                                            .on_click(cx.listener(|this, _, _, cx| {
+                                                this.to_transform_present = false;
+                                                cx.notify();
+                                            }))
+                                    } else {
+                                        Button::new("add-container-to-binary-transform")
+                                            .small()
+                                            .icon(IconName::Plus)
+                                            .label("Add")
+                                            .on_click(cx.listener(|this, _, _, cx| {
+                                                this.to_transform_present = true;
+                                                cx.notify();
+                                            }))
+                                    }),
+                            )
+                            .when(self.to_transform_present, |section| {
+                                section.child(self.to_transform.clone())
+                            }),
+                    )
             })
     }
 }
