@@ -1,9 +1,7 @@
-use gpui::{App, AppContext, Context, Div, Entity, Window};
+use gpui::{App, AppContext, Div, Entity, Window};
 use gpui_component::input::InputState;
 
 use super::field;
-use crate::XtceEditor;
-
 pub(super) struct AliasSetForm {
     aliases_input: Entity<InputState>,
 }
@@ -12,7 +10,7 @@ impl AliasSetForm {
     pub(super) fn new(
         alias_set: Option<&xtce::AliasSetType>,
         window: &mut Window,
-        cx: &mut Context<XtceEditor>,
+        cx: &mut impl AppContext,
     ) -> Self {
         Self {
             aliases_input: cx.new(|cx| {
@@ -27,7 +25,7 @@ impl AliasSetForm {
         &self,
         alias_set: Option<&xtce::AliasSetType>,
         window: &mut Window,
-        cx: &mut Context<XtceEditor>,
+        cx: &mut impl AppContext,
     ) {
         self.aliases_input.update(cx, |input, cx| {
             input.set_value(Self::encode(alias_set), window, cx);

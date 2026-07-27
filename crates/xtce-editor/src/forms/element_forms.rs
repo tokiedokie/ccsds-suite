@@ -4,7 +4,8 @@ use super::{
     alias_set::AliasSetForm, ancillary_data_set::AncillaryDataSetForm,
     argument_type::ArgumentTypeForm, command_metadata::CommandMetaDataForm, header::HeaderForm,
     meta_command::MetaCommandForm, parameter::ParameterForm, parameter_set::ParameterSetForm,
-    parameter_type::ParameterTypeForm, service_set::ServiceSetForm, space_system::SpaceSystemForm,
+    parameter_type::ParameterTypeForm, sequence_container::SequenceContainerForm,
+    service_set::ServiceSetForm, space_system::SpaceSystemForm,
     telemetry_metadata::TelemetryMetaDataForm,
 };
 use crate::{ElementKind, XtceDocument, XtceEditor};
@@ -19,6 +20,7 @@ pub(crate) struct ElementForms {
     parameter_set: ParameterSetForm,
     parameter: Entity<ParameterForm>,
     parameter_type: Entity<ParameterTypeForm>,
+    sequence_container: Entity<SequenceContainerForm>,
     argument_type: Entity<ArgumentTypeForm>,
     meta_command: Entity<MetaCommandForm>,
     service_set: ServiceSetForm,
@@ -49,6 +51,10 @@ impl ElementForms {
                 .and_then(|metadata| metadata.argument_type_set.as_ref())
                 .and_then(|set| set.content.get(index))
                 .map(XtceDocument::argument_type_label)
+                .unwrap_or_else(|| kind.label().to_owned()),
+            ElementKind::SequenceContainer(index) => telemetry_container_set(system)
+                .and_then(|set| set.content.get(index))
+                .map(sequence_container_title)
                 .unwrap_or_else(|| kind.label().to_owned()),
             ElementKind::MetaCommand(index) => system
                 .command_meta_data
@@ -89,6 +95,7 @@ impl ElementForms {
                 Some(self.parameter_type.read(cx).name(cx))
             }
             ElementKind::ArgumentType(_) => Some(self.argument_type.read(cx).name(cx)),
+            ElementKind::SequenceContainer(_) => Some(self.sequence_container.read(cx).name(cx)),
             ElementKind::MetaCommand(_) => Some(self.meta_command.read(cx).name(cx)),
             _ => None,
         }
@@ -122,6 +129,9 @@ impl ElementForms {
                 Some(self.parameter_type.read(cx).render_name_editor())
             }
             ElementKind::ArgumentType(_) => Some(self.argument_type.read(cx).render_name_editor()),
+            ElementKind::SequenceContainer(_) => {
+                Some(self.sequence_container.read(cx).render_name_editor())
+            }
             ElementKind::MetaCommand(_) => Some(self.meta_command.read(cx).render_name_editor()),
             _ => None,
         }
@@ -159,6 +169,13 @@ impl ElementForms {
             ),
             parameter_type: ParameterTypeForm::new(
                 telemetry_parameter_type_set(system).and_then(|set| set.content.first()),
+                window,
+                cx,
+            ),
+            sequence_container: SequenceContainerForm::new(
+                telemetry_container_set(system).and_then(|set| set.content.first()),
+                telemetry_parameter_set(system),
+                telemetry_container_set(system),
                 window,
                 cx,
             ),
@@ -237,6 +254,17 @@ impl ElementForms {
                 self.parameter_type.update(cx, |form, cx| {
                     form.load(
                         telemetry_parameter_type_set(system).and_then(|set| set.content.get(index)),
+                        window,
+                        cx,
+                    );
+                });
+            }
+            ElementKind::SequenceContainer(index) => {
+                self.sequence_container.update(cx, |form, cx| {
+                    form.load(
+                        telemetry_container_set(system).and_then(|set| set.content.get(index)),
+                        telemetry_parameter_set(system),
+                        telemetry_container_set(system),
                         window,
                         cx,
                     );
@@ -323,6 +351,13 @@ impl ElementForms {
                     self.parameter_type.read(cx).apply_to(parameter_type, cx);
                 }
             }
+            ElementKind::SequenceContainer(index) => {
+                if let Some(container) =
+                    telemetry_container_set_mut(system).and_then(|set| set.content.get_mut(index))
+                {
+                    self.sequence_container.read(cx).apply_to(container, cx);
+                }
+            }
             ElementKind::CommandParameterType(index) => {
                 if let Some(parameter_type) = command_parameter_type_set_mut(system)
                     .and_then(|set| set.content.get_mut(index))
@@ -357,6 +392,7 @@ impl ElementForms {
                 | ElementKind::CommandParameterSet
                 | ElementKind::CommandParameter(_)
                 | ElementKind::TelemetryParameterType(_)
+                | ElementKind::SequenceContainer(_)
                 | ElementKind::CommandParameterType(_)
                 | ElementKind::ArgumentType(_)
                 | ElementKind::MetaCommand(_)
@@ -381,6 +417,9 @@ impl ElementForms {
             ElementKind::ArgumentType(_) => gpui_component::v_flex()
                 .w_full()
                 .child(self.argument_type.clone()),
+            ElementKind::SequenceContainer(_) => gpui_component::v_flex()
+                .w_full()
+                .child(self.sequence_container.clone()),
             ElementKind::MetaCommand(_) => gpui_component::v_flex()
                 .w_full()
                 .child(self.meta_command.clone()),
@@ -464,6 +503,22 @@ fn telemetry_parameter_type_set(system: &xtce::SpaceSystem) -> Option<&xtce::Par
         .and_then(|metadata| metadata.parameter_type_set.as_ref())
 }
 
+fn telemetry_container_set(system: &xtce::SpaceSystem) -> Option<&xtce::ContainerSetType> {
+    system
+        .telemetry_meta_data
+        .as_ref()
+        .and_then(|metadata| metadata.container_set.as_ref())
+}
+
+fn telemetry_container_set_mut(
+    system: &mut xtce::SpaceSystem,
+) -> Option<&mut xtce::ContainerSetType> {
+    system
+        .telemetry_meta_data
+        .as_mut()
+        .and_then(|metadata| metadata.container_set.as_mut())
+}
+
 fn telemetry_parameter_type_set_mut(
     system: &mut xtce::SpaceSystem,
 ) -> Option<&mut xtce::ParameterTypeSetType> {
@@ -523,5 +578,11 @@ fn parameter_title(parameter: &xtce::ParameterSetTypeContent) -> String {
         xtce::ParameterSetTypeContent::ParameterRef(parameter) => {
             format!("→ {}", parameter.parameter_ref)
         }
+    }
+}
+
+fn sequence_container_title(container: &xtce::ContainerSetTypeContent) -> String {
+    match container {
+        xtce::ContainerSetTypeContent::SequenceContainer(container) => container.name.clone(),
     }
 }

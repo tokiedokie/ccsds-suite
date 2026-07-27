@@ -1,9 +1,7 @@
-use gpui::{App, AppContext, Context, Div, Entity, Window};
+use gpui::{App, AppContext, Div, Entity, Window};
 use gpui_component::input::InputState;
 
 use super::{field, optional_value};
-use crate::XtceEditor;
-
 pub(super) struct AncillaryDataSetForm {
     entries_input: Entity<InputState>,
 }
@@ -12,7 +10,7 @@ impl AncillaryDataSetForm {
     pub(super) fn new(
         data_set: Option<&xtce::AncillaryDataSetType>,
         window: &mut Window,
-        cx: &mut Context<XtceEditor>,
+        cx: &mut impl AppContext,
     ) -> Self {
         Self {
             entries_input: cx.new(|cx| {
@@ -27,7 +25,7 @@ impl AncillaryDataSetForm {
         &self,
         data_set: Option<&xtce::AncillaryDataSetType>,
         window: &mut Window,
-        cx: &mut Context<XtceEditor>,
+        cx: &mut impl AppContext,
     ) {
         self.entries_input.update(cx, |input, cx| {
             input.set_value(Self::encode(data_set), window, cx);

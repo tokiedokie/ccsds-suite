@@ -1,4 +1,5 @@
 mod forms;
+mod support_log;
 
 use std::collections::{HashMap, HashSet};
 
@@ -17,7 +18,15 @@ use gpui_component::{
 
 use forms::ElementForms;
 
-actions!(xtce_editor, [NewDocument, SaveDocument]);
+actions!(
+    xtce_editor,
+    [
+        NewDocument,
+        OpenDocument,
+        SaveDocument,
+        ExportApplicationLog
+    ]
+);
 
 #[derive(Clone, Copy, Debug, Hash, PartialEq, Eq)]
 enum ElementKind {
@@ -28,6 +37,7 @@ enum ElementKind {
     TelemetryParameterSet,
     TelemetryParameter(usize),
     ContainerSet,
+    SequenceContainer(usize),
     MessageSet,
     TelemetryStreamSet,
     TelemetryAlgorithmSet,
@@ -56,6 +66,7 @@ impl ElementKind {
             Self::TelemetryParameterSet | Self::CommandParameterSet => "ParameterSet",
             Self::TelemetryParameter(_) | Self::CommandParameter(_) => "Parameter",
             Self::ContainerSet => "ContainerSet",
+            Self::SequenceContainer(_) => "SequenceContainer",
             Self::MessageSet => "MessageSet",
             Self::TelemetryStreamSet | Self::CommandStreamSet => "StreamSet",
             Self::TelemetryAlgorithmSet | Self::CommandAlgorithmSet => "AlgorithmSet",
@@ -75,6 +86,7 @@ impl ElementKind {
             Self::TelemetryParameterTypeSet
                 | Self::CommandParameterTypeSet
                 | Self::TelemetryParameterSet
+                | Self::ContainerSet
                 | Self::CommandParameterSet
                 | Self::ArgumentTypeSet
                 | Self::MetaCommandSet
@@ -88,6 +100,7 @@ impl ElementKind {
                 | Self::TelemetryMetaData
                 | Self::TelemetryParameterTypeSet
                 | Self::TelemetryParameterSet
+                | Self::ContainerSet
                 | Self::CommandMetaData
                 | Self::CommandParameterTypeSet
                 | Self::CommandParameterSet
@@ -221,10 +234,12 @@ impl XtceEditor {
     }
 
     fn save_document(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        support_log::event("INFO", "save requested");
         self.save_selected_element(cx);
         let xml = match XtceDocument::serialize(&self.document.root) {
             Ok(xml) => xml,
             Err(error) => {
+                support_log::event("ERROR", &format!("XTCE serialization failed: {error}"));
                 window.push_notification(format!("Could not encode XTCE XML: {error}"), cx);
                 return;
             }
@@ -232,8 +247,20 @@ impl XtceEditor {
         let directory = std::env::current_dir().unwrap_or_else(|_| std::path::PathBuf::from("."));
         let receiver = cx.prompt_for_new_path(&directory, Some(&self.document.file_name));
         cx.spawn_in(window, async move |this, window| {
-            let Ok(Ok(Some(path))) = receiver.await else {
-                return;
+            let path = match receiver.await {
+                Ok(Ok(Some(path))) => path,
+                Ok(Ok(None)) => {
+                    support_log::event("INFO", "save cancelled");
+                    return;
+                }
+                Ok(Err(error)) => {
+                    support_log::event("ERROR", &format!("save file picker failed: {error}"));
+                    return;
+                }
+                Err(error) => {
+                    support_log::event("ERROR", &format!("save file picker interrupted: {error}"));
+                    return;
+                }
             };
             let result = std::fs::write(&path, xml);
             let file_name = path
@@ -242,13 +269,20 @@ impl XtceEditor {
             _ = this.update_in(window, |this, window, cx| {
                 let message = match result {
                     Ok(()) => {
+                        support_log::event("INFO", &format!("saved {}", path.display()));
                         if let Some(file_name) = file_name {
                             this.document.file_name = file_name;
                         }
                         this.refresh_tree(cx);
                         format!("Saved {}", path.display())
                     }
-                    Err(error) => format!("Could not save {}: {error}", path.display()),
+                    Err(error) => {
+                        support_log::event(
+                            "ERROR",
+                            &format!("could not save {}: {error}", path.display()),
+                        );
+                        format!("Could not save {}: {error}", path.display())
+                    }
                 };
                 window.push_notification(message, cx);
             });
@@ -256,14 +290,114 @@ impl XtceEditor {
         .detach();
     }
 
-    fn new_document(&mut self, window: &mut Window, cx: &mut Context<Self>) {
-        let document = XtceDocument::untitled();
+    fn open_document(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        support_log::event("INFO", "open requested");
+        let receiver = cx.prompt_for_paths(PathPromptOptions {
+            files: true,
+            directories: false,
+            multiple: false,
+            prompt: Some("Open an XTCE XML file".into()),
+        });
+        cx.spawn_in(window, async move |this, window| {
+            let result = match receiver.await {
+                Ok(Ok(Some(paths))) => paths
+                    .into_iter()
+                    .next()
+                    .map(|path| {
+                        let document = XtceDocument::read(&path)?;
+                        Ok((path, document))
+                    })
+                    .transpose(),
+                Ok(Ok(None)) => Ok(None),
+                Ok(Err(error)) => Err(format!("Could not open the file picker: {error}")),
+                Err(error) => Err(format!("The file picker was interrupted: {error}")),
+            };
+
+            _ = this.update_in(window, |this, window, cx| match result {
+                Ok(Some((path, document))) => {
+                    support_log::event("INFO", &format!("opened {}", path.display()));
+                    this.replace_document(document, window, cx);
+                    window.push_notification(format!("Opened {}", path.display()), cx);
+                }
+                Ok(None) => support_log::event("INFO", "open cancelled"),
+                Err(error) => {
+                    support_log::event("ERROR", &error);
+                    window.push_notification(error, cx);
+                }
+            });
+        })
+        .detach();
+    }
+
+    fn replace_document(
+        &mut self,
+        document: XtceDocument,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
         let forms = ElementForms::new(&document.root, window, cx);
+        let collapsed = ElementTree::collapsed_by_default(&document.root);
         self.document = document;
         self.inspector.forms = forms;
+        self.tree.update(cx, |tree, cx| {
+            tree.collapsed = collapsed;
+            tree.search_input
+                .update(cx, |input, cx| input.set_value("", window, cx));
+        });
         self.refresh_tree(cx);
-        window.push_notification("Created a new XTCE document", cx);
         cx.notify();
+    }
+
+    fn new_document(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        support_log::event("INFO", "new document created");
+        let document = XtceDocument::untitled();
+        self.replace_document(document, window, cx);
+        window.push_notification("Created a new XTCE document", cx);
+    }
+
+    fn export_application_log(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        support_log::event("INFO", "application log export requested");
+        let directory = std::env::current_dir().unwrap_or_else(|_| std::path::PathBuf::from("."));
+        let receiver = cx.prompt_for_new_path(&directory, Some("xtce-editor.log"));
+        cx.spawn_in(window, async move |this, window| {
+            let path = match receiver.await {
+                Ok(Ok(Some(path))) => path,
+                Ok(Ok(None)) => {
+                    support_log::event("INFO", "application log export cancelled");
+                    return;
+                }
+                Ok(Err(error)) => {
+                    support_log::event(
+                        "ERROR",
+                        &format!("application log file picker failed: {error}"),
+                    );
+                    return;
+                }
+                Err(error) => {
+                    support_log::event(
+                        "ERROR",
+                        &format!("application log file picker interrupted: {error}"),
+                    );
+                    return;
+                }
+            };
+            support_log::event(
+                "INFO",
+                &format!("exporting application log to {}", path.display()),
+            );
+            let result = support_log::export_to(&path);
+            _ = this.update_in(window, |_, window, cx| {
+                let message = match result {
+                    Ok(()) => format!("Saved application log to {}", path.display()),
+                    Err(error) => {
+                        support_log::event("ERROR", &error);
+                        error
+                    }
+                };
+                window.push_notification(message, cx);
+            });
+        })
+        .detach();
     }
 
     #[allow(dead_code)]
@@ -342,6 +476,8 @@ impl XtceEditor {
 }
 
 impl XtceDocument {
+    const XTCE_1_2_NAMESPACE: &'static str = "http://www.omg.org/spec/XTCE/20180204";
+
     fn untitled() -> Self {
         Self {
             root: xtce::SpaceSystem::new("NewSpaceSystem"),
@@ -357,6 +493,50 @@ impl XtceDocument {
         xtce::to_string(root)
             .map(|xml| format!("<?xml version=\"1.0\" encoding=\"utf-8\"?>\n{xml}"))
             .map_err(|error| error.to_string())
+    }
+
+    fn read(path: &std::path::Path) -> Result<Self, String> {
+        let xml = std::fs::read_to_string(path)
+            .map_err(|error| format!("Could not read {}: {error}", path.display()))?;
+        if xml.contains(Self::XTCE_1_2_NAMESPACE) {
+            support_log::event(
+                "INFO",
+                &format!(
+                    "applying XTCE 1.2 namespace compatibility to {}",
+                    path.display()
+                ),
+            );
+        }
+        let file_name = path
+            .file_name()
+            .map(|name| name.to_string_lossy().into_owned())
+            .unwrap_or_else(|| path.display().to_string());
+        Self::from_xml(&xml, file_name)
+            .map_err(|error| format!("Could not open {}: {error}", path.display()))
+    }
+
+    fn from_xml(xml: &str, file_name: String) -> Result<Self, String> {
+        let root = match xtce::from_str(xml) {
+            Ok(root) => root,
+            Err(original_error) if xml.contains(Self::XTCE_1_2_NAMESPACE) => {
+                let normalized = xml.replace(Self::XTCE_1_2_NAMESPACE, xtce::XTCE_NAMESPACE);
+                xtce::from_str(&normalized).map_err(|compatibility_error| {
+                    format!(
+                        "XTCE 1.2 compatibility conversion failed: {compatibility_error} \
+                         (original error: {original_error})"
+                    )
+                })?
+            }
+            Err(error) => return Err(error.to_string()),
+        };
+        Ok(Self {
+            root,
+            selection: ElementSelection {
+                system_path: Vec::new(),
+                kind: ElementKind::SpaceSystem,
+            },
+            file_name,
+        })
     }
 
     fn system_at_path<'a>(system: &'a xtce::SpaceSystem, path: &[usize]) -> &'a xtce::SpaceSystem {
@@ -432,6 +612,19 @@ impl XtceDocument {
                 let name = Self::next_parameter_name(&set.content);
                 set.content.push(Self::new_parameter(name, type_ref));
                 Some(ElementKind::TelemetryParameter(index))
+            }
+            ElementKind::ContainerSet => {
+                let set = system
+                    .telemetry_meta_data
+                    .as_mut()?
+                    .container_set
+                    .get_or_insert_with(|| xtce::ContainerSetType {
+                        content: Vec::new(),
+                    });
+                let index = set.content.len();
+                let name = Self::next_sequence_container_name(&set.content);
+                set.content.push(Self::new_sequence_container(name));
+                Some(ElementKind::SequenceContainer(index))
             }
             ElementKind::CommandParameterSet => {
                 let type_ref = system
@@ -577,6 +770,25 @@ impl XtceDocument {
         })
     }
 
+    fn new_sequence_container(name: String) -> xtce::ContainerSetTypeContent {
+        xtce::ContainerSetTypeContent::SequenceContainer(xtce::SequenceContainerType {
+            short_description: None,
+            name,
+            abstract_: xtce::SequenceContainerType::default_abstract_(),
+            idle_pattern: xtce::SequenceContainerType::default_idle_pattern(),
+            long_description: None,
+            alias_set: None,
+            ancillary_data_set: None,
+            default_rate_in_stream: None,
+            rate_in_stream_set: None,
+            binary_encoding: None,
+            entry_list: xtce::EntryListType {
+                content: Vec::new(),
+            },
+            base_container: None,
+        })
+    }
+
     fn next_parameter_type_name(content: &[xtce::ParameterTypeSetTypeContent]) -> String {
         Self::next_unique_name("ParameterType", |candidate| {
             content
@@ -610,6 +822,14 @@ impl XtceDocument {
             content
                 .iter()
                 .any(|command| Self::meta_command_label(command) == candidate)
+        })
+    }
+
+    fn next_sequence_container_name(content: &[xtce::ContainerSetTypeContent]) -> String {
+        Self::next_unique_name("SequenceContainer", |candidate| {
+            content
+                .iter()
+                .any(|container| Self::sequence_container_label(container) == candidate)
         })
     }
 
@@ -695,8 +915,28 @@ impl XtceDocument {
                     child_level + 2,
                 );
             }
+            let containers = metadata
+                .container_set
+                .as_ref()
+                .map(|set| set.content.as_slice())
+                .unwrap_or_default();
+            Self::push_tree_node(
+                nodes,
+                path,
+                ElementKind::ContainerSet,
+                child_level + 1,
+                !containers.is_empty(),
+            );
+            for (index, container) in containers.iter().enumerate() {
+                Self::push_named_tree_node(
+                    nodes,
+                    path,
+                    ElementKind::SequenceContainer(index),
+                    Self::sequence_container_label(container),
+                    child_level + 2,
+                );
+            }
             for (present, kind) in [
-                (metadata.container_set.is_some(), ElementKind::ContainerSet),
                 (metadata.message_set.is_some(), ElementKind::MessageSet),
                 (
                     metadata.stream_set.is_some(),
@@ -865,6 +1105,12 @@ impl XtceDocument {
             xtce::ParameterSetTypeContent::ParameterRef(parameter) => {
                 format!("→ {}", parameter.parameter_ref)
             }
+        }
+    }
+
+    fn sequence_container_label(container: &xtce::ContainerSetTypeContent) -> String {
+        match container {
+            xtce::ContainerSetTypeContent::SequenceContainer(container) => container.name.clone(),
         }
     }
 
@@ -1787,8 +2033,14 @@ impl Render for XtceEditor {
             .on_action(cx.listener(|this, _: &NewDocument, window, cx| {
                 this.new_document(window, cx);
             }))
+            .on_action(cx.listener(|this, _: &OpenDocument, window, cx| {
+                this.open_document(window, cx);
+            }))
             .on_action(cx.listener(|this, _: &SaveDocument, window, cx| {
                 this.save_document(window, cx);
+            }))
+            .on_action(cx.listener(|this, _: &ExportApplicationLog, window, cx| {
+                this.export_application_log(window, cx);
             }))
             .relative()
             .size_full()
@@ -1834,7 +2086,7 @@ fn build_menus() -> Vec<Menu> {
             items: vec![
                 MenuItem::action("New File", NewDocument),
                 MenuItem::separator(),
-                MenuItem::action("Open…", gpui_component::input::Search),
+                MenuItem::action("Open…", OpenDocument),
                 MenuItem::action("Save File…", SaveDocument),
             ],
             disabled: false,
@@ -1851,10 +2103,19 @@ fn build_menus() -> Vec<Menu> {
             ],
             disabled: false,
         },
+        Menu {
+            name: "Help".into(),
+            items: vec![MenuItem::action(
+                "Save Application Log…",
+                ExportApplicationLog,
+            )],
+            disabled: false,
+        },
     ]
 }
 
 fn main() {
+    support_log::init();
     let app = gpui_platform::application().with_assets(gpui_component_assets::Assets);
 
     app.run(move |cx| {
@@ -1924,6 +2185,49 @@ mod tests {
         assert!(xml.starts_with("<?xml version=\"1.0\" encoding=\"utf-8\"?>\n"));
         let decoded = xtce::from_str(&xml).expect("saved XML should decode");
         assert_eq!(decoded.name, document.name);
+    }
+
+    #[test]
+    fn parses_an_opened_document_and_resets_selection_to_the_root() {
+        let document = XtceDocument::from_xml(
+            include_str!("../../xtce/tests/fixtures/sample.xml"),
+            "opened.xml".to_owned(),
+        )
+        .expect("opened XML should decode");
+
+        assert_eq!(document.file_name, "opened.xml");
+        assert_eq!(document.root.name, "ExampleMission");
+        assert_eq!(document.selection.kind, ElementKind::SpaceSystem);
+        assert!(document.selection.system_path.is_empty());
+        assert!(XtceDocument::from_xml("<invalid>", "invalid.xml".to_owned()).is_err());
+    }
+
+    #[test]
+    fn opens_an_xtce_1_2_document_with_a_self_closing_header() {
+        let xml = format!(
+            r#"
+            <xtce:SpaceSystem
+                xmlns:xtce="{}"
+                name="LegacyMission"
+            >
+              <xtce:Header version="0.0.0" validationStatus="Draft" />
+              <xtce:TelemetryMetaData>
+                <xtce:ParameterTypeSet />
+                <xtce:ParameterSet />
+              </xtce:TelemetryMetaData>
+            </xtce:SpaceSystem>
+            "#,
+            XtceDocument::XTCE_1_2_NAMESPACE
+        );
+
+        let document = XtceDocument::from_xml(&xml, "legacy.xtce".to_owned())
+            .expect("XTCE 1.2 XML should open through compatibility conversion");
+
+        assert_eq!(document.root.name, "LegacyMission");
+        assert_eq!(
+            document.root.header.as_ref().unwrap().version.as_deref(),
+            Some("0.0.0")
+        );
     }
 
     #[test]
@@ -2073,6 +2377,45 @@ mod tests {
             node.selection.kind == ElementKind::MetaCommand(0) && node.label == "MetaCommand1"
         }));
         XtceDocument::serialize(&document).expect("command elements should serialize");
+    }
+
+    #[test]
+    fn adds_sequence_containers_to_telemetry_metadata() {
+        let mut document = XtceDocument::untitled().root;
+        assert!(XtceDocument::add_metadata(
+            &mut document,
+            ElementKind::TelemetryMetaData
+        ));
+
+        let first = XtceDocument::add_collection_item(&mut document, ElementKind::ContainerSet);
+        let second = XtceDocument::add_collection_item(&mut document, ElementKind::ContainerSet);
+
+        assert_eq!(first, Some(ElementKind::SequenceContainer(0)));
+        assert_eq!(second, Some(ElementKind::SequenceContainer(1)));
+        let containers = &document
+            .telemetry_meta_data
+            .as_ref()
+            .expect("telemetry metadata")
+            .container_set
+            .as_ref()
+            .expect("container set")
+            .content;
+        assert_eq!(
+            XtceDocument::sequence_container_label(&containers[0]),
+            "SequenceContainer1"
+        );
+        assert_eq!(
+            XtceDocument::sequence_container_label(&containers[1]),
+            "SequenceContainer2"
+        );
+        let mut nodes = Vec::new();
+        XtceDocument::collect_tree_nodes(&document, &mut Vec::new(), 0, &mut nodes);
+        assert!(nodes.iter().any(|node| {
+            node.selection.kind == ElementKind::SequenceContainer(0)
+                && node.label == "SequenceContainer1"
+        }));
+        let xml = XtceDocument::serialize(&document).expect("container set should serialize");
+        assert!(xml.contains("idlePattern=\"0\""));
     }
 
     #[test]
