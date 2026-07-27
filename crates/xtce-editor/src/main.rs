@@ -111,18 +111,38 @@ impl ElementKind {
     fn uses_folder_icon(self) -> bool {
         matches!(
             self,
-            Self::SpaceSystem
-                | Self::TelemetryMetaData
-                | Self::TelemetryParameterTypeSet
+            Self::TelemetryParameterTypeSet
                 | Self::TelemetryParameterSet
                 | Self::ContainerSet
-                | Self::CommandMetaData
                 | Self::CommandParameterTypeSet
                 | Self::CommandParameterSet
                 | Self::ArgumentTypeSet
                 | Self::MetaCommandSet
-                | Self::ServiceSet
         )
+    }
+
+    fn tree_icon(self, expanded: bool) -> IconName {
+        match self {
+            Self::SpaceSystem => IconName::Globe,
+            Self::TelemetryMetaData => IconName::ChartPie,
+            Self::CommandMetaData | Self::MetaCommand(_) => IconName::SquareTerminal,
+            Self::TelemetryParameterType(_) | Self::CommandParameterType(_) => IconName::Settings2,
+            Self::TelemetryParameter(_) | Self::CommandParameter(_) => IconName::Asterisk,
+            Self::SequenceContainer(_) | Self::CommandContainerSet => IconName::Frame,
+            Self::MessageSet => IconName::Inbox,
+            Self::TelemetryStreamSet | Self::CommandStreamSet => IconName::GalleryVerticalEnd,
+            Self::TelemetryAlgorithmSet | Self::CommandAlgorithmSet => IconName::Bot,
+            Self::ArgumentType(_) => IconName::CaseSensitive,
+            Self::ServiceSet => IconName::Building2,
+            kind if kind.uses_folder_icon() => {
+                if expanded {
+                    IconName::FolderOpen
+                } else {
+                    IconName::Folder
+                }
+            }
+            _ => IconName::File,
+        }
     }
 }
 
@@ -153,7 +173,7 @@ impl Render for ParameterDragPreview {
             .bg(cx.theme().background)
             .shadow_md()
             .text_sm()
-            .child(Icon::new(IconName::File).small())
+            .child(Icon::new(IconName::Asterisk).small())
             .child(self.reference.clone())
     }
 }
@@ -167,6 +187,7 @@ struct TreeNode {
     has_children: bool,
     can_add_telemetry_metadata: bool,
     can_add_command_metadata: bool,
+    can_add_service_set: bool,
 }
 
 struct XtceDocument {
@@ -745,6 +766,12 @@ impl XtceDocument {
                 });
                 true
             }
+            ElementKind::ServiceSet if system.service_set.is_none() => {
+                system.service_set = Some(xtce::ServiceSetType {
+                    service: Vec::new(),
+                });
+                true
+            }
             _ => false,
         }
     }
@@ -913,6 +940,7 @@ impl XtceDocument {
             has_children,
             can_add_telemetry_metadata: system.telemetry_meta_data.is_none(),
             can_add_command_metadata: system.command_meta_data.is_none(),
+            can_add_service_set: system.service_set.is_none(),
         });
 
         let child_level = level + 1;
@@ -1138,6 +1166,7 @@ impl XtceDocument {
             has_children,
             can_add_telemetry_metadata: false,
             can_add_command_metadata: false,
+            can_add_service_set: false,
         });
     }
 
@@ -1159,6 +1188,7 @@ impl XtceDocument {
             has_children: false,
             can_add_telemetry_metadata: false,
             can_add_command_metadata: false,
+            can_add_service_set: false,
         });
     }
 
@@ -1426,15 +1456,7 @@ impl ElementTree {
             .drag_parameter_reference
             .clone()
             .map(|reference| DraggedTelemetryParameter { reference });
-        let icon = if node.selection.kind.uses_folder_icon() {
-            if entry.is_expanded() {
-                IconName::FolderOpen
-            } else {
-                IconName::Folder
-            }
-        } else {
-            IconName::File
-        };
+        let icon = node.selection.kind.tree_icon(entry.is_expanded());
         ListItem::new(index)
             .w_full()
             .rounded_md()
@@ -1483,9 +1505,11 @@ impl ElementTree {
                                     let telemetry_parent = metadata_parent.clone();
                                     let command_editor = editor.clone();
                                     let command_parent = metadata_parent.clone();
+                                    let service_editor = editor.clone();
+                                    let service_parent = metadata_parent.clone();
                                     menu.item(
                                         PopupMenuItem::new("SpaceSystem")
-                                            .icon(IconName::Folder)
+                                            .icon(IconName::Globe)
                                             .on_click(move |_, window, cx| {
                                                 _ = space_system_editor.update(cx, |this, cx| {
                                                     this.add_space_system(
@@ -1499,7 +1523,7 @@ impl ElementTree {
                                     .separator()
                                     .item(
                                         PopupMenuItem::new("TelemetryMetaData")
-                                            .icon(IconName::Folder)
+                                            .icon(IconName::ChartPie)
                                             .disabled(!node.can_add_telemetry_metadata)
                                             .on_click(move |_, window, cx| {
                                                 _ = telemetry_editor.update(cx, |this, cx| {
@@ -1514,13 +1538,28 @@ impl ElementTree {
                                     )
                                     .item(
                                         PopupMenuItem::new("CommandMetaData")
-                                            .icon(IconName::Folder)
+                                            .icon(IconName::SquareTerminal)
                                             .disabled(!node.can_add_command_metadata)
                                             .on_click(move |_, window, cx| {
                                                 _ = command_editor.update(cx, |this, cx| {
                                                     this.add_metadata(
                                                         &command_parent,
                                                         ElementKind::CommandMetaData,
+                                                        window,
+                                                        cx,
+                                                    );
+                                                });
+                                            }),
+                                    )
+                                    .item(
+                                        PopupMenuItem::new("ServiceSet")
+                                            .icon(IconName::Building2)
+                                            .disabled(!node.can_add_service_set)
+                                            .on_click(move |_, window, cx| {
+                                                _ = service_editor.update(cx, |this, cx| {
+                                                    this.add_metadata(
+                                                        &service_parent,
+                                                        ElementKind::ServiceSet,
                                                         window,
                                                         cx,
                                                     );
@@ -1597,7 +1636,7 @@ impl ElementTree {
         let add_parent = node.selection.clone();
         let can_add_child = node.selection.kind.can_add_child();
         let can_add_element = node.selection.kind == ElementKind::SpaceSystem;
-        let uses_folder_icon = node.selection.kind.uses_folder_icon();
+        let tree_icon = node.selection.kind.tree_icon(!collapsed);
         let editor = cx.entity().downgrade();
         let metadata_parent = node.selection.clone();
         let selection = node.selection;
@@ -1642,19 +1681,9 @@ impl ElementTree {
                     }),
             )
             .child(
-                Icon::new(if uses_folder_icon {
-                    if collapsed {
-                        IconName::Folder
-                    } else if node.has_children {
-                        IconName::FolderOpen
-                    } else {
-                        IconName::Folder
-                    }
-                } else {
-                    IconName::File
-                })
-                .small()
-                .text_color(cx.theme().muted_foreground),
+                Icon::new(tree_icon)
+                    .small()
+                    .text_color(cx.theme().muted_foreground),
             )
             .child(div().flex_1().truncate().child(node.label))
             .when(can_add_child, |this| {
@@ -1684,7 +1713,7 @@ impl ElementTree {
                             let command_parent = metadata_parent.clone();
                             menu.item(
                                 PopupMenuItem::new("SpaceSystem")
-                                    .icon(IconName::Folder)
+                                    .icon(IconName::Globe)
                                     .on_click(move |_, window, cx| {
                                         _ = space_system_editor.update(cx, |this, cx| {
                                             this.add_space_system(&space_system_parent, window, cx);
@@ -1694,7 +1723,7 @@ impl ElementTree {
                             .separator()
                             .item(
                                 PopupMenuItem::new("TelemetryMetaData")
-                                    .icon(IconName::Folder)
+                                    .icon(IconName::ChartPie)
                                     .disabled(!can_add_telemetry_metadata)
                                     .on_click(move |_, window, cx| {
                                         _ = telemetry_editor.update(cx, |this, cx| {
@@ -1709,7 +1738,7 @@ impl ElementTree {
                             )
                             .item(
                                 PopupMenuItem::new("CommandMetaData")
-                                    .icon(IconName::Folder)
+                                    .icon(IconName::SquareTerminal)
                                     .disabled(!can_add_command_metadata)
                                     .on_click(move |_, window, cx| {
                                         _ = command_editor.update(cx, |this, cx| {
@@ -1776,25 +1805,13 @@ impl Render for ElementTree {
                 h_flex()
                     .h(px(58.))
                     .px_4()
-                    .justify_between()
                     .border_b_1()
                     .border_color(cx.theme().border)
                     .child(
-                        v_flex()
-                            .gap_0p5()
-                            .child(div().text_sm().font_semibold().child("Document elements"))
-                            .child(
-                                div()
-                                    .text_xs()
-                                    .text_color(cx.theme().muted_foreground)
-                                    .child(self.file_name.clone()),
-                            ),
-                    )
-                    .child(
-                        Button::new("add-element")
-                            .ghost()
-                            .xsmall()
-                            .icon(IconName::Plus),
+                        div()
+                            .text_sm()
+                            .text_color(cx.theme().muted_foreground)
+                            .child(self.file_name.clone()),
                     ),
             )
             .child(
@@ -2229,7 +2246,9 @@ fn main() {
 mod tests {
     use std::collections::HashSet;
 
-    use super::{ElementKind, ElementSelection, ElementTree, XtceDocument, startup_document};
+    use super::{
+        ElementKind, ElementSelection, ElementTree, IconName, XtceDocument, startup_document,
+    };
 
     #[test]
     fn element_collections_are_directory_only_nodes() {
@@ -2363,6 +2382,10 @@ mod tests {
             &mut document,
             ElementKind::CommandMetaData
         ));
+        assert!(XtceDocument::add_metadata(
+            &mut document,
+            ElementKind::ServiceSet
+        ));
         assert!(!XtceDocument::add_metadata(
             &mut document,
             ElementKind::TelemetryMetaData
@@ -2371,8 +2394,13 @@ mod tests {
             &mut document,
             ElementKind::CommandMetaData
         ));
+        assert!(!XtceDocument::add_metadata(
+            &mut document,
+            ElementKind::ServiceSet
+        ));
         assert!(document.telemetry_meta_data.is_some());
         assert!(document.command_meta_data.is_some());
+        assert!(document.service_set.is_some());
         XtceDocument::serialize(&document).expect("metadata document should serialize");
     }
 
@@ -2594,7 +2622,10 @@ mod tests {
             .expect("root command metadata");
 
         assert!(command_metadata.has_children);
-        assert!(command_metadata.selection.kind.uses_folder_icon());
+        assert!(matches!(
+            command_metadata.selection.kind.tree_icon(false),
+            IconName::SquareTerminal
+        ));
         assert!(nodes.iter().any(|node| {
             node.selection.system_path.is_empty()
                 && node.selection.kind == ElementKind::ArgumentTypeSet
