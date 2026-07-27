@@ -85,9 +85,11 @@ impl_select_item!(RestrictionCriteriaKind);
 #[derive(Clone, Copy, Debug, Display, EnumString, VariantArray, PartialEq, Eq)]
 enum EntryKind {
     #[strum(serialize = "ParameterRefEntry")]
-    ParameterReference,
+    Parameter,
+    #[strum(serialize = "ParameterSegmentRefEntry")]
+    ParameterSegment,
     #[strum(serialize = "ContainerRefEntry")]
-    ContainerReference,
+    Container,
 }
 impl_select_item!(EntryKind);
 
@@ -694,6 +696,8 @@ enum EntryRowContent {
     Editable {
         kind: EntryKind,
         reference: String,
+        segment_size: String,
+        segment_order: String,
         offset: String,
         description: String,
     },
@@ -718,6 +722,8 @@ struct TelemetryEntryListView {
 struct TelemetryEntryRow {
     kind_select: Entity<SelectState<Vec<EntryKind>>>,
     reference_input: Entity<InputState>,
+    segment_size_input: Entity<InputState>,
+    segment_order_input: Entity<InputState>,
     offset_input: Entity<InputState>,
     description_input: Entity<InputState>,
     source_index: Rc<Cell<Option<usize>>>,
@@ -1229,9 +1235,8 @@ impl Render for TelemetryEntryListView {
                                     .label("Add entry")
                                     .on_click(cx.listener(|this, _, _, cx| {
                                         let index = this.rows.len();
-                                        this.rows.push(EntryRowData::new_editable(
-                                            EntryKind::ParameterReference,
-                                        ));
+                                        this.rows
+                                            .push(EntryRowData::new_editable(EntryKind::Parameter));
                                         this.list_state.splice(index..index, 1);
                                         this.list_state.scroll_to_reveal_item(index);
                                         cx.notify();
@@ -1252,7 +1257,7 @@ impl Render for TelemetryEntryListView {
                             .child(
                                 v_flex()
                                     .min_w(if optional_columns_visible {
-                                        px(898.)
+                                        px(1_078.)
                                     } else {
                                         px(638.)
                                     })
@@ -1273,6 +1278,8 @@ impl Render for TelemetryEntryListView {
                                             .child(div().flex_1().child("Reference"))
                                             .when(optional_columns_visible, |header| {
                                                 header
+                                                    .child(div().w(px(100.)).child("Segment size"))
+                                                    .child(div().w(px(80.)).child("Order"))
                                                     .child(div().w(px(100.)).child("Offset"))
                                                     .child(div().flex_1().child("Description"))
                                             }),
@@ -1418,6 +1425,7 @@ fn entry_bit_positions(
             let EntryRowContent::Editable {
                 kind,
                 reference,
+                segment_size,
                 offset,
                 ..
             } = &row.content
@@ -1425,10 +1433,6 @@ fn entry_bit_positions(
                 cursor = None;
                 return None;
             };
-            if *kind != EntryKind::ParameterReference {
-                cursor = None;
-                return None;
-            }
             let offset = if offset.trim().is_empty() {
                 Some(0)
             } else {
@@ -1436,7 +1440,11 @@ fn entry_bit_positions(
             };
             let start =
                 cursor.and_then(|position| offset.and_then(|offset| position.checked_add(offset)));
-            let size = parameter_sizes.get(reference).copied();
+            let size = match kind {
+                EntryKind::Parameter => parameter_sizes.get(reference).copied(),
+                EntryKind::ParameterSegment => segment_size.trim().parse().ok(),
+                EntryKind::Container => None,
+            };
             cursor = start.and_then(|start| size.and_then(|size| start.checked_add(size)));
             start.filter(|_| size.is_some())
         })
@@ -1495,6 +1503,7 @@ fn append_packet_rows(
         let EntryRowContent::Editable {
             kind,
             reference,
+            segment_size,
             offset,
             ..
         } = &row.content
@@ -1503,7 +1512,7 @@ fn append_packet_rows(
             *cursor = None;
             continue;
         };
-        if *kind != EntryKind::ParameterReference {
+        if *kind == EntryKind::Container {
             layout
                 .unresolved
                 .push(format!("{reference}: container size is unknown"));
@@ -1524,7 +1533,12 @@ fn append_packet_rows(
             *cursor = None;
             continue;
         };
-        let Some(size) = parameter_sizes.get(reference).copied() else {
+        let size = match kind {
+            EntryKind::Parameter => parameter_sizes.get(reference).copied(),
+            EntryKind::ParameterSegment => segment_size.trim().parse().ok(),
+            EntryKind::Container => None,
+        };
+        let Some(size) = size else {
             layout
                 .unresolved
                 .push(format!("{reference}: size is unknown"));
@@ -1734,8 +1748,10 @@ fn packet_segment(
 }
 
 impl Render for TelemetryEntryRow {
-    fn render(&mut self, _: &mut Window, _: &mut Context<Self>) -> impl IntoElement {
+    fn render(&mut self, _: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         let optional_columns_visible = self.optional_columns_visible.get();
+        let segment = selected_value(&self.kind_select, EntryKind::Parameter, cx)
+            == EntryKind::ParameterSegment;
         h_flex()
             .flex_1()
             .min_w_0()
@@ -1753,7 +1769,13 @@ impl Render for TelemetryEntryRow {
                     .child(Input::new(&self.reference_input)),
             )
             .when(optional_columns_visible, |row| {
-                row.child(
+                row.child(div().w(px(100.)).flex_none().when(segment, |cell| {
+                    cell.child(Input::new(&self.segment_size_input))
+                }))
+                .child(div().w(px(80.)).flex_none().when(segment, |cell| {
+                    cell.child(Input::new(&self.segment_order_input))
+                }))
+                .child(
                     div()
                         .w(px(100.))
                         .flex_none()
@@ -1777,6 +1799,8 @@ impl EntryRowData {
             content: EntryRowContent::Editable {
                 kind,
                 reference: String::new(),
+                segment_size: String::new(),
+                segment_order: String::new(),
                 offset: String::new(),
                 description: String::new(),
             },
@@ -1784,7 +1808,7 @@ impl EntryRowData {
     }
 
     fn new_parameter_reference(reference: String) -> Self {
-        let mut row = Self::new_editable(EntryKind::ParameterReference);
+        let mut row = Self::new_editable(EntryKind::Parameter);
         let EntryRowContent::Editable {
             reference: row_reference,
             ..
@@ -1807,6 +1831,8 @@ fn new_entry_row(
     let EntryRowContent::Editable {
         kind,
         reference,
+        segment_size,
+        segment_order,
         offset,
         description,
     } = row.content
@@ -1830,6 +1856,8 @@ fn new_entry_row(
         TelemetryEntryRow {
             kind_select,
             reference_input,
+            segment_size_input: input(&segment_size, false, window, cx),
+            segment_order_input: input(&segment_order, false, window, cx),
             offset_input: input(&offset, false, window, cx),
             description_input: input(&description, false, window, cx),
             source_index: row.source_index,
@@ -1846,8 +1874,10 @@ fn entry_row_data(row: &Entity<TelemetryEntryRow>, cx: &App) -> EntryRowData {
         source_index: row.source_index.clone(),
         preserve_complex_location: row.preserve_complex_location.clone(),
         content: EntryRowContent::Editable {
-            kind: selected_value(&row.kind_select, EntryKind::ParameterReference, cx),
+            kind: selected_value(&row.kind_select, EntryKind::Parameter, cx),
             reference: value(&row.reference_input, cx),
+            segment_size: value(&row.segment_size_input, cx),
+            segment_order: value(&row.segment_order_input, cx),
             offset: value(&row.offset_input, cx),
             description: value(&row.description_input, cx),
         },
@@ -1862,8 +1892,24 @@ fn rows_from_entry_list(list: Option<&xtce::EntryListType>) -> Vec<EntryRowData>
             let (content, complex_location) = match entry {
                 xtce::EntryListTypeContent::ParameterRefEntry(entry) => (
                     EntryRowContent::Editable {
-                        kind: EntryKind::ParameterReference,
+                        kind: EntryKind::Parameter,
                         reference: entry.parameter_ref.clone(),
+                        segment_size: String::new(),
+                        segment_order: String::new(),
+                        offset: fixed_offset(entry.location_in_container_in_bits.as_ref()),
+                        description: entry.short_description.clone().unwrap_or_default(),
+                    },
+                    has_complex_location(entry.location_in_container_in_bits.as_ref()),
+                ),
+                xtce::EntryListTypeContent::ParameterSegmentRefEntry(entry) => (
+                    EntryRowContent::Editable {
+                        kind: EntryKind::ParameterSegment,
+                        reference: entry.parameter_ref.clone(),
+                        segment_size: entry.size_in_bits.to_string(),
+                        segment_order: entry
+                            .order
+                            .map(|value| value.to_string())
+                            .unwrap_or_default(),
                         offset: fixed_offset(entry.location_in_container_in_bits.as_ref()),
                         description: entry.short_description.clone().unwrap_or_default(),
                     },
@@ -1871,8 +1917,10 @@ fn rows_from_entry_list(list: Option<&xtce::EntryListType>) -> Vec<EntryRowData>
                 ),
                 xtce::EntryListTypeContent::ContainerRefEntry(entry) => (
                     EntryRowContent::Editable {
-                        kind: EntryKind::ContainerReference,
+                        kind: EntryKind::Container,
                         reference: entry.container_ref.clone(),
+                        segment_size: String::new(),
+                        segment_order: String::new(),
                         offset: fixed_offset(entry.location_in_container_in_bits.as_ref()),
                         description: entry.short_description.clone().unwrap_or_default(),
                     },
@@ -1915,10 +1963,12 @@ fn apply_entry_rows(list: &mut xtce::EntryListType, rows: Vec<EntryRowData>) {
             EntryRowContent::Editable {
                 kind,
                 reference,
+                segment_size,
+                segment_order,
                 offset,
                 description,
             } => match kind {
-                EntryKind::ParameterReference => {
+                EntryKind::Parameter => {
                     let mut entry = match source {
                         Some(xtce::EntryListTypeContent::ParameterRefEntry(entry)) => entry,
                         _ => default_parameter_ref_entry(),
@@ -1932,7 +1982,23 @@ fn apply_entry_rows(list: &mut xtce::EntryListType, rows: Vec<EntryRowData>) {
                     );
                     xtce::EntryListTypeContent::ParameterRefEntry(entry)
                 }
-                EntryKind::ContainerReference => {
+                EntryKind::ParameterSegment => {
+                    let mut entry = match source {
+                        Some(xtce::EntryListTypeContent::ParameterSegmentRefEntry(entry)) => entry,
+                        _ => default_parameter_segment_ref_entry(),
+                    };
+                    entry.parameter_ref = reference;
+                    entry.size_in_bits = segment_size.trim().parse().unwrap_or_default();
+                    entry.order = segment_order.trim().parse().ok();
+                    entry.short_description = optional_value(description);
+                    apply_location(
+                        &mut entry.location_in_container_in_bits,
+                        &offset,
+                        &row.preserve_complex_location,
+                    );
+                    xtce::EntryListTypeContent::ParameterSegmentRefEntry(entry)
+                }
+                EntryKind::Container => {
                     let mut entry = match source {
                         Some(xtce::EntryListTypeContent::ContainerRefEntry(entry)) => entry,
                         _ => default_container_ref_entry(),
@@ -1973,6 +2039,20 @@ fn default_parameter_ref_entry() -> xtce::ParameterRefEntryType {
     xtce::ParameterRefEntryType {
         short_description: None,
         parameter_ref: String::new(),
+        location_in_container_in_bits: None,
+        repeat_entry: None,
+        include_condition: None,
+        time_association: None,
+        ancillary_data_set: None,
+    }
+}
+
+fn default_parameter_segment_ref_entry() -> xtce::ParameterSegmentRefEntryType {
+    xtce::ParameterSegmentRefEntryType {
+        short_description: None,
+        parameter_ref: String::new(),
+        order: None,
+        size_in_bits: 0,
         location_in_container_in_bits: None,
         repeat_entry: None,
         include_condition: None,
@@ -2304,9 +2384,10 @@ impl CompletionProvider for ReferenceCompletionProvider {
             CompletionTarget::Container => &context.container_names,
             CompletionTarget::Parameter => &context.parameter_names,
             CompletionTarget::Entry(kind) => {
-                if selected_value(kind, EntryKind::ParameterReference, cx)
-                    == EntryKind::ParameterReference
-                {
+                if matches!(
+                    selected_value(kind, EntryKind::Parameter, cx),
+                    EntryKind::Parameter | EntryKind::ParameterSegment
+                ) {
                     &context.parameter_names
                 } else {
                     &context.container_names
@@ -2970,10 +3051,42 @@ mod tests {
         assert!(matches!(
             row.content,
             EntryRowContent::Editable {
-                kind: EntryKind::ParameterReference,
+                kind: EntryKind::Parameter,
                 reference,
                 ..
             } if reference == "temperature"
+        ));
+    }
+
+    #[test]
+    fn parameter_segment_entry_is_loaded_as_an_editable_row() {
+        let list = xtce::EntryListType {
+            content: vec![xtce::EntryListTypeContent::ParameterSegmentRefEntry(
+                xtce::ParameterSegmentRefEntryType {
+                    short_description: Some("first byte".to_owned()),
+                    parameter_ref: "payload".to_owned(),
+                    order: Some(2),
+                    size_in_bits: 8,
+                    location_in_container_in_bits: None,
+                    repeat_entry: None,
+                    include_condition: None,
+                    time_association: None,
+                    ancillary_data_set: None,
+                },
+            )],
+        };
+
+        let rows = rows_from_entry_list(Some(&list));
+
+        assert!(matches!(
+            &rows[0].content,
+            EntryRowContent::Editable {
+                kind: EntryKind::ParameterSegment,
+                reference,
+                segment_size,
+                segment_order,
+                ..
+            } if reference == "payload" && segment_size == "8" && segment_order == "2"
         ));
     }
 
@@ -3101,9 +3214,7 @@ mod tests {
 
         apply_entry_rows(
             &mut list,
-            vec![super::EntryRowData::new_editable(
-                EntryKind::ParameterReference,
-            )],
+            vec![super::EntryRowData::new_editable(EntryKind::Parameter)],
         );
 
         assert!(matches!(
