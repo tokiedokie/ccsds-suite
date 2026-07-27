@@ -92,6 +92,8 @@ enum EntryKind {
     Container,
     #[strum(serialize = "ContainerSegmentRefEntry")]
     ContainerSegment,
+    #[strum(serialize = "StreamSegmentEntry")]
+    StreamSegment,
 }
 impl_select_item!(EntryKind);
 
@@ -99,6 +101,7 @@ fn entry_reference_placeholder(kind: EntryKind) -> &'static str {
     match kind {
         EntryKind::Parameter | EntryKind::ParameterSegment => "Select a parameter...",
         EntryKind::Container | EntryKind::ContainerSegment => "Select a container...",
+        EntryKind::StreamSegment => "Select a stream...",
     }
 }
 
@@ -129,19 +132,25 @@ pub(super) struct SequenceContainerForm {
     _subscriptions: Vec<Subscription>,
 }
 
+pub(super) struct ReferenceSets<'a, C> {
+    pub(super) parameter_set: Option<&'a xtce::ParameterSetType>,
+    pub(super) parameter_type_set: Option<&'a xtce::ParameterTypeSetType>,
+    pub(super) container_set: Option<&'a C>,
+    pub(super) stream_set: Option<&'a xtce::StreamSetType>,
+}
+
 impl SequenceContainerForm {
     pub(super) fn new(
         container: Option<&xtce::ContainerSetTypeContent>,
-        parameter_set: Option<&xtce::ParameterSetType>,
-        parameter_type_set: Option<&xtce::ParameterTypeSetType>,
-        container_set: Option<&xtce::ContainerSetType>,
+        references: ReferenceSets<'_, xtce::ContainerSetType>,
         window: &mut Window,
         cx: &mut Context<XtceEditor>,
     ) -> Entity<Self> {
         let reference_context = Rc::new(RefCell::new(ReferenceContext::new(
-            parameter_set,
-            parameter_type_set,
-            container_set,
+            references.parameter_set,
+            references.parameter_type_set,
+            references.container_set,
+            references.stream_set,
         )));
         Self::new_with_context(sequence_container(container), reference_context, window, cx)
     }
@@ -266,15 +275,18 @@ impl SequenceContainerForm {
     pub(super) fn load(
         &mut self,
         container: Option<&xtce::ContainerSetTypeContent>,
-        parameter_set: Option<&xtce::ParameterSetType>,
-        parameter_type_set: Option<&xtce::ParameterTypeSetType>,
-        container_set: Option<&xtce::ContainerSetType>,
+        references: ReferenceSets<'_, xtce::ContainerSetType>,
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
         self.load_with_context(
             sequence_container(container),
-            ReferenceContext::new(parameter_set, parameter_type_set, container_set),
+            ReferenceContext::new(
+                references.parameter_set,
+                references.parameter_type_set,
+                references.container_set,
+                references.stream_set,
+            ),
             window,
             cx,
         );
@@ -283,15 +295,18 @@ impl SequenceContainerForm {
     pub(super) fn load_direct(
         &mut self,
         container: Option<&xtce::SequenceContainerType>,
-        parameter_set: Option<&xtce::ParameterSetType>,
-        parameter_type_set: Option<&xtce::ParameterTypeSetType>,
-        container_set: Option<&xtce::CommandContainerSetType>,
+        references: ReferenceSets<'_, xtce::CommandContainerSetType>,
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
         self.load_with_context(
             container,
-            ReferenceContext::new_for_command(parameter_set, parameter_type_set, container_set),
+            ReferenceContext::new_for_command(
+                references.parameter_set,
+                references.parameter_type_set,
+                references.container_set,
+                references.stream_set,
+            ),
             window,
             cx,
         );
@@ -1455,6 +1470,7 @@ fn entry_bit_positions(
                 EntryKind::ParameterSegment => segment_size.trim().parse().ok(),
                 EntryKind::Container => None,
                 EntryKind::ContainerSegment => segment_size.trim().parse().ok(),
+                EntryKind::StreamSegment => segment_size.trim().parse().ok(),
             };
             cursor = start.and_then(|start| size.and_then(|size| start.checked_add(size)));
             start.filter(|_| size.is_some())
@@ -1549,6 +1565,7 @@ fn append_packet_rows(
             EntryKind::ParameterSegment => segment_size.trim().parse().ok(),
             EntryKind::Container => None,
             EntryKind::ContainerSegment => segment_size.trim().parse().ok(),
+            EntryKind::StreamSegment => segment_size.trim().parse().ok(),
         };
         let Some(size) = size else {
             layout
@@ -1772,7 +1789,7 @@ impl Render for TelemetryEntryRow {
         }
         let segment = matches!(
             kind,
-            EntryKind::ParameterSegment | EntryKind::ContainerSegment
+            EntryKind::ParameterSegment | EntryKind::ContainerSegment | EntryKind::StreamSegment
         );
         h_flex()
             .flex_1()
@@ -1965,6 +1982,20 @@ fn rows_from_entry_list(list: Option<&xtce::EntryListType>) -> Vec<EntryRowData>
                     },
                     has_complex_location(entry.location_in_container_in_bits.as_ref()),
                 ),
+                xtce::EntryListTypeContent::StreamSegmentEntry(entry) => (
+                    EntryRowContent::Editable {
+                        kind: EntryKind::StreamSegment,
+                        reference: entry.stream_ref.clone(),
+                        segment_size: entry.size_in_bits.to_string(),
+                        segment_order: entry
+                            .order
+                            .map(|value| value.to_string())
+                            .unwrap_or_default(),
+                        offset: fixed_offset(entry.location_in_container_in_bits.as_ref()),
+                        description: entry.short_description.clone().unwrap_or_default(),
+                    },
+                    has_complex_location(entry.location_in_container_in_bits.as_ref()),
+                ),
                 entry => (
                     EntryRowContent::Unsupported {
                         label: unsupported_entry_label(entry),
@@ -2067,6 +2098,22 @@ fn apply_entry_rows(list: &mut xtce::EntryListType, rows: Vec<EntryRowData>) {
                     );
                     xtce::EntryListTypeContent::ContainerSegmentRefEntry(entry)
                 }
+                EntryKind::StreamSegment => {
+                    let mut entry = match source {
+                        Some(xtce::EntryListTypeContent::StreamSegmentEntry(entry)) => entry,
+                        _ => default_stream_segment_entry(),
+                    };
+                    entry.stream_ref = reference;
+                    entry.size_in_bits = segment_size.trim().parse().unwrap_or_default();
+                    entry.order = segment_order.trim().parse().ok();
+                    entry.short_description = optional_value(description);
+                    apply_location(
+                        &mut entry.location_in_container_in_bits,
+                        &offset,
+                        &row.preserve_complex_location,
+                    );
+                    xtce::EntryListTypeContent::StreamSegmentEntry(entry)
+                }
             },
         };
         row.source_index.set(Some(new_index));
@@ -2142,6 +2189,20 @@ fn default_container_segment_ref_entry() -> xtce::ContainerSegmentRefEntryType {
     }
 }
 
+fn default_stream_segment_entry() -> xtce::StreamSegmentEntryType {
+    xtce::StreamSegmentEntryType {
+        short_description: None,
+        stream_ref: String::new(),
+        order: None,
+        size_in_bits: 0,
+        location_in_container_in_bits: None,
+        repeat_entry: None,
+        include_condition: None,
+        time_association: None,
+        ancillary_data_set: None,
+    }
+}
+
 fn fixed_offset(location: Option<&xtce::LocationInContainerInBitsType>) -> String {
     match location.map(|location| &location.content) {
         Some(xtce::LocationInContainerInBitsTypeContent::FixedValue(value)) => value.to_string(),
@@ -2176,6 +2237,7 @@ struct ReferenceContext {
     parameter_names: Vec<String>,
     parameter_sizes: HashMap<String, u64>,
     container_names: Vec<String>,
+    stream_names: Vec<String>,
     container_layouts: HashMap<String, ContainerLayoutSource>,
 }
 
@@ -2189,10 +2251,12 @@ impl ReferenceContext {
         parameter_set: Option<&xtce::ParameterSetType>,
         parameter_type_set: Option<&xtce::ParameterTypeSetType>,
         container_set: Option<&xtce::ContainerSetType>,
+        stream_set: Option<&xtce::StreamSetType>,
     ) -> Self {
         Self::from_sequences(
             parameter_set,
             parameter_type_set,
+            stream_set,
             container_set.into_iter().flat_map(|set| &set.content).map(
                 |container| match container {
                     xtce::ContainerSetTypeContent::SequenceContainer(container) => container,
@@ -2205,10 +2269,12 @@ impl ReferenceContext {
         parameter_set: Option<&xtce::ParameterSetType>,
         parameter_type_set: Option<&xtce::ParameterTypeSetType>,
         container_set: Option<&xtce::CommandContainerSetType>,
+        stream_set: Option<&xtce::StreamSetType>,
     ) -> Self {
         Self::from_sequences(
             parameter_set,
             parameter_type_set,
+            stream_set,
             container_set
                 .into_iter()
                 .flat_map(|set| &set.command_container),
@@ -2218,6 +2284,7 @@ impl ReferenceContext {
     fn from_sequences<'a>(
         parameter_set: Option<&xtce::ParameterSetType>,
         parameter_type_set: Option<&xtce::ParameterTypeSetType>,
+        stream_set: Option<&xtce::StreamSetType>,
         containers: impl IntoIterator<Item = &'a xtce::SequenceContainerType>,
     ) -> Self {
         let type_sizes = parameter_type_sizes(parameter_type_set);
@@ -2248,6 +2315,12 @@ impl ReferenceContext {
                 .iter()
                 .map(|container| container.name.clone())
                 .collect(),
+            stream_names: stream_set
+                .into_iter()
+                .flat_map(|set| &set.content)
+                .map(stream_name)
+                .map(str::to_owned)
+                .collect(),
             container_layouts: containers
                 .iter()
                 .map(|container| {
@@ -2264,6 +2337,14 @@ impl ReferenceContext {
                 })
                 .collect(),
         }
+    }
+}
+
+fn stream_name(stream: &xtce::StreamSetTypeContent) -> &str {
+    match stream {
+        xtce::StreamSetTypeContent::FixedFrameStream(stream) => &stream.name,
+        xtce::StreamSetTypeContent::VariableFrameStream(stream) => &stream.name,
+        xtce::StreamSetTypeContent::CustomStream(stream) => &stream.name,
     }
 }
 
@@ -2452,16 +2533,11 @@ impl CompletionProvider for ReferenceCompletionProvider {
         let names = match &self.target {
             CompletionTarget::Container => &context.container_names,
             CompletionTarget::Parameter => &context.parameter_names,
-            CompletionTarget::Entry(kind) => {
-                if matches!(
-                    selected_value(kind, EntryKind::Parameter, cx),
-                    EntryKind::Parameter | EntryKind::ParameterSegment
-                ) {
-                    &context.parameter_names
-                } else {
-                    &context.container_names
-                }
-            }
+            CompletionTarget::Entry(kind) => match selected_value(kind, EntryKind::Parameter, cx) {
+                EntryKind::Parameter | EntryKind::ParameterSegment => &context.parameter_names,
+                EntryKind::Container | EntryKind::ContainerSegment => &context.container_names,
+                EntryKind::StreamSegment => &context.stream_names,
+            },
         };
         let end = text.offset_to_position(offset);
         let items = names
@@ -3283,7 +3359,7 @@ mod tests {
     }
 
     #[test]
-    fn reordering_keeps_unsupported_entries_in_place() {
+    fn stream_segment_entry_is_editable_and_reorderable() {
         let mut list = xtce::EntryListType {
             content: vec![
                 xtce::EntryListTypeContent::ParameterRefEntry(super::default_parameter_ref_entry()),
@@ -3301,6 +3377,15 @@ mod tests {
             ],
         };
         let mut rows = rows_from_entry_list(Some(&list));
+        assert!(matches!(
+            &rows[1].content,
+            EntryRowContent::Editable {
+                kind: EntryKind::StreamSegment,
+                reference,
+                segment_size,
+                ..
+            } if reference == "stream" && segment_size == "8"
+        ));
         rows.swap(0, 1);
 
         apply_entry_rows(&mut list, rows);

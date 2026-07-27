@@ -1,14 +1,24 @@
 use gpui::{App, Context, Div, Entity, ParentElement, Styled, WeakEntity, Window};
 
 use super::{
-    alias_set::AliasSetForm, ancillary_data_set::AncillaryDataSetForm,
-    argument_type::ArgumentTypeForm, command_metadata::CommandMetaDataForm,
-    custom_algorithm::CustomAlgorithmForm, custom_stream::CustomStreamForm,
-    fixed_frame_stream::FixedFrameStreamForm, header::HeaderForm,
-    math_algorithm::MathAlgorithmForm, message::MessageForm, message_set::MessageSetForm,
-    meta_command::MetaCommandForm, parameter::ParameterForm, parameter_type::ParameterTypeForm,
-    sequence_container::SequenceContainerForm, service_set::ServiceSetForm,
-    space_system::SpaceSystemForm, telemetry_metadata::TelemetryMetaDataForm,
+    alias_set::AliasSetForm,
+    ancillary_data_set::AncillaryDataSetForm,
+    argument_type::ArgumentTypeForm,
+    command_metadata::CommandMetaDataForm,
+    custom_algorithm::CustomAlgorithmForm,
+    custom_stream::CustomStreamForm,
+    fixed_frame_stream::FixedFrameStreamForm,
+    header::HeaderForm,
+    math_algorithm::MathAlgorithmForm,
+    message::MessageForm,
+    message_set::MessageSetForm,
+    meta_command::MetaCommandForm,
+    parameter::ParameterForm,
+    parameter_type::ParameterTypeForm,
+    sequence_container::{ReferenceSets, SequenceContainerForm},
+    service_set::ServiceSetForm,
+    space_system::SpaceSystemForm,
+    telemetry_metadata::TelemetryMetaDataForm,
     variable_frame_stream::VariableFrameStreamForm,
 };
 use crate::{ElementKind, XtceDocument, XtceEditor};
@@ -301,9 +311,12 @@ impl ElementForms {
             ),
             sequence_container: SequenceContainerForm::new(
                 telemetry_container_set(system).and_then(|set| set.content.first()),
-                telemetry_parameter_set(system),
-                telemetry_parameter_type_set(system),
-                telemetry_container_set(system),
+                ReferenceSets {
+                    parameter_set: telemetry_parameter_set(system),
+                    parameter_type_set: telemetry_parameter_type_set(system),
+                    container_set: telemetry_container_set(system),
+                    stream_set: telemetry_stream_set(system),
+                },
                 window,
                 cx,
             ),
@@ -371,9 +384,12 @@ impl ElementForms {
                 self.sequence_container.update(cx, |form, cx| {
                     form.load(
                         telemetry_container_set(system).and_then(|set| set.content.get(index)),
-                        telemetry_parameter_set(system),
-                        telemetry_parameter_type_set(system),
-                        telemetry_container_set(system),
+                        ReferenceSets {
+                            parameter_set: telemetry_parameter_set(system),
+                            parameter_type_set: telemetry_parameter_type_set(system),
+                            container_set: telemetry_container_set(system),
+                            stream_set: telemetry_stream_set(system),
+                        },
                         window,
                         cx,
                     );
@@ -384,9 +400,12 @@ impl ElementForms {
                     form.load_direct(
                         command_container_set(system)
                             .and_then(|set| set.command_container.get(index)),
-                        command_parameter_set(system),
-                        command_parameter_type_set(system),
-                        command_container_set(system),
+                        ReferenceSets {
+                            parameter_set: command_parameter_set(system),
+                            parameter_type_set: command_parameter_type_set(system),
+                            container_set: command_container_set(system),
+                            stream_set: command_stream_set(system),
+                        },
                         window,
                         cx,
                     );
