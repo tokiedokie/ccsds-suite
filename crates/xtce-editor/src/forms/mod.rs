@@ -2,6 +2,7 @@ mod aggregate_member_list;
 mod alias_set;
 mod ancillary_data_set;
 mod argument_type;
+mod boolean_expression;
 mod command_metadata;
 mod container_binary_encoding;
 mod container_rate;

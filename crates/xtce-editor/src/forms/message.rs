@@ -13,8 +13,8 @@ use gpui_component::{
 use strum::{Display, EnumString, VariantArray};
 
 use super::{
-    alias_set::AliasSetForm, ancillary_data_set::AncillaryDataSetForm, field, impl_select_item,
-    optional_value,
+    alias_set::AliasSetForm, ancillary_data_set::AncillaryDataSetForm,
+    boolean_expression::BooleanExpressionForm, field, impl_select_item, optional_value,
 };
 use crate::XtceEditor;
 
@@ -22,6 +22,7 @@ use crate::XtceEditor;
 enum CriteriaKind {
     Comparison,
     ComparisonList,
+    BooleanExpression,
 }
 impl_select_item!(CriteriaKind);
 
@@ -202,6 +203,7 @@ impl Render for MessageForm {
 struct MessageCriteriaForm {
     kind_select: Entity<SelectState<Vec<CriteriaKind>>>,
     rows: Vec<Entity<ComparisonRow>>,
+    boolean_expression: Entity<BooleanExpressionForm>,
     unsupported_label: Option<&'static str>,
     _subscriptions: Vec<Subscription>,
 }
@@ -213,6 +215,7 @@ impl MessageCriteriaForm {
         cx: &mut impl AppContext,
     ) -> Entity<Self> {
         let values = CriteriaValues::from_criteria(criteria);
+        let boolean_expression = BooleanExpressionForm::new(values.boolean_expression, window, cx);
         cx.new(move |cx| {
             let kind_select = select(CriteriaKind::VARIANTS, values.kind, window, cx);
             let kind_subscription = cx.subscribe(
@@ -222,6 +225,7 @@ impl MessageCriteriaForm {
             Self {
                 kind_select,
                 rows: comparison_rows(&values.comparisons, window, cx),
+                boolean_expression,
                 unsupported_label: values.unsupported_label,
                 _subscriptions: vec![kind_subscription],
             }
@@ -237,6 +241,9 @@ impl MessageCriteriaForm {
         let values = CriteriaValues::from_criteria(criteria);
         sync_select(&self.kind_select, values.kind, window, cx);
         self.rows = comparison_rows(&values.comparisons, window, cx);
+        self.boolean_expression.update(cx, |form, cx| {
+            form.load(values.boolean_expression, window, cx);
+        });
         self.unsupported_label = values.unsupported_label;
         cx.notify();
     }
@@ -245,6 +252,22 @@ impl MessageCriteriaForm {
         if self.unsupported_label.is_some() {
             return;
         }
+        *criteria = match selected_value(&self.kind_select, CriteriaKind::Comparison, cx) {
+            CriteriaKind::BooleanExpression => xtce::MatchCriteriaType::BooleanExpression(
+                self.boolean_expression.read(cx).expression(cx),
+            ),
+            CriteriaKind::Comparison => {
+                xtce::MatchCriteriaType::Comparison(self.comparisons(cx).remove(0))
+            }
+            CriteriaKind::ComparisonList => {
+                xtce::MatchCriteriaType::ComparisonList(xtce::ComparisonListType {
+                    comparison: self.comparisons(cx),
+                })
+            }
+        };
+    }
+
+    fn comparisons(&self, cx: &App) -> Vec<xtce::ComparisonType> {
         let mut comparisons = self
             .rows
             .iter()
@@ -253,14 +276,7 @@ impl MessageCriteriaForm {
         if comparisons.is_empty() {
             comparisons.push(default_comparison());
         }
-        *criteria = match selected_value(&self.kind_select, CriteriaKind::Comparison, cx) {
-            CriteriaKind::Comparison => xtce::MatchCriteriaType::Comparison(comparisons.remove(0)),
-            CriteriaKind::ComparisonList => {
-                xtce::MatchCriteriaType::ComparisonList(xtce::ComparisonListType {
-                    comparison: comparisons,
-                })
-            }
-        };
+        comparisons
     }
 }
 
@@ -293,7 +309,11 @@ impl Render for MessageCriteriaForm {
             })
             .when(self.unsupported_label.is_none(), |form| {
                 form.child(select_field("Criteria type", &self.kind_select))
-                    .child(
+                    .when(kind == CriteriaKind::BooleanExpression, |form| {
+                        form.child(self.boolean_expression.clone())
+                    })
+                    .when(kind != CriteriaKind::BooleanExpression, |form| {
+                        form.child(
                         h_flex()
                             .justify_between()
                             .child(
@@ -322,8 +342,8 @@ impl Render for MessageCriteriaForm {
                                         })),
                                 )
                             }),
-                    )
-                    .child(
+                        )
+                        .child(
                         div()
                             .id("message-comparison-table-scroll")
                             .w_full()
@@ -396,7 +416,8 @@ impl Render for MessageCriteriaForm {
                                             }),
                                     ),
                             ),
-                    )
+                        )
+                    })
             })
     }
 }
@@ -487,6 +508,7 @@ impl MessageValues {
 struct CriteriaValues<'a> {
     kind: CriteriaKind,
     comparisons: Vec<&'a xtce::ComparisonType>,
+    boolean_expression: Option<&'a xtce::BooleanExpressionType>,
     unsupported_label: Option<&'static str>,
 }
 
@@ -496,26 +518,31 @@ impl<'a> CriteriaValues<'a> {
             Some(xtce::MatchCriteriaType::Comparison(comparison)) => Self {
                 kind: CriteriaKind::Comparison,
                 comparisons: vec![comparison],
+                boolean_expression: None,
                 unsupported_label: None,
             },
             Some(xtce::MatchCriteriaType::ComparisonList(list)) => Self {
                 kind: CriteriaKind::ComparisonList,
                 comparisons: list.comparison.iter().collect(),
+                boolean_expression: None,
                 unsupported_label: None,
             },
-            Some(xtce::MatchCriteriaType::BooleanExpression(_)) => Self {
-                kind: CriteriaKind::Comparison,
+            Some(xtce::MatchCriteriaType::BooleanExpression(expression)) => Self {
+                kind: CriteriaKind::BooleanExpression,
                 comparisons: Vec::new(),
-                unsupported_label: Some("BooleanExpression"),
+                boolean_expression: Some(expression),
+                unsupported_label: None,
             },
             Some(xtce::MatchCriteriaType::CustomAlgorithm(_)) => Self {
                 kind: CriteriaKind::Comparison,
                 comparisons: Vec::new(),
+                boolean_expression: None,
                 unsupported_label: Some("CustomAlgorithm"),
             },
             None => Self {
                 kind: CriteriaKind::Comparison,
                 comparisons: Vec::new(),
+                boolean_expression: None,
                 unsupported_label: None,
             },
         }
@@ -676,5 +703,29 @@ mod tests {
         assert_eq!(parse_operator("!=").to_string(), "!=");
         assert_eq!(parse_operator("<=").to_string(), "<=");
         assert_eq!(parse_operator(">=").to_string(), ">=");
+    }
+
+    #[test]
+    fn boolean_expression_criteria_loads_as_an_editable_form() {
+        let criteria = xtce::MatchCriteriaType::BooleanExpression(
+            xtce::BooleanExpressionType::Condition(xtce::ComparisonCheckType {
+                content: vec![
+                    xtce::ComparisonCheckTypeContent::ParameterInstanceRef(
+                        xtce::ParameterInstanceRefType {
+                            parameter_ref: "P1".to_owned(),
+                            instance: 0,
+                            use_calibrated_value: true,
+                        },
+                    ),
+                    xtce::ComparisonCheckTypeContent::ComparisonOperator("==".to_owned()),
+                    xtce::ComparisonCheckTypeContent::Value("1".to_owned()),
+                ],
+            }),
+        );
+        let values = CriteriaValues::from_criteria(Some(&criteria));
+
+        assert_eq!(values.kind, CriteriaKind::BooleanExpression);
+        assert!(values.boolean_expression.is_some());
+        assert!(values.unsupported_label.is_none());
     }
 }
