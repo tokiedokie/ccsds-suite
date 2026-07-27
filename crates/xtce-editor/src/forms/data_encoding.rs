@@ -10,7 +10,10 @@ use gpui_component::{
 };
 use strum::{Display, EnumString, VariantArray};
 
-use super::{default_calibrator::DefaultCalibratorForm, field, impl_select_item};
+use super::{
+    default_calibrator::DefaultCalibratorForm, discrete_lookup::DiscreteLookupListForm,
+    dynamic_value::DynamicValueForm, field, impl_select_item,
+};
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(crate) enum DataEncodingKind {
@@ -152,6 +155,15 @@ enum FloatSizeChoice {
 }
 impl_select_item!(FloatSizeChoice);
 
+#[derive(Clone, Copy, Debug, Default, Display, EnumString, VariantArray, PartialEq, Eq)]
+enum BinarySizeKind {
+    #[default]
+    Fixed,
+    Dynamic,
+    DiscreteLookup,
+}
+impl_select_item!(BinarySizeKind);
+
 pub(super) struct DataEncodingForm {
     kind_select: Entity<SelectState<Vec<DataEncodingChoice>>>,
     bit_order_select: Entity<SelectState<Vec<BitOrderChoice>>>,
@@ -160,7 +172,10 @@ pub(super) struct DataEncodingForm {
     integer_encoding_select: Entity<SelectState<Vec<IntegerEncodingChoice>>>,
     string_encoding_select: Entity<SelectState<Vec<StringEncodingChoice>>>,
     float_size_select: Entity<SelectState<Vec<FloatSizeChoice>>>,
+    binary_size_kind_select: Entity<SelectState<Vec<BinarySizeKind>>>,
     size_in_bits_input: Entity<InputState>,
+    binary_dynamic_size: Entity<DynamicValueForm>,
+    binary_discrete_size: Entity<DiscreteLookupListForm>,
     change_threshold_input: Entity<InputState>,
     default_calibrator: Entity<DefaultCalibratorForm>,
     _subscriptions: Vec<Subscription>,
@@ -213,7 +228,17 @@ impl DataEncodingForm {
                 window,
                 cx,
             );
+            let binary_size_kind_select = select(
+                BinarySizeKind::VARIANTS,
+                binary_size_kind(encoding),
+                window,
+                cx,
+            );
             let size_in_bits_input = input(&values.size_in_bits, window, cx);
+            let binary_dynamic_size =
+                DynamicValueForm::new(binary_dynamic_value(encoding), window, cx);
+            let binary_discrete_size =
+                DiscreteLookupListForm::new(binary_discrete_value(encoding), window, cx);
             let change_threshold_input = input(&values.change_threshold, window, cx);
             let default_calibrator = DefaultCalibratorForm::new(
                 encoding.and_then(DataEncodingRef::default_calibrator),
@@ -267,12 +292,29 @@ impl DataEncodingForm {
                         window,
                         cx,
                     );
+                    sync_select(
+                        &this.binary_size_kind_select,
+                        BinarySizeKind::Fixed,
+                        window,
+                        cx,
+                    );
                     this.size_in_bits_input.update(cx, |input, cx| {
                         input.set_value(values.size_in_bits, window, cx)
                     });
                     this.change_threshold_input.update(cx, |input, cx| {
                         input.set_value(values.change_threshold, window, cx)
                     });
+                    this.binary_dynamic_size
+                        .update(cx, |form, cx| form.load(None, window, cx));
+                    this.binary_discrete_size
+                        .update(cx, |form, cx| form.load(None, window, cx));
+                    cx.notify();
+                },
+            );
+            let binary_size_subscription = cx.subscribe_in(
+                &binary_size_kind_select,
+                window,
+                |_: &mut DataEncodingForm, _, _: &SelectEvent<Vec<BinarySizeKind>>, _, cx| {
                     cx.notify();
                 },
             );
@@ -285,10 +327,13 @@ impl DataEncodingForm {
                 integer_encoding_select,
                 string_encoding_select,
                 float_size_select,
+                binary_size_kind_select,
                 size_in_bits_input,
+                binary_dynamic_size,
+                binary_discrete_size,
                 change_threshold_input,
                 default_calibrator,
-                _subscriptions: vec![kind_subscription],
+                _subscriptions: vec![kind_subscription, binary_size_subscription],
             }
         })
     }
@@ -346,6 +391,18 @@ impl DataEncodingForm {
             window,
             cx,
         );
+        sync_select(
+            &self.binary_size_kind_select,
+            binary_size_kind(encoding),
+            window,
+            cx,
+        );
+        self.binary_dynamic_size.update(cx, |form, cx| {
+            form.load(binary_dynamic_value(encoding), window, cx)
+        });
+        self.binary_discrete_size.update(cx, |form, cx| {
+            form.load(binary_discrete_value(encoding), window, cx)
+        });
         self.default_calibrator.update(cx, |form, cx| {
             form.load(
                 encoding.and_then(DataEncodingRef::default_calibrator),
@@ -368,6 +425,25 @@ impl DataEncodingForm {
     pub(super) fn apply_to(&self, mut encoding: DataEncodingMut<'_>, cx: &App) {
         if let Some(calibrator) = encoding.default_calibrator_mut() {
             self.default_calibrator.read(cx).apply_to(calibrator, cx);
+        }
+        if let DataEncodingMut::Binary(binary) = &mut encoding {
+            match selected_value(&self.binary_size_kind_select, BinarySizeKind::Fixed, cx) {
+                BinarySizeKind::Fixed => {
+                    if let Ok(size) = value(&self.size_in_bits_input, cx).trim().parse() {
+                        binary.size_in_bits = xtce::IntegerValueType::FixedValue(size);
+                    }
+                }
+                BinarySizeKind::Dynamic => {
+                    binary.size_in_bits = xtce::IntegerValueType::DynamicValue(
+                        self.binary_dynamic_size.read(cx).value(cx),
+                    );
+                }
+                BinarySizeKind::DiscreteLookup => {
+                    binary.size_in_bits = xtce::IntegerValueType::DiscreteLookupList(
+                        self.binary_discrete_size.read(cx).value(cx),
+                    );
+                }
+            }
         }
         DataEncodingValues {
             bit_order: selected_value(
@@ -460,17 +536,15 @@ impl DataEncodingForm {
                 .items_start()
                 .child(if kind == DataEncodingKind::Float {
                     select_field("Size in bits", "Required", &self.float_size_select, cx)
-                } else {
-                    field(
+                } else if kind == DataEncodingKind::Binary {
+                    select_field(
                         "Size in bits",
-                        if kind == DataEncodingKind::Binary {
-                            "Fixed size only; dynamic size expressions are preserved"
-                        } else {
-                            "Required"
-                        },
-                        &self.size_in_bits_input,
+                        "Required",
+                        &self.binary_size_kind_select,
                         cx,
                     )
+                } else {
+                    field("Size in bits", "Required", &self.size_in_bits_input, cx)
                 })
                 .child(field(
                     "Change threshold",
@@ -483,6 +557,18 @@ impl DataEncodingForm {
                     cx,
                 )),
         );
+        if kind == DataEncodingKind::Binary {
+            form = match selected_value(&self.binary_size_kind_select, BinarySizeKind::Fixed, cx) {
+                BinarySizeKind::Fixed => form.child(field(
+                    "Fixed size in bits",
+                    "Required",
+                    &self.size_in_bits_input,
+                    cx,
+                )),
+                BinarySizeKind::Dynamic => form.child(self.binary_dynamic_size.clone()),
+                BinarySizeKind::DiscreteLookup => form.child(self.binary_discrete_size.clone()),
+            };
+        }
         if matches!(kind, DataEncodingKind::Float | DataEncodingKind::Integer) {
             form = form.child(self.default_calibrator.clone());
         }
@@ -520,6 +606,37 @@ impl<'a> DataEncodingRef<'a> {
             Self::Integer(value) => value.default_calibrator.as_ref(),
             Self::Binary(_) | Self::String(_) => None,
         }
+    }
+}
+
+fn binary_size(encoding: Option<DataEncodingRef<'_>>) -> Option<&xtce::IntegerValueType> {
+    match encoding {
+        Some(DataEncodingRef::Binary(value)) => Some(&value.size_in_bits),
+        _ => None,
+    }
+}
+
+fn binary_size_kind(encoding: Option<DataEncodingRef<'_>>) -> BinarySizeKind {
+    match binary_size(encoding) {
+        Some(xtce::IntegerValueType::DynamicValue(_)) => BinarySizeKind::Dynamic,
+        Some(xtce::IntegerValueType::DiscreteLookupList(_)) => BinarySizeKind::DiscreteLookup,
+        _ => BinarySizeKind::Fixed,
+    }
+}
+
+fn binary_dynamic_value(encoding: Option<DataEncodingRef<'_>>) -> Option<&xtce::DynamicValueType> {
+    match binary_size(encoding) {
+        Some(xtce::IntegerValueType::DynamicValue(value)) => Some(value),
+        _ => None,
+    }
+}
+
+fn binary_discrete_value(
+    encoding: Option<DataEncodingRef<'_>>,
+) -> Option<&xtce::DiscreteLookupListType> {
+    match binary_size(encoding) {
+        Some(xtce::IntegerValueType::DiscreteLookupList(value)) => Some(value),
+        _ => None,
     }
 }
 
@@ -1139,8 +1256,9 @@ fn value(input: &Entity<InputState>, cx: &impl AppContext) -> String {
 #[cfg(test)]
 mod tests {
     use super::{
-        DataEncodingKind, DataEncodingMut, DataEncodingValues, byte_order_from_str,
-        byte_order_label, default_integer_encoding, set_data_encoding_kind,
+        BinarySizeKind, DataEncodingKind, DataEncodingMut, DataEncodingRef, DataEncodingValues,
+        binary_size_kind, byte_order_from_str, byte_order_label, default_binary_encoding,
+        default_integer_encoding, set_data_encoding_kind,
     };
 
     #[test]
@@ -1213,6 +1331,33 @@ mod tests {
             encoding.size_in_bits,
             xtce::IntegerValueType::FixedValue(32)
         ));
+    }
+
+    #[test]
+    fn binary_size_kind_exposes_dynamic_and_lookup_values() {
+        let mut encoding = default_binary_encoding();
+        encoding.size_in_bits = xtce::IntegerValueType::DynamicValue(xtce::DynamicValueType {
+            parameter_instance_ref: xtce::ParameterInstanceRefType {
+                parameter_ref: "length".to_owned(),
+                instance: 0,
+                use_calibrated_value: true,
+            },
+            linear_adjustment: None,
+        });
+        assert_eq!(
+            binary_size_kind(Some(DataEncodingRef::Binary(&encoding))),
+            BinarySizeKind::Dynamic
+        );
+
+        encoding.size_in_bits =
+            xtce::IntegerValueType::DiscreteLookupList(xtce::DiscreteLookupListType {
+                default_value: 8,
+                discrete_lookup: Vec::new(),
+            });
+        assert_eq!(
+            binary_size_kind(Some(DataEncodingRef::Binary(&encoding))),
+            BinarySizeKind::DiscreteLookup
+        );
     }
 
     #[test]
