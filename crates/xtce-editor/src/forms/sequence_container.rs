@@ -1,6 +1,6 @@
 use std::{
     cell::{Cell, RefCell},
-    collections::{HashMap, VecDeque},
+    collections::{HashMap, HashSet, VecDeque},
     rc::Rc,
 };
 
@@ -17,6 +17,7 @@ use gpui_component::{
     h_flex,
     input::{CompletionProvider, Input, InputEvent, InputState, Rope, RopeExt},
     select::{Select, SelectEvent, SelectState},
+    tooltip::Tooltip,
     v_flex,
 };
 use lsp_types::{
@@ -78,6 +79,7 @@ impl SequenceContainerForm {
     pub(super) fn new(
         container: Option<&xtce::ContainerSetTypeContent>,
         parameter_set: Option<&xtce::ParameterSetType>,
+        parameter_type_set: Option<&xtce::ParameterTypeSetType>,
         container_set: Option<&xtce::ContainerSetType>,
         window: &mut Window,
         cx: &mut Context<XtceEditor>,
@@ -90,6 +92,7 @@ impl SequenceContainerForm {
         });
         let reference_context = Rc::new(RefCell::new(ReferenceContext::new(
             parameter_set,
+            parameter_type_set,
             container_set,
         )));
         let sequence = sequence_container(container);
@@ -127,6 +130,7 @@ impl SequenceContainerForm {
                 TelemetryEntryListView::new(
                     rows_from_entry_list(values.entry_list),
                     reference_context.clone(),
+                    base_container_ref_input.clone(),
                     window,
                     cx,
                 )
@@ -170,6 +174,7 @@ impl SequenceContainerForm {
         &mut self,
         container: Option<&xtce::ContainerSetTypeContent>,
         parameter_set: Option<&xtce::ParameterSetType>,
+        parameter_type_set: Option<&xtce::ParameterTypeSetType>,
         container_set: Option<&xtce::ContainerSetType>,
         window: &mut Window,
         cx: &mut Context<Self>,
@@ -206,7 +211,8 @@ impl SequenceContainerForm {
                 cx,
             );
         });
-        *self.reference_context.borrow_mut() = ReferenceContext::new(parameter_set, container_set);
+        *self.reference_context.borrow_mut() =
+            ReferenceContext::new(parameter_set, parameter_type_set, container_set);
         self.base_container_present
             .set(values.base_container_present);
         self.restriction_criteria_editable = values.restriction_criteria_editable;
@@ -383,7 +389,6 @@ impl SequenceContainerForm {
                             )
                     }),
             )
-            .child(self.entry_list.clone())
             .child(
                 Collapsible::new()
                     .open(self.documentation_open)
@@ -486,6 +491,7 @@ impl SequenceContainerForm {
                             .child(self.binary_encoding.clone()),
                     ),
             )
+            .child(self.entry_list.clone())
     }
 }
 
@@ -520,7 +526,9 @@ struct TelemetryEntryListView {
     editors: HashMap<usize, Entity<TelemetryEntryRow>>,
     cache_order: VecDeque<usize>,
     context: Rc<RefCell<ReferenceContext>>,
+    base_container_ref_input: Entity<InputState>,
     optional_columns_visible: Rc<Cell<bool>>,
+    packet_layout_open: bool,
     list_state: ListState,
 }
 
@@ -539,6 +547,7 @@ impl TelemetryEntryListView {
     fn new(
         rows: Vec<EntryRowData>,
         context: Rc<RefCell<ReferenceContext>>,
+        base_container_ref_input: Entity<InputState>,
         _: &mut Window,
         _: &mut Context<Self>,
     ) -> Self {
@@ -550,7 +559,9 @@ impl TelemetryEntryListView {
             editors: HashMap::new(),
             cache_order: VecDeque::new(),
             context,
+            base_container_ref_input,
             optional_columns_visible,
+            packet_layout_open: true,
         }
     }
 
@@ -559,6 +570,7 @@ impl TelemetryEntryListView {
         self.editors.clear();
         self.cache_order.clear();
         self.optional_columns_visible.set(false);
+        self.packet_layout_open = true;
         self.list_state
             .reset_with_uniform_height(self.rows.len(), px(54.));
         cx.notify();
@@ -737,6 +749,17 @@ impl Render for TelemetryEntryListView {
         let row_count = self.rows.len();
         let optional_columns_visible = self.optional_columns_visible.get();
         let reference_context = self.context.clone();
+        let packet_layout = self.packet_layout_open.then(|| {
+            let rows = self.current_rows(cx);
+            let context = self.context.borrow();
+            let base_container_ref = value(&self.base_container_ref_input, cx);
+            packet_layout(
+                &rows,
+                &context.parameter_sizes,
+                &base_container_ref,
+                &context.container_layouts,
+            )
+        });
         v_flex()
             .id("telemetry-entry-list-drop-target")
             .w_full()
@@ -861,7 +884,389 @@ impl Render for TelemetryEntryListView {
                             ),
                     ),
             )
+            .child(
+                Collapsible::new()
+                    .open(self.packet_layout_open)
+                    .child(
+                        h_flex()
+                            .justify_between()
+                            .child(
+                                Button::new("toggle-telemetry-packet-layout")
+                                    .small()
+                                    .link()
+                                    .icon(if self.packet_layout_open {
+                                        IconName::ChevronDown
+                                    } else {
+                                        IconName::ChevronRight
+                                    })
+                                    .label("Packet layout")
+                                    .on_click(cx.listener(|this, _, _, cx| {
+                                        this.packet_layout_open = !this.packet_layout_open;
+                                        cx.notify();
+                                    })),
+                            )
+                            .when(self.packet_layout_open, |header| {
+                                header.child(
+                                    Button::new("refresh-telemetry-packet-layout")
+                                        .small()
+                                        .ghost()
+                                        .label("Refresh")
+                                        .on_click(cx.listener(|_, _, _, cx| cx.notify())),
+                                )
+                            }),
+                    )
+                    .content(
+                        v_flex().pt_2().child(
+                            packet_layout
+                                .as_ref()
+                                .map_or_else(|| div(), |layout| render_packet_layout(layout, cx)),
+                        ),
+                    ),
+            )
     }
+}
+
+const PACKET_LAYOUT_BYTES_PER_ROW: usize = 8;
+const PACKET_LAYOUT_BIT_WIDTH: f32 = 11.;
+
+#[derive(Debug, PartialEq, Eq)]
+struct PacketField {
+    label: String,
+    start_bit: u64,
+    size_bits: u64,
+    inherited: bool,
+}
+
+struct PacketLayout {
+    fields: Vec<PacketField>,
+    total_bits: u64,
+    unresolved: Vec<String>,
+}
+
+fn packet_layout(
+    rows: &[EntryRowData],
+    parameter_sizes: &HashMap<String, u64>,
+    base_container_ref: &str,
+    container_layouts: &HashMap<String, ContainerLayoutSource>,
+) -> PacketLayout {
+    let mut layout = PacketLayout {
+        fields: Vec::new(),
+        total_bits: 0,
+        unresolved: Vec::new(),
+    };
+    let mut cursor = Some(0_u64);
+    if !base_container_ref.trim().is_empty() {
+        append_base_container(
+            base_container_ref.trim(),
+            parameter_sizes,
+            container_layouts,
+            &mut HashSet::new(),
+            &mut cursor,
+            &mut layout,
+        );
+    }
+    append_packet_rows(rows, false, parameter_sizes, &mut cursor, &mut layout);
+    layout.total_bits = cursor.unwrap_or_else(|| {
+        layout
+            .fields
+            .iter()
+            .map(|field| field.start_bit + field.size_bits)
+            .max()
+            .unwrap_or(0)
+    });
+    layout
+}
+
+fn append_base_container(
+    name: &str,
+    parameter_sizes: &HashMap<String, u64>,
+    container_layouts: &HashMap<String, ContainerLayoutSource>,
+    visited: &mut HashSet<String>,
+    cursor: &mut Option<u64>,
+    layout: &mut PacketLayout,
+) {
+    if !visited.insert(name.to_owned()) {
+        layout
+            .unresolved
+            .push(format!("Base container {name}: circular reference"));
+        *cursor = None;
+        return;
+    }
+    let Some(source) = container_layouts.get(name) else {
+        layout
+            .unresolved
+            .push(format!("Base container {name}: not found"));
+        *cursor = None;
+        return;
+    };
+    if let Some(base) = source
+        .base_container_ref
+        .as_deref()
+        .filter(|base| !base.is_empty())
+    {
+        append_base_container(
+            base,
+            parameter_sizes,
+            container_layouts,
+            visited,
+            cursor,
+            layout,
+        );
+    }
+    append_packet_rows(&source.rows, true, parameter_sizes, cursor, layout);
+    visited.remove(name);
+}
+
+fn append_packet_rows(
+    rows: &[EntryRowData],
+    inherited: bool,
+    parameter_sizes: &HashMap<String, u64>,
+    cursor: &mut Option<u64>,
+    layout: &mut PacketLayout,
+) {
+    for row in rows {
+        let EntryRowContent::Editable {
+            kind,
+            reference,
+            offset,
+            ..
+        } = &row.content
+        else {
+            layout.unresolved.push("Unsupported entry".to_owned());
+            *cursor = None;
+            continue;
+        };
+        if *kind != EntryKind::ParameterReference {
+            layout
+                .unresolved
+                .push(format!("{reference}: container size is unknown"));
+            *cursor = None;
+            continue;
+        }
+        let offset = if offset.trim().is_empty() {
+            Some(0)
+        } else {
+            offset.trim().parse::<u64>().ok()
+        };
+        let Some(start) =
+            cursor.and_then(|cursor| offset.and_then(|offset| cursor.checked_add(offset)))
+        else {
+            layout
+                .unresolved
+                .push(format!("{reference}: offset is unresolved"));
+            *cursor = None;
+            continue;
+        };
+        let Some(size) = parameter_sizes.get(reference).copied() else {
+            layout
+                .unresolved
+                .push(format!("{reference}: size is unknown"));
+            *cursor = None;
+            continue;
+        };
+        let Some(end) = start.checked_add(size) else {
+            layout
+                .unresolved
+                .push(format!("{reference}: range is too large"));
+            *cursor = None;
+            continue;
+        };
+        layout.fields.push(PacketField {
+            label: reference.clone(),
+            start_bit: start,
+            size_bits: size,
+            inherited,
+        });
+        *cursor = Some(end);
+    }
+}
+
+fn render_packet_layout(layout: &PacketLayout, cx: &App) -> Div {
+    let visible_bits = layout.total_bits;
+    let bits_per_row = (PACKET_LAYOUT_BYTES_PER_ROW * 8) as u64;
+    let row_count = usize::try_from(visible_bits.div_ceil(bits_per_row)).unwrap_or(0);
+    let mut content = v_flex().w_full().gap_2().child(
+        div()
+            .text_xs()
+            .text_color(cx.theme().muted_foreground)
+            .child("Fixed-size parameters · inherited fields use a lighter shade"),
+    );
+
+    if row_count == 0 {
+        content = content.child(
+            div()
+                .p_4()
+                .rounded_md()
+                .border_1()
+                .border_color(cx.theme().border)
+                .text_sm()
+                .text_color(cx.theme().muted_foreground)
+                .child("No fixed-size packet fields can be resolved."),
+        );
+    } else {
+        content = content.child(
+            div()
+                .id("telemetry-packet-layout-scroll")
+                .w_full()
+                .overflow_x_scroll()
+                .on_scroll_wheel(|_, _, cx| cx.stop_propagation())
+                .child(
+                    v_flex()
+                        .min_w(px(68. + PACKET_LAYOUT_BIT_WIDTH * bits_per_row as f32))
+                        .gap_1()
+                        .child(
+                            h_flex()
+                                .ml(px(68.))
+                                .children((0..PACKET_LAYOUT_BYTES_PER_ROW).map(|byte| {
+                                    div()
+                                        .w(px(PACKET_LAYOUT_BIT_WIDTH * 8.))
+                                        .flex_none()
+                                        .text_xs()
+                                        .text_color(cx.theme().muted_foreground)
+                                        .child(format!("+{byte}"))
+                                })),
+                        )
+                        .children((0..row_count).map(|row| {
+                            let row_start = row as u64 * bits_per_row;
+                            let row_end = row_start + bits_per_row;
+                            let mut cursor = row_start;
+                            let mut segments = Vec::new();
+                            for field in layout.fields.iter().filter(|field| {
+                                field.start_bit < row_end
+                                    && field.start_bit + field.size_bits > row_start
+                            }) {
+                                let field_start = field.start_bit.max(row_start);
+                                let field_end = (field.start_bit + field.size_bits).min(row_end);
+                                if field_start > cursor {
+                                    segments.push(packet_segment(
+                                        field_start - cursor,
+                                        "Unused".to_owned(),
+                                        false,
+                                        false,
+                                        format!("packet-layout-gap-{row}-{cursor}"),
+                                        format!(
+                                            "Unused\nBit offset: {cursor}\nSize: {} bits",
+                                            field_start - cursor
+                                        ),
+                                        cx,
+                                    ));
+                                }
+                                let continuation = field.start_bit < row_start;
+                                let label = if continuation {
+                                    format!("… {}", field.label)
+                                } else if field.size_bits % 8 == 0 {
+                                    format!("{} ({} B)", field.label, field.size_bits / 8)
+                                } else {
+                                    format!("{} ({} b)", field.label, field.size_bits)
+                                };
+                                segments.push(packet_segment(
+                                    field_end - field_start,
+                                    label,
+                                    true,
+                                    field.inherited,
+                                    format!(
+                                        "packet-layout-field-{row}-{}",
+                                        field.start_bit
+                                    ),
+                                    format!(
+                                        "{}\nBit offset: {} (byte 0x{:04X}, bit {})\nSize: {} bits{}\nSource: {}",
+                                        field.label,
+                                        field.start_bit,
+                                        field.start_bit / 8,
+                                        field.start_bit % 8,
+                                        field.size_bits,
+                                        if field.size_bits % 8 == 0 {
+                                            format!(" / {} bytes", field.size_bits / 8)
+                                        } else {
+                                            String::new()
+                                        },
+                                        if field.inherited {
+                                            "Base Container"
+                                        } else {
+                                            "Current Container"
+                                        }
+                                    ),
+                                    cx,
+                                ));
+                                cursor = cursor.max(field_end);
+                            }
+                            if cursor < row_end {
+                                segments.push(packet_segment(
+                                    row_end - cursor,
+                                    "Unused".to_owned(),
+                                    false,
+                                    false,
+                                    format!("packet-layout-gap-{row}-{cursor}"),
+                                    format!(
+                                        "Unused\nBit offset: {cursor}\nSize: {} bits",
+                                        row_end - cursor
+                                    ),
+                                    cx,
+                                ));
+                            }
+                            h_flex()
+                                .child(
+                                    div()
+                                        .w(px(68.))
+                                        .flex_none()
+                                        .text_xs()
+                                        .text_color(cx.theme().muted_foreground)
+                                        .child(format!("0x{:04X}", row_start / 8)),
+                                )
+                                .children(segments)
+                        })),
+                ),
+        );
+    }
+
+    if !layout.unresolved.is_empty() {
+        content = content.child(
+            v_flex()
+                .gap_1()
+                .text_xs()
+                .text_color(cx.theme().muted_foreground)
+                .child("Unresolved entries")
+                .children(
+                    layout
+                        .unresolved
+                        .iter()
+                        .map(|entry| div().child(format!("• {entry}"))),
+                ),
+        );
+    }
+    content
+}
+
+fn packet_segment(
+    bits: u64,
+    label: String,
+    occupied: bool,
+    inherited: bool,
+    id: String,
+    tooltip: String,
+    cx: &App,
+) -> AnyElement {
+    div()
+        .id(id)
+        .w(px(bits as f32 * PACKET_LAYOUT_BIT_WIDTH))
+        .h(px(42.))
+        .flex_none()
+        .px_1()
+        .flex()
+        .items_center()
+        .border_1()
+        .border_color(cx.theme().border)
+        .when(occupied, |segment| {
+            segment.bg(cx
+                .theme()
+                .sidebar_accent
+                .opacity(if inherited { 0.28 } else { 0.62 }))
+        })
+        .text_xs()
+        .truncate()
+        .child(label)
+        .tooltip(move |window, cx| Tooltip::new(tooltip.clone()).build(window, cx))
+        .into_any_element()
 }
 
 impl Render for TelemetryEntryRow {
@@ -1156,14 +1561,23 @@ fn unsupported_entry_label(entry: &xtce::EntryListTypeContent) -> &'static str {
 #[derive(Default)]
 struct ReferenceContext {
     parameter_names: Vec<String>,
+    parameter_sizes: HashMap<String, u64>,
     container_names: Vec<String>,
+    container_layouts: HashMap<String, ContainerLayoutSource>,
+}
+
+struct ContainerLayoutSource {
+    base_container_ref: Option<String>,
+    rows: Vec<EntryRowData>,
 }
 
 impl ReferenceContext {
     fn new(
         parameter_set: Option<&xtce::ParameterSetType>,
+        parameter_type_set: Option<&xtce::ParameterTypeSetType>,
         container_set: Option<&xtce::ContainerSetType>,
     ) -> Self {
+        let type_sizes = parameter_type_sizes(parameter_type_set);
         Self {
             parameter_names: parameter_set
                 .into_iter()
@@ -1172,6 +1586,17 @@ impl ReferenceContext {
                     xtce::ParameterSetTypeContent::Parameter(parameter) => {
                         Some(parameter.name.clone())
                     }
+                    xtce::ParameterSetTypeContent::ParameterRef(_) => None,
+                })
+                .collect(),
+            parameter_sizes: parameter_set
+                .into_iter()
+                .flat_map(|set| &set.content)
+                .filter_map(|parameter| match parameter {
+                    xtce::ParameterSetTypeContent::Parameter(parameter) => type_sizes
+                        .get(&parameter.parameter_type_ref)
+                        .copied()
+                        .map(|size| (parameter.name.clone(), size)),
                     xtce::ParameterSetTypeContent::ParameterRef(_) => None,
                 })
                 .collect(),
@@ -1184,8 +1609,183 @@ impl ReferenceContext {
                     }
                 })
                 .collect(),
+            container_layouts: container_set
+                .into_iter()
+                .flat_map(|set| &set.content)
+                .map(|container| match container {
+                    xtce::ContainerSetTypeContent::SequenceContainer(container) => (
+                        container.name.clone(),
+                        ContainerLayoutSource {
+                            base_container_ref: container
+                                .base_container
+                                .as_ref()
+                                .map(|base| base.container_ref.clone()),
+                            rows: rows_from_entry_list(Some(&container.entry_list)),
+                        },
+                    ),
+                })
+                .collect(),
         }
     }
+}
+
+fn parameter_type_sizes(set: Option<&xtce::ParameterTypeSetType>) -> HashMap<String, u64> {
+    let Some(set) = set else {
+        return HashMap::new();
+    };
+    set.content
+        .iter()
+        .filter_map(|parameter_type| {
+            let name = parameter_type_name(parameter_type).to_owned();
+            resolve_parameter_type_size(parameter_type, set, &mut HashSet::new())
+                .map(|size| (name, size))
+        })
+        .collect()
+}
+
+fn parameter_type_name(parameter_type: &xtce::ParameterTypeSetTypeContent) -> &str {
+    match parameter_type {
+        xtce::ParameterTypeSetTypeContent::StringParameterType(value) => &value.name,
+        xtce::ParameterTypeSetTypeContent::EnumeratedParameterType(value) => &value.name,
+        xtce::ParameterTypeSetTypeContent::IntegerParameterType(value) => &value.name,
+        xtce::ParameterTypeSetTypeContent::BinaryParameterType(value) => &value.name,
+        xtce::ParameterTypeSetTypeContent::FloatParameterType(value) => &value.name,
+        xtce::ParameterTypeSetTypeContent::BooleanParameterType(value) => &value.name,
+        xtce::ParameterTypeSetTypeContent::RelativeTimeParameterType(value) => &value.name,
+        xtce::ParameterTypeSetTypeContent::AbsoluteTimeParameterType(value) => &value.name,
+        xtce::ParameterTypeSetTypeContent::ArrayParameterType(value) => &value.name,
+        xtce::ParameterTypeSetTypeContent::AggregateParameterType(value) => &value.name,
+    }
+}
+
+fn resolve_parameter_type_size(
+    parameter_type: &xtce::ParameterTypeSetTypeContent,
+    set: &xtce::ParameterTypeSetType,
+    visiting: &mut HashSet<String>,
+) -> Option<u64> {
+    let name = parameter_type_name(parameter_type);
+    if !visiting.insert(name.to_owned()) {
+        return None;
+    }
+    let size = match parameter_type {
+        xtce::ParameterTypeSetTypeContent::StringParameterType(value) => {
+            encoding_content_size(&value.content)
+        }
+        xtce::ParameterTypeSetTypeContent::EnumeratedParameterType(value) => {
+            encoding_content_size(&value.content)
+        }
+        xtce::ParameterTypeSetTypeContent::IntegerParameterType(value) => {
+            encoding_content_size(&value.content)
+        }
+        xtce::ParameterTypeSetTypeContent::BinaryParameterType(value) => {
+            encoding_content_size(&value.content)
+        }
+        xtce::ParameterTypeSetTypeContent::FloatParameterType(value) => {
+            encoding_content_size(&value.content)
+        }
+        xtce::ParameterTypeSetTypeContent::BooleanParameterType(value) => {
+            encoding_content_size(&value.content)
+        }
+        xtce::ParameterTypeSetTypeContent::RelativeTimeParameterType(value) => value
+            .encoding
+            .as_ref()
+            .and_then(|encoding| data_encoding_size(&encoding.content)),
+        xtce::ParameterTypeSetTypeContent::AbsoluteTimeParameterType(value) => value
+            .encoding
+            .as_ref()
+            .and_then(|encoding| data_encoding_size(&encoding.content)),
+        xtce::ParameterTypeSetTypeContent::ArrayParameterType(_) => None,
+        xtce::ParameterTypeSetTypeContent::AggregateParameterType(value) => value
+            .member_list
+            .member
+            .iter()
+            .try_fold(0_u64, |total, member| {
+                let member_type = set
+                    .content
+                    .iter()
+                    .find(|candidate| parameter_type_name(candidate) == member.type_ref)?;
+                total.checked_add(resolve_parameter_type_size(member_type, set, visiting)?)
+            }),
+    };
+    visiting.remove(name);
+    size
+}
+
+trait EncodingContent {
+    fn fixed_encoding_size(&self) -> Option<u64>;
+}
+
+macro_rules! impl_encoding_content {
+    ($type:ty) => {
+        impl EncodingContent for $type {
+            fn fixed_encoding_size(&self) -> Option<u64> {
+                match self {
+                    Self::BinaryDataEncoding(value) => binary_encoding_size(value),
+                    Self::FloatDataEncoding(value) => float_encoding_size(value),
+                    Self::IntegerDataEncoding(value) => positive_size(value.size_in_bits),
+                    Self::StringDataEncoding(value) => string_encoding_size(value),
+                    _ => None,
+                }
+            }
+        }
+    };
+}
+
+impl_encoding_content!(xtce::StringParameterTypeContent);
+impl_encoding_content!(xtce::EnumeratedParameterTypeContent);
+impl_encoding_content!(xtce::IntegerParameterTypeContent);
+impl_encoding_content!(xtce::BinaryParameterTypeContent);
+impl_encoding_content!(xtce::FloatParameterTypeContent);
+impl_encoding_content!(xtce::BooleanParameterTypeContent);
+
+fn encoding_content_size<T: EncodingContent>(content: &[T]) -> Option<u64> {
+    content
+        .iter()
+        .find_map(EncodingContent::fixed_encoding_size)
+}
+
+fn data_encoding_size(content: &xtce::EncodingTypeContent) -> Option<u64> {
+    match content {
+        xtce::EncodingTypeContent::BinaryDataEncoding(value) => binary_encoding_size(value),
+        xtce::EncodingTypeContent::FloatDataEncoding(value) => float_encoding_size(value),
+        xtce::EncodingTypeContent::IntegerDataEncoding(value) => positive_size(value.size_in_bits),
+        xtce::EncodingTypeContent::StringDataEncoding(value) => string_encoding_size(value),
+    }
+}
+
+fn binary_encoding_size(encoding: &xtce::BinaryDataEncodingType) -> Option<u64> {
+    match &encoding.size_in_bits {
+        xtce::IntegerValueType::FixedValue(value) => positive_size(*value),
+        xtce::IntegerValueType::DynamicValue(_) | xtce::IntegerValueType::DiscreteLookupList(_) => {
+            None
+        }
+    }
+}
+
+fn float_encoding_size(encoding: &xtce::FloatDataEncodingType) -> Option<u64> {
+    Some(match encoding.size_in_bits {
+        xtce::FloatEncodingSizeInBitsType::_16 => 16,
+        xtce::FloatEncodingSizeInBitsType::_32 => 32,
+        xtce::FloatEncodingSizeInBitsType::_40 => 40,
+        xtce::FloatEncodingSizeInBitsType::_48 => 48,
+        xtce::FloatEncodingSizeInBitsType::_64 => 64,
+        xtce::FloatEncodingSizeInBitsType::_80 => 80,
+        xtce::FloatEncodingSizeInBitsType::_128 => 128,
+    })
+}
+
+fn string_encoding_size(encoding: &xtce::StringDataEncodingType) -> Option<u64> {
+    encoding.content.iter().find_map(|content| match content {
+        xtce::StringDataEncodingTypeContent::SizeInBits(size) => {
+            positive_size(size.fixed.fixed_value)
+        }
+        xtce::StringDataEncodingTypeContent::ErrorDetectCorrect(_)
+        | xtce::StringDataEncodingTypeContent::Variable(_) => None,
+    })
+}
+
+fn positive_size(size: i64) -> Option<u64> {
+    u64::try_from(size).ok().filter(|size| *size > 0)
 }
 
 enum CompletionTarget {
@@ -1498,10 +2098,223 @@ fn touch_cache(cache_order: &mut VecDeque<usize>, index: usize) {
 
 #[cfg(test)]
 mod tests {
+    use std::collections::HashMap;
+
     use super::{
-        EntryKind, EntryRowContent, EntryRowData, apply_entry_rows, decode_restriction_criteria,
-        fixed_integer_value, restriction_criteria_values, rows_from_entry_list,
+        ContainerLayoutSource, EntryKind, EntryRowContent, EntryRowData, PacketField,
+        apply_entry_rows, binary_encoding_size, decode_restriction_criteria, fixed_integer_value,
+        float_encoding_size, packet_layout, parameter_type_sizes, restriction_criteria_values,
+        rows_from_entry_list, string_encoding_size,
     };
+
+    #[test]
+    fn fixed_data_encoding_sizes_are_resolved_for_binary_float_and_string() {
+        let binary = xtce::BinaryDataEncodingType {
+            bit_order: xtce::BitOrderType::MostSignificantBitFirst,
+            byte_order: xtce::ByteOrderType::MostSignificantByteFirst,
+            error_detect_correct: None,
+            size_in_bits: xtce::IntegerValueType::FixedValue(24),
+            from_binary_transform_algorithm: None,
+            to_binary_transform_algorithm: None,
+        };
+        let float = xtce::FloatDataEncodingType {
+            bit_order: xtce::BitOrderType::MostSignificantBitFirst,
+            byte_order: xtce::ByteOrderType::MostSignificantByteFirst,
+            encoding: xtce::FloatEncodingType::Ieee7541985,
+            size_in_bits: xtce::FloatEncodingSizeInBitsType::_48,
+            change_threshold: None,
+            error_detect_correct: None,
+            default_calibrator: None,
+            context_calibrator_list: None,
+        };
+        let string = xtce::StringDataEncodingType {
+            bit_order: xtce::BitOrderType::MostSignificantBitFirst,
+            byte_order: xtce::ByteOrderType::MostSignificantByteFirst,
+            encoding: xtce::StringEncodingType::Utf8,
+            content: vec![xtce::StringDataEncodingTypeContent::SizeInBits(
+                xtce::SizeInBitsType {
+                    fixed: xtce::SizeInBitsTypeFixedElementType { fixed_value: 80 },
+                    termination_char: None,
+                    leading_size: None,
+                },
+            )],
+        };
+
+        assert_eq!(binary_encoding_size(&binary), Some(24));
+        assert_eq!(float_encoding_size(&float), Some(48));
+        assert_eq!(string_encoding_size(&string), Some(80));
+    }
+
+    #[test]
+    fn packet_sizes_come_from_data_encoding_not_parameter_type_size() {
+        let set = xtce::ParameterTypeSetType {
+            content: vec![
+                xtce::ParameterTypeSetTypeContent::IntegerParameterType(
+                    xtce::IntegerParameterType {
+                        short_description: None,
+                        name: "EncodedInteger".to_owned(),
+                        base_type: None,
+                        initial_value: None,
+                        size_in_bits: 64,
+                        signed: true,
+                        content: vec![xtce::IntegerParameterTypeContent::IntegerDataEncoding(
+                            xtce::IntegerDataEncodingType {
+                                bit_order: xtce::BitOrderType::MostSignificantBitFirst,
+                                byte_order: xtce::ByteOrderType::MostSignificantByteFirst,
+                                encoding: xtce::IntegerEncodingType::Unsigned,
+                                size_in_bits: 12,
+                                change_threshold: None,
+                                error_detect_correct: None,
+                                default_calibrator: None,
+                                context_calibrator_list: None,
+                            },
+                        )],
+                    },
+                ),
+                xtce::ParameterTypeSetTypeContent::IntegerParameterType(
+                    xtce::IntegerParameterType {
+                        short_description: None,
+                        name: "NoEncoding".to_owned(),
+                        base_type: None,
+                        initial_value: None,
+                        size_in_bits: 32,
+                        signed: true,
+                        content: Vec::new(),
+                    },
+                ),
+            ],
+        };
+
+        let sizes = parameter_type_sizes(Some(&set));
+
+        assert_eq!(sizes.get("EncodedInteger"), Some(&12));
+        assert!(!sizes.contains_key("NoEncoding"));
+    }
+
+    #[test]
+    fn aggregate_packet_size_is_the_sum_of_member_encodings() {
+        let integer_type = |name: &str, size_in_bits| {
+            xtce::ParameterTypeSetTypeContent::IntegerParameterType(xtce::IntegerParameterType {
+                short_description: None,
+                name: name.to_owned(),
+                base_type: None,
+                initial_value: None,
+                size_in_bits: 64,
+                signed: true,
+                content: vec![xtce::IntegerParameterTypeContent::IntegerDataEncoding(
+                    xtce::IntegerDataEncodingType {
+                        bit_order: xtce::BitOrderType::MostSignificantBitFirst,
+                        byte_order: xtce::ByteOrderType::MostSignificantByteFirst,
+                        encoding: xtce::IntegerEncodingType::Unsigned,
+                        size_in_bits,
+                        change_threshold: None,
+                        error_detect_correct: None,
+                        default_calibrator: None,
+                        context_calibrator_list: None,
+                    },
+                )],
+            })
+        };
+        let member = |name: &str, type_ref: &str| xtce::MemberType {
+            short_description: None,
+            name: name.to_owned(),
+            type_ref: type_ref.to_owned(),
+            initial_value: None,
+            long_description: None,
+            alias_set: None,
+            ancillary_data_set: None,
+        };
+        let set = xtce::ParameterTypeSetType {
+            content: vec![
+                integer_type("HeaderType", 8),
+                integer_type("PayloadType", 16),
+                xtce::ParameterTypeSetTypeContent::AggregateParameterType(
+                    xtce::AggregateParameterType {
+                        short_description: None,
+                        name: "PacketType".to_owned(),
+                        initial_value: None,
+                        long_description: None,
+                        alias_set: None,
+                        ancillary_data_set: None,
+                        member_list: xtce::MemberListType {
+                            member: vec![
+                                member("header", "HeaderType"),
+                                member("payload", "PayloadType"),
+                            ],
+                        },
+                    },
+                ),
+            ],
+        };
+
+        assert_eq!(
+            parameter_type_sizes(Some(&set)).get("PacketType"),
+            Some(&24)
+        );
+    }
+
+    #[test]
+    fn packet_layout_places_fixed_size_parameters_in_contiguous_fields() {
+        let rows = vec![
+            EntryRowData::new_parameter_reference("apid".to_owned()),
+            EntryRowData::new_parameter_reference("temperature".to_owned()),
+        ];
+        let sizes = HashMap::from([("apid".to_owned(), 16), ("temperature".to_owned(), 8)]);
+
+        let layout = packet_layout(&rows, &sizes, "", &HashMap::new());
+
+        assert_eq!(
+            layout.fields,
+            vec![
+                PacketField {
+                    label: "apid".to_owned(),
+                    start_bit: 0,
+                    size_bits: 16,
+                    inherited: false,
+                },
+                PacketField {
+                    label: "temperature".to_owned(),
+                    start_bit: 16,
+                    size_bits: 8,
+                    inherited: false,
+                },
+            ]
+        );
+        assert_eq!(layout.total_bits, 24);
+        assert!(layout.unresolved.is_empty());
+    }
+
+    #[test]
+    fn packet_layout_reports_parameters_with_unknown_sizes() {
+        let rows = vec![EntryRowData::new_parameter_reference("payload".to_owned())];
+
+        let layout = packet_layout(&rows, &HashMap::new(), "", &HashMap::new());
+
+        assert!(layout.fields.is_empty());
+        assert_eq!(layout.unresolved, vec!["payload: size is unknown"]);
+    }
+
+    #[test]
+    fn packet_layout_prepends_base_container_fields() {
+        let rows = vec![EntryRowData::new_parameter_reference("payload".to_owned())];
+        let sizes = HashMap::from([("header".to_owned(), 16), ("payload".to_owned(), 8)]);
+        let containers = HashMap::from([(
+            "BasePacket".to_owned(),
+            ContainerLayoutSource {
+                base_container_ref: None,
+                rows: vec![EntryRowData::new_parameter_reference("header".to_owned())],
+            },
+        )]);
+
+        let layout = packet_layout(&rows, &sizes, "BasePacket", &containers);
+
+        assert_eq!(layout.fields[0].label, "header");
+        assert_eq!(layout.fields[0].start_bit, 0);
+        assert!(layout.fields[0].inherited);
+        assert_eq!(layout.fields[1].label, "payload");
+        assert_eq!(layout.fields[1].start_bit, 16);
+        assert!(!layout.fields[1].inherited);
+    }
 
     #[test]
     fn dropped_parameter_becomes_a_parameter_reference_row() {

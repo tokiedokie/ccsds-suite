@@ -14,9 +14,11 @@ use gpui_component::{
 use strum::{Display, EnumString, VariantArray};
 
 use super::{
+    aggregate_member_list::AggregateMemberListForm,
     data_encoding::{
         DataEncodingForm, find_data_encoding, find_data_encoding_mut, set_data_encoding_kind,
     },
+    enumeration_list::EnumerationListForm,
     field, impl_select_item, optional_value,
 };
 use crate::XtceEditor;
@@ -97,6 +99,8 @@ pub(super) struct ParameterTypeForm {
     signed_select: Entity<SelectState<Vec<SignedChoice>>>,
     float_size_select: Entity<SelectState<Vec<FloatSizeChoice>>>,
     nested_items_input: Entity<InputState>,
+    enumeration_list: Entity<EnumerationListForm>,
+    aggregate_members: Entity<AggregateMemberListForm>,
     data_encoding: Entity<DataEncodingForm>,
     base_defaults_open: bool,
     documentation_open: bool,
@@ -172,6 +176,8 @@ impl ParameterTypeForm {
             );
             let mut subscriptions = vec![name_subscription];
             let nested_items_input = input(&encode_nested_items(parameter_type), true, window, cx);
+            let enumeration_list = EnumerationListForm::new(parameter_type, window, cx);
+            let aggregate_members = AggregateMemberListForm::new(parameter_type, window, cx);
 
             let kind_extra_a = extra_a_input.clone();
             let kind_extra_b = extra_b_input.clone();
@@ -179,6 +185,8 @@ impl ParameterTypeForm {
             let kind_signed = signed_select.clone();
             let kind_float_size = float_size_select.clone();
             let kind_nested_items = nested_items_input.clone();
+            let kind_enumeration_list = enumeration_list.clone();
+            let kind_aggregate_members = aggregate_members.clone();
             subscriptions.push(cx.subscribe_in(
                 &kind_select,
                 window,
@@ -248,6 +256,16 @@ impl ParameterTypeForm {
                     kind_nested_items.update(cx, |input, cx| {
                         input.set_value(default_nested_items(selected_kind).to_owned(), window, cx);
                     });
+                    if selected_kind == ParameterTypeKind::Enumerated {
+                        kind_enumeration_list.update(cx, |form, cx| {
+                            form.reset_to_default(cx);
+                        });
+                    }
+                    if selected_kind == ParameterTypeKind::Aggregate {
+                        kind_aggregate_members.update(cx, |form, cx| {
+                            form.reset_to_default(cx);
+                        });
+                    }
                     cx.notify();
                 },
             ));
@@ -267,6 +285,8 @@ impl ParameterTypeForm {
                 signed_select,
                 float_size_select,
                 nested_items_input,
+                enumeration_list,
+                aggregate_members,
                 data_encoding: DataEncodingForm::new(
                     parameter_type.and_then(find_data_encoding),
                     window,
@@ -341,6 +361,12 @@ impl ParameterTypeForm {
         self.data_encoding.update(cx, |form, cx| {
             form.load(parameter_type.and_then(find_data_encoding), window, cx);
         });
+        self.enumeration_list.update(cx, |form, cx| {
+            form.load(parameter_type, cx);
+        });
+        self.aggregate_members.update(cx, |form, cx| {
+            form.load(parameter_type, cx);
+        });
         cx.notify();
     }
 
@@ -384,6 +410,8 @@ impl ParameterTypeForm {
         }
         .apply_to(parameter_type);
         apply_nested_items(parameter_type, &self.nested_items_input.read(cx).value());
+        self.enumeration_list.read(cx).apply_to(parameter_type, cx);
+        self.aggregate_members.read(cx).apply_to(parameter_type, cx);
         set_data_encoding_kind(
             parameter_type,
             self.data_encoding.read(cx).selected_kind(cx),
@@ -456,6 +484,7 @@ impl ParameterTypeForm {
             _ => {}
         }
         match kind {
+            ParameterTypeKind::Enumerated => form = form.child(self.enumeration_list.clone()),
             ParameterTypeKind::Array => {
                 form = form.child(field(
                     "Dimensions",
@@ -464,14 +493,7 @@ impl ParameterTypeForm {
                     cx,
                 ));
             }
-            ParameterTypeKind::Aggregate => {
-                form = form.child(field(
-                    "Members",
-                    "One member per line: name | type ref | initial value | short description",
-                    &self.nested_items_input,
-                    cx,
-                ));
-            }
+            ParameterTypeKind::Aggregate => form = form.child(self.aggregate_members.clone()),
             _ => {}
         }
         if kind.supports_data_encoding() {
@@ -886,7 +908,6 @@ impl ParameterTypeValues {
 fn default_nested_items(kind: ParameterTypeKind) -> &'static str {
     match kind {
         ParameterTypeKind::Array => "0 | 0",
-        ParameterTypeKind::Aggregate => "member | MemberType |  | ",
         _ => "",
     }
 }
@@ -906,21 +927,6 @@ fn encode_nested_items(parameter_type: Option<&xtce::ParameterTypeSetTypeContent
             })
             .collect::<Vec<_>>()
             .join("\n"),
-        Some(xtce::ParameterTypeSetTypeContent::AggregateParameterType(value)) => value
-            .member_list
-            .member
-            .iter()
-            .map(|member| {
-                format!(
-                    "{} | {} | {} | {}",
-                    member.name,
-                    member.type_ref,
-                    member.initial_value.as_deref().unwrap_or_default(),
-                    member.short_description.as_deref().unwrap_or_default()
-                )
-            })
-            .collect::<Vec<_>>()
-            .join("\n"),
         _ => String::new(),
     }
 }
@@ -934,78 +940,33 @@ fn integer_value_text(value: &xtce::IntegerValueType) -> String {
 }
 
 fn apply_nested_items(parameter_type: &mut xtce::ParameterTypeSetTypeContent, input: &str) {
-    match parameter_type {
-        xtce::ParameterTypeSetTypeContent::ArrayParameterType(value) => {
-            let rows = input
-                .lines()
-                .filter_map(|line| {
-                    let (starting_index, ending_index) = line.split_once(" | ")?;
-                    Some((
-                        starting_index.trim().parse::<i64>().ok()?,
-                        ending_index.trim().parse::<i64>().ok()?,
-                    ))
-                })
-                .collect::<Vec<_>>();
-            if rows.is_empty() {
-                return;
-            }
-            let mut existing = std::mem::take(&mut value.dimension_list.dimension).into_iter();
-            value.dimension_list.dimension = rows
-                .into_iter()
-                .map(|(starting_index, ending_index)| {
-                    let mut dimension = existing.next().unwrap_or(xtce::DimensionType {
-                        starting_index: xtce::IntegerValueType::FixedValue(0),
-                        ending_index: xtce::IntegerValueType::FixedValue(0),
-                    });
-                    dimension.starting_index = xtce::IntegerValueType::FixedValue(starting_index);
-                    dimension.ending_index = xtce::IntegerValueType::FixedValue(ending_index);
-                    dimension
-                })
-                .collect();
+    if let xtce::ParameterTypeSetTypeContent::ArrayParameterType(value) = parameter_type {
+        let rows = input
+            .lines()
+            .filter_map(|line| {
+                let (starting_index, ending_index) = line.split_once(" | ")?;
+                Some((
+                    starting_index.trim().parse::<i64>().ok()?,
+                    ending_index.trim().parse::<i64>().ok()?,
+                ))
+            })
+            .collect::<Vec<_>>();
+        if rows.is_empty() {
+            return;
         }
-        xtce::ParameterTypeSetTypeContent::AggregateParameterType(value) => {
-            let rows = input
-                .lines()
-                .filter_map(|line| {
-                    let mut columns = line.splitn(4, " | ").map(str::trim);
-                    let name = columns.next()?.to_owned();
-                    let type_ref = columns.next()?.to_owned();
-                    if name.is_empty() || type_ref.is_empty() {
-                        return None;
-                    }
-                    Some((
-                        name,
-                        type_ref,
-                        optional_value(columns.next().unwrap_or_default().to_owned()),
-                        optional_value(columns.next().unwrap_or_default().to_owned()),
-                    ))
-                })
-                .collect::<Vec<_>>();
-            if rows.is_empty() {
-                return;
-            }
-            let mut existing = std::mem::take(&mut value.member_list.member).into_iter();
-            value.member_list.member = rows
-                .into_iter()
-                .map(|(name, type_ref, initial_value, short_description)| {
-                    let mut member = existing.next().unwrap_or(xtce::MemberType {
-                        short_description: None,
-                        name: String::new(),
-                        type_ref: String::new(),
-                        initial_value: None,
-                        long_description: None,
-                        alias_set: None,
-                        ancillary_data_set: None,
-                    });
-                    member.name = name;
-                    member.type_ref = type_ref;
-                    member.initial_value = initial_value;
-                    member.short_description = short_description;
-                    member
-                })
-                .collect();
-        }
-        _ => {}
+        let mut existing = std::mem::take(&mut value.dimension_list.dimension).into_iter();
+        value.dimension_list.dimension = rows
+            .into_iter()
+            .map(|(starting_index, ending_index)| {
+                let mut dimension = existing.next().unwrap_or(xtce::DimensionType {
+                    starting_index: xtce::IntegerValueType::FixedValue(0),
+                    ending_index: xtce::IntegerValueType::FixedValue(0),
+                });
+                dimension.starting_index = xtce::IntegerValueType::FixedValue(starting_index);
+                dimension.ending_index = xtce::IntegerValueType::FixedValue(ending_index);
+                dimension
+            })
+            .collect();
     }
 }
 
@@ -1036,7 +997,16 @@ fn replace_parameter_type_kind(
                     name: String::new(),
                     base_type: None,
                     initial_value: None,
-                    content: Vec::new(),
+                    content: vec![xtce::EnumeratedParameterTypeContent::EnumerationList(
+                        xtce::EnumerationListType {
+                            enumeration: vec![xtce::ValueEnumerationType {
+                                value: 0,
+                                max_value: None,
+                                label: "VALUE".to_owned(),
+                                short_description: None,
+                            }],
+                        },
+                    )],
                 },
             )
         }
@@ -1482,6 +1452,36 @@ mod tests {
     }
 
     #[test]
+    fn selecting_enumerated_creates_its_required_enumeration_list() {
+        let mut parameter_type =
+            xtce::ParameterTypeSetTypeContent::IntegerParameterType(xtce::IntegerParameterType {
+                short_description: None,
+                name: "ValueType".to_owned(),
+                base_type: None,
+                initial_value: None,
+                size_in_bits: 32,
+                signed: true,
+                content: Vec::new(),
+            });
+
+        replace_parameter_type_kind(&mut parameter_type, ParameterTypeKind::Enumerated);
+
+        let xtce::ParameterTypeSetTypeContent::EnumeratedParameterType(parameter_type) =
+            parameter_type
+        else {
+            panic!("expected an EnumeratedParameterType");
+        };
+        let Some(xtce::EnumeratedParameterTypeContent::EnumerationList(list)) =
+            parameter_type.content.first()
+        else {
+            panic!("expected an EnumerationList");
+        };
+        assert_eq!(list.enumeration.len(), 1);
+        assert_eq!(list.enumeration[0].value, 0);
+        assert_eq!(list.enumeration[0].label, "VALUE");
+    }
+
+    #[test]
     fn base_field_matches_the_selected_parameter_type() {
         assert_eq!(
             ParameterTypeKind::Integer.base_field(),
@@ -1492,44 +1492,6 @@ mod tests {
             Some(("Array type reference", "Required"))
         );
         assert_eq!(ParameterTypeKind::Aggregate.base_field(), None);
-    }
-
-    #[test]
-    fn aggregate_member_fields_can_be_edited_without_losing_hidden_metadata() {
-        let mut parameter_type = xtce::ParameterTypeSetTypeContent::AggregateParameterType(
-            xtce::AggregateParameterType {
-                short_description: None,
-                name: "StatusType".to_owned(),
-                initial_value: None,
-                long_description: None,
-                alias_set: None,
-                ancillary_data_set: None,
-                member_list: xtce::MemberListType {
-                    member: vec![xtce::MemberType {
-                        short_description: None,
-                        name: "old_name".to_owned(),
-                        type_ref: "OldType".to_owned(),
-                        initial_value: None,
-                        long_description: Some("Keep this".to_owned()),
-                        alias_set: None,
-                        ancillary_data_set: None,
-                    }],
-                },
-            },
-        );
-
-        apply_nested_items(&mut parameter_type, "mode | ModeType | SAFE | Current mode");
-
-        let xtce::ParameterTypeSetTypeContent::AggregateParameterType(parameter_type) =
-            parameter_type
-        else {
-            panic!("expected an AggregateParameterType");
-        };
-        let member = &parameter_type.member_list.member[0];
-        assert_eq!(member.name, "mode");
-        assert_eq!(member.type_ref, "ModeType");
-        assert_eq!(member.initial_value.as_deref(), Some("SAFE"));
-        assert_eq!(member.long_description.as_deref(), Some("Keep this"));
     }
 
     #[test]

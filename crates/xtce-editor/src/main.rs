@@ -98,6 +98,7 @@ impl ElementKind {
             self,
             Self::TelemetryParameterTypeSet
                 | Self::TelemetryParameterSet
+                | Self::ContainerSet
                 | Self::CommandParameterTypeSet
                 | Self::CommandParameterSet
         )
@@ -2236,7 +2237,8 @@ mod tests {
         ] {
             assert!(kind.is_directory_only());
         }
-        assert!(!ElementKind::ContainerSet.is_directory_only());
+        assert!(ElementKind::ContainerSet.is_directory_only());
+        assert!(!ElementKind::ArgumentTypeSet.is_directory_only());
     }
 
     fn sample_document() -> xtce::SpaceSystem {

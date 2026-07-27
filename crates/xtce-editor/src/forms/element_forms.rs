@@ -167,6 +167,7 @@ impl ElementForms {
             sequence_container: SequenceContainerForm::new(
                 telemetry_container_set(system).and_then(|set| set.content.first()),
                 telemetry_parameter_set(system),
+                telemetry_parameter_type_set(system),
                 telemetry_container_set(system),
                 window,
                 cx,
@@ -236,6 +237,7 @@ impl ElementForms {
                     form.load(
                         telemetry_container_set(system).and_then(|set| set.content.get(index)),
                         telemetry_parameter_set(system),
+                        telemetry_parameter_type_set(system),
                         telemetry_container_set(system),
                         window,
                         cx,

@@ -20,7 +20,7 @@ impl TelemetryMetaDataForm {
                 vec![
                     None,
                     None,
-                    Some(ElementKind::ContainerSet),
+                    None,
                     Some(ElementKind::MessageSet),
                     Some(ElementKind::TelemetryStreamSet),
                     Some(ElementKind::TelemetryAlgorithmSet),

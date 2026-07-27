@@ -1,3 +1,4 @@
+mod aggregate_member_list;
 mod alias_set;
 mod ancillary_data_set;
 mod argument_type;
@@ -6,6 +7,7 @@ mod container_binary_encoding;
 mod container_rate;
 mod data_encoding;
 mod element_forms;
+mod enumeration_list;
 mod header;
 mod meta_command;
 mod parameter;
