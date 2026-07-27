@@ -77,6 +77,8 @@ enum RestrictionCriteriaKind {
     BooleanExpression,
     #[strum(serialize = "Custom algorithm")]
     CustomAlgorithm,
+    #[strum(serialize = "Next container")]
+    NextContainer,
 }
 impl_select_item!(RestrictionCriteriaKind);
 
@@ -110,7 +112,7 @@ pub(super) struct SequenceContainerForm {
     comparisons: Entity<ComparisonListForm>,
     restriction_boolean_expression: Entity<BooleanExpressionForm>,
     restriction_custom_algorithm: Entity<InputAlgorithmForm>,
-    restriction_criteria_editable: bool,
+    restriction_next_container_input: Entity<InputState>,
     reference_context: Rc<RefCell<ReferenceContext>>,
     entry_list: Entity<TelemetryEntryListView>,
     _subscriptions: Vec<Subscription>,
@@ -179,6 +181,13 @@ impl SequenceContainerForm {
                 window,
                 cx,
             );
+            let restriction_next_container_input = completion_input(
+                &values.restriction_next_container,
+                CompletionTarget::Container,
+                reference_context.clone(),
+                window,
+                cx,
+            );
             let entry_list = cx.new(|cx| {
                 TelemetryEntryListView::new(
                     rows_from_entry_list(values.entry_list),
@@ -235,7 +244,7 @@ impl SequenceContainerForm {
                 comparisons,
                 restriction_boolean_expression,
                 restriction_custom_algorithm,
-                restriction_criteria_editable: values.restriction_criteria_editable,
+                restriction_next_container_input,
                 reference_context,
                 entry_list,
                 _subscriptions: vec![name_subscription, restriction_kind_subscription],
@@ -318,7 +327,6 @@ impl SequenceContainerForm {
         *self.reference_context.borrow_mut() = reference_context;
         self.base_container_present
             .set(values.base_container_present);
-        self.restriction_criteria_editable = values.restriction_criteria_editable;
         sync_select(
             &self.restriction_kind_select,
             values.restriction_kind,
@@ -341,6 +349,10 @@ impl SequenceContainerForm {
             (&self.short_description_input, values.short_description),
             (&self.long_description_input, values.long_description),
             (&self.base_container_ref_input, values.base_container_ref),
+            (
+                &self.restriction_next_container_input,
+                values.restriction_next_container,
+            ),
         ] {
             input.update(cx, |input, cx| input.set_value(value, window, cx));
         }
@@ -402,31 +414,32 @@ impl SequenceContainerForm {
                     restriction_criteria: None,
                 });
             base.container_ref = value(&self.base_container_ref_input, cx);
-            if self.restriction_criteria_editable {
-                base.restriction_criteria = match selected_value(
-                    &self.restriction_kind_select,
-                    RestrictionCriteriaKind::ComparisonList,
-                    cx,
-                ) {
-                    RestrictionCriteriaKind::ComparisonList => {
-                        self.comparisons.read(cx).to_criteria(cx)
-                    }
-                    RestrictionCriteriaKind::BooleanExpression => {
-                        Some(xtce::RestrictionCriteriaType {
-                            content: Some(xtce::RestrictionCriteriaTypeContent::BooleanExpression(
-                                self.restriction_boolean_expression.read(cx).expression(cx),
-                            )),
-                        })
-                    }
-                    RestrictionCriteriaKind::CustomAlgorithm => {
-                        Some(xtce::RestrictionCriteriaType {
-                            content: Some(xtce::RestrictionCriteriaTypeContent::CustomAlgorithm(
-                                self.restriction_custom_algorithm.read(cx).algorithm(cx),
-                            )),
-                        })
-                    }
-                };
-            }
+            base.restriction_criteria = match selected_value(
+                &self.restriction_kind_select,
+                RestrictionCriteriaKind::ComparisonList,
+                cx,
+            ) {
+                RestrictionCriteriaKind::ComparisonList => {
+                    self.comparisons.read(cx).to_criteria(cx)
+                }
+                RestrictionCriteriaKind::BooleanExpression => Some(xtce::RestrictionCriteriaType {
+                    content: Some(xtce::RestrictionCriteriaTypeContent::BooleanExpression(
+                        self.restriction_boolean_expression.read(cx).expression(cx),
+                    )),
+                }),
+                RestrictionCriteriaKind::CustomAlgorithm => Some(xtce::RestrictionCriteriaType {
+                    content: Some(xtce::RestrictionCriteriaTypeContent::CustomAlgorithm(
+                        self.restriction_custom_algorithm.read(cx).algorithm(cx),
+                    )),
+                }),
+                RestrictionCriteriaKind::NextContainer => Some(xtce::RestrictionCriteriaType {
+                    content: Some(xtce::RestrictionCriteriaTypeContent::NextContainer(
+                        xtce::ContainerRefType {
+                            container_ref: value(&self.restriction_next_container_input, cx),
+                        },
+                    )),
+                }),
+            };
         } else {
             container.base_container = None;
         }
@@ -500,12 +513,14 @@ impl SequenceContainerForm {
                                             IconName::ChevronRight
                                         })
                                         .label("Restriction criteria")
-                                        .on_click(cx.listener(|this, _, _, cx| {
-                                            this.restriction_open = !this.restriction_open;
-                                            cx.notify();
-                                        })),
+                                        .on_click(
+                                            cx.listener(|this, _, _, cx| {
+                                                this.restriction_open = !this.restriction_open;
+                                                cx.notify();
+                                            }),
+                                        ),
                                     )
-                                    .content(if self.restriction_criteria_editable {
+                                    .content({
                                         let kind = selected_value(
                                             &self.restriction_kind_select,
                                             RestrictionCriteriaKind::ComparisonList,
@@ -520,40 +535,35 @@ impl SequenceContainerForm {
                                                 &self.restriction_kind_select,
                                             ))
                                             .when(
-                                                kind
-                                                    == RestrictionCriteriaKind::ComparisonList,
-                                                |form| {
-                                                    form.child(self.comparisons.clone())
-                                                },
+                                                kind == RestrictionCriteriaKind::ComparisonList,
+                                                |form| form.child(self.comparisons.clone()),
                                             )
                                             .when(
-                                                kind
-                                                    == RestrictionCriteriaKind::BooleanExpression,
+                                                kind == RestrictionCriteriaKind::BooleanExpression,
                                                 |form| {
                                                     form.child(
-                                                        self.restriction_boolean_expression
-                                                            .clone(),
+                                                        self.restriction_boolean_expression.clone(),
                                                     )
                                                 },
                                             )
                                             .when(
-                                                kind
-                                                    == RestrictionCriteriaKind::CustomAlgorithm,
+                                                kind == RestrictionCriteriaKind::CustomAlgorithm,
                                                 |form| {
                                                     form.child(
-                                                        self.restriction_custom_algorithm
-                                                            .clone(),
+                                                        self.restriction_custom_algorithm.clone(),
                                                     )
                                                 },
                                             )
-                                            .into_any_element()
-                                    } else {
-                                        div()
-                                            .pt_3()
-                                            .text_sm()
-                                            .text_color(cx.theme().muted_foreground)
-                                            .child(
-                                                "This restriction type is preserved without modification",
+                                            .when(
+                                                kind == RestrictionCriteriaKind::NextContainer,
+                                                |form| {
+                                                    form.child(field(
+                                                        "Next container reference",
+                                                        "Required",
+                                                        &self.restriction_next_container_input,
+                                                        cx,
+                                                    ))
+                                                },
                                             )
                                             .into_any_element()
                                     }),
@@ -2340,7 +2350,7 @@ struct ContainerValues<'a> {
     restriction_kind: RestrictionCriteriaKind,
     restriction_boolean_expression: Option<&'a xtce::BooleanExpressionType>,
     restriction_custom_algorithm: Option<&'a xtce::InputAlgorithmType>,
-    restriction_criteria_editable: bool,
+    restriction_next_container: String,
     entry_list: Option<&'a xtce::EntryListType>,
 }
 
@@ -2382,7 +2392,7 @@ impl<'a> ContainerValues<'a> {
             restriction_kind: restriction.kind,
             restriction_boolean_expression: restriction.boolean_expression,
             restriction_custom_algorithm: restriction.custom_algorithm,
-            restriction_criteria_editable: restriction.editable,
+            restriction_next_container: restriction.next_container,
             entry_list: container.map(|value| &value.entry_list),
         }
     }
@@ -2393,7 +2403,7 @@ struct RestrictionCriteriaValues<'a> {
     kind: RestrictionCriteriaKind,
     boolean_expression: Option<&'a xtce::BooleanExpressionType>,
     custom_algorithm: Option<&'a xtce::InputAlgorithmType>,
-    editable: bool,
+    next_container: String,
 }
 
 fn restriction_criteria_values(
@@ -2405,7 +2415,7 @@ fn restriction_criteria_values(
             kind: RestrictionCriteriaKind::ComparisonList,
             boolean_expression: None,
             custom_algorithm: None,
-            editable: true,
+            next_container: String::new(),
         },
         Some(xtce::RestrictionCriteriaTypeContent::Comparison(comparison)) => {
             RestrictionCriteriaValues {
@@ -2413,7 +2423,7 @@ fn restriction_criteria_values(
                 kind: RestrictionCriteriaKind::ComparisonList,
                 boolean_expression: None,
                 custom_algorithm: None,
-                editable: true,
+                next_container: String::new(),
             }
         }
         Some(xtce::RestrictionCriteriaTypeContent::ComparisonList(list)) => {
@@ -2427,7 +2437,7 @@ fn restriction_criteria_values(
                 kind: RestrictionCriteriaKind::ComparisonList,
                 boolean_expression: None,
                 custom_algorithm: None,
-                editable: true,
+                next_container: String::new(),
             }
         }
         Some(xtce::RestrictionCriteriaTypeContent::BooleanExpression(expression)) => {
@@ -2436,7 +2446,7 @@ fn restriction_criteria_values(
                 kind: RestrictionCriteriaKind::BooleanExpression,
                 boolean_expression: Some(expression),
                 custom_algorithm: None,
-                editable: true,
+                next_container: String::new(),
             }
         }
         Some(xtce::RestrictionCriteriaTypeContent::CustomAlgorithm(algorithm)) => {
@@ -2445,16 +2455,18 @@ fn restriction_criteria_values(
                 kind: RestrictionCriteriaKind::CustomAlgorithm,
                 boolean_expression: None,
                 custom_algorithm: Some(algorithm),
-                editable: true,
+                next_container: String::new(),
             }
         }
-        Some(_) => RestrictionCriteriaValues {
-            comparisons: String::new(),
-            kind: RestrictionCriteriaKind::ComparisonList,
-            boolean_expression: None,
-            custom_algorithm: None,
-            editable: false,
-        },
+        Some(xtce::RestrictionCriteriaTypeContent::NextContainer(container)) => {
+            RestrictionCriteriaValues {
+                comparisons: String::new(),
+                kind: RestrictionCriteriaKind::NextContainer,
+                boolean_expression: None,
+                custom_algorithm: None,
+                next_container: container.container_ref.clone(),
+            }
+        }
     }
 }
 
@@ -2977,7 +2989,6 @@ mod tests {
         let criteria = decode_restriction_criteria("TLM_ID | == | 2 | 0 | true").expect("criteria");
         let values = restriction_criteria_values(Some(&criteria));
 
-        assert!(values.editable);
         assert_eq!(values.comparisons, "TLM_ID | == | 2 | 0 | true");
         assert_eq!(values.kind, RestrictionCriteriaKind::ComparisonList);
     }
@@ -3003,7 +3014,6 @@ mod tests {
         };
         let values = restriction_criteria_values(Some(&criteria));
 
-        assert!(values.editable);
         assert_eq!(values.kind, RestrictionCriteriaKind::BooleanExpression);
         assert!(values.boolean_expression.is_some());
     }
@@ -3026,7 +3036,6 @@ mod tests {
         };
         let values = restriction_criteria_values(Some(&criteria));
 
-        assert!(values.editable);
         assert_eq!(values.kind, RestrictionCriteriaKind::CustomAlgorithm);
         assert_eq!(
             values
@@ -3034,6 +3043,21 @@ mod tests {
                 .map(|algorithm| algorithm.name.as_str()),
             Some("containerFilter")
         );
+    }
+
+    #[test]
+    fn next_container_restriction_is_editable() {
+        let criteria = xtce::RestrictionCriteriaType {
+            content: Some(xtce::RestrictionCriteriaTypeContent::NextContainer(
+                xtce::ContainerRefType {
+                    container_ref: "PacketB".to_owned(),
+                },
+            )),
+        };
+        let values = restriction_criteria_values(Some(&criteria));
+
+        assert_eq!(values.kind, RestrictionCriteriaKind::NextContainer);
+        assert_eq!(values.next_container, "PacketB");
     }
 
     #[test]
