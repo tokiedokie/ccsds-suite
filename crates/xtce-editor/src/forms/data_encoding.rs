@@ -182,6 +182,8 @@ pub(super) struct DataEncodingForm {
     error_detect_correct: Entity<ErrorDetectCorrectForm>,
     from_transform_present: bool,
     from_transform: Entity<InputAlgorithmForm>,
+    to_transform_present: bool,
+    to_transform: Entity<InputAlgorithmForm>,
     change_threshold_input: Entity<InputState>,
     default_calibrator: Entity<DefaultCalibratorForm>,
     _subscriptions: Vec<Subscription>,
@@ -249,6 +251,7 @@ impl DataEncodingForm {
                 ErrorDetectCorrectForm::new(data_error_detect_correct(encoding), window, cx);
             let from_transform =
                 InputAlgorithmForm::new(binary_from_transform(encoding), window, cx);
+            let to_transform = InputAlgorithmForm::new(binary_to_transform(encoding), window, cx);
             let change_threshold_input = input(&values.change_threshold, window, cx);
             let default_calibrator = DefaultCalibratorForm::new(
                 encoding.and_then(DataEncodingRef::default_calibrator),
@@ -323,6 +326,9 @@ impl DataEncodingForm {
                     this.from_transform_present = false;
                     this.from_transform
                         .update(cx, |form, cx| form.load(None, window, cx));
+                    this.to_transform_present = false;
+                    this.to_transform
+                        .update(cx, |form, cx| form.load(None, window, cx));
                     cx.notify();
                 },
             );
@@ -349,6 +355,8 @@ impl DataEncodingForm {
                 error_detect_correct,
                 from_transform_present: binary_from_transform(encoding).is_some(),
                 from_transform,
+                to_transform_present: binary_to_transform(encoding).is_some(),
+                to_transform,
                 change_threshold_input,
                 default_calibrator,
                 _subscriptions: vec![kind_subscription, binary_size_subscription],
@@ -428,6 +436,10 @@ impl DataEncodingForm {
         self.from_transform.update(cx, |form, cx| {
             form.load(binary_from_transform(encoding), window, cx)
         });
+        self.to_transform_present = binary_to_transform(encoding).is_some();
+        self.to_transform.update(cx, |form, cx| {
+            form.load(binary_to_transform(encoding), window, cx)
+        });
         self.default_calibrator.update(cx, |form, cx| {
             form.load(
                 encoding.and_then(DataEncodingRef::default_calibrator),
@@ -473,6 +485,9 @@ impl DataEncodingForm {
             binary.from_binary_transform_algorithm = self
                 .from_transform_present
                 .then(|| self.from_transform.read(cx).algorithm(cx));
+            binary.to_binary_transform_algorithm = self
+                .to_transform_present
+                .then(|| self.to_transform.read(cx).algorithm(cx));
         }
         DataEncodingValues {
             bit_order: selected_value(
@@ -628,6 +643,37 @@ impl DataEncodingForm {
                         section.child(self.from_transform.clone())
                     }),
             );
+            form = form.child(
+                v_flex()
+                    .gap_3()
+                    .child(
+                        h_flex()
+                            .justify_between()
+                            .child(div().text_sm().font_medium().child("To-binary transform"))
+                            .child(if self.to_transform_present {
+                                Button::new("remove-data-to-binary-transform")
+                                    .small()
+                                    .danger()
+                                    .label("Remove")
+                                    .on_click(cx.listener(|this, _, _, cx| {
+                                        this.to_transform_present = false;
+                                        cx.notify();
+                                    }))
+                            } else {
+                                Button::new("add-data-to-binary-transform")
+                                    .small()
+                                    .icon(IconName::Plus)
+                                    .label("Add")
+                                    .on_click(cx.listener(|this, _, _, cx| {
+                                        this.to_transform_present = true;
+                                        cx.notify();
+                                    }))
+                            }),
+                    )
+                    .when(self.to_transform_present, |section| {
+                        section.child(self.to_transform.clone())
+                    }),
+            );
         }
         form = form.child(self.error_detect_correct.clone());
         if matches!(kind, DataEncodingKind::Float | DataEncodingKind::Integer) {
@@ -706,6 +752,13 @@ fn binary_from_transform(
 ) -> Option<&xtce::InputAlgorithmType> {
     match encoding {
         Some(DataEncodingRef::Binary(value)) => value.from_binary_transform_algorithm.as_ref(),
+        _ => None,
+    }
+}
+
+fn binary_to_transform(encoding: Option<DataEncodingRef<'_>>) -> Option<&xtce::InputAlgorithmType> {
+    match encoding {
+        Some(DataEncodingRef::Binary(value)) => value.to_binary_transform_algorithm.as_ref(),
         _ => None,
     }
 }
@@ -1378,9 +1431,9 @@ fn value(input: &Entity<InputState>, cx: &impl AppContext) -> String {
 mod tests {
     use super::{
         BinarySizeKind, DataEncodingKind, DataEncodingMut, DataEncodingRef, DataEncodingValues,
-        binary_from_transform, binary_size_kind, byte_order_from_str, byte_order_label,
-        data_error_detect_correct, default_binary_encoding, default_integer_encoding,
-        default_string_encoding, set_data_encoding_kind,
+        binary_from_transform, binary_size_kind, binary_to_transform, byte_order_from_str,
+        byte_order_label, data_error_detect_correct, default_binary_encoding,
+        default_integer_encoding, default_string_encoding, set_data_encoding_kind,
     };
 
     #[test]
@@ -1513,6 +1566,27 @@ mod tests {
             binary_from_transform(Some(DataEncodingRef::Binary(&encoding)))
                 .map(|algorithm| algorithm.name.as_str()),
             Some("decodeValue")
+        );
+    }
+
+    #[test]
+    fn binary_to_transform_is_available_to_the_form() {
+        let mut encoding = default_binary_encoding();
+        encoding.to_binary_transform_algorithm = Some(xtce::InputAlgorithmType {
+            short_description: None,
+            name: "encodeValue".to_owned(),
+            long_description: None,
+            alias_set: None,
+            ancillary_data_set: None,
+            algorithm_text: None,
+            external_algorithm_set: None,
+            input_set: None,
+        });
+
+        assert_eq!(
+            binary_to_transform(Some(DataEncodingRef::Binary(&encoding)))
+                .map(|algorithm| algorithm.name.as_str()),
+            Some("encodeValue")
         );
     }
 
