@@ -162,31 +162,22 @@ struct XtceEditor {
 }
 
 impl XtceEditor {
-    fn new(window: &mut Window, cx: &mut Context<Self>) -> Self {
-        let root = xtce::from_str(include_str!("../../xtce/tests/fixtures/sample.xml"))
-            .expect("the bundled sample.xml must be valid XTCE");
+    fn new(document: XtceDocument, window: &mut Window, cx: &mut Context<Self>) -> Self {
+        let root = &document.root;
         let inspector = ElementInspector {
-            forms: ElementForms::new(&root, window, cx),
-        };
-        let selection = ElementSelection {
-            system_path: Vec::new(),
-            kind: ElementKind::SpaceSystem,
+            forms: ElementForms::new(root, window, cx),
         };
         let tree = ElementTree::new(
-            &root,
-            selection.clone(),
-            "sample.xml".to_owned(),
+            root,
+            document.selection.clone(),
+            document.file_name.clone(),
             cx.entity().downgrade(),
             window,
             cx,
         );
 
         Self {
-            document: XtceDocument {
-                root,
-                selection,
-                file_name: "sample.xml".to_owned(),
-            },
+            document,
             chrome: EditorChrome {
                 app_menu_bar: AppMenuBar::new(cx),
             },
@@ -2114,8 +2105,25 @@ fn build_menus() -> Vec<Menu> {
     ]
 }
 
+fn startup_document(path: Option<&std::path::Path>) -> Result<XtceDocument, String> {
+    path.map_or_else(|| Ok(XtceDocument::untitled()), XtceDocument::read)
+}
+
 fn main() {
     support_log::init();
+    let startup_path = std::env::args_os().nth(1).map(std::path::PathBuf::from);
+    if let Some(path) = &startup_path {
+        support_log::event(
+            "INFO",
+            &format!("opening startup document {}", path.display()),
+        );
+    } else {
+        support_log::event("INFO", "starting with an empty document");
+    }
+    let startup_result = startup_document(startup_path.as_deref());
+    if let Err(error) = &startup_result {
+        support_log::event("ERROR", error);
+    }
     let app = gpui_platform::application().with_assets(gpui_component_assets::Assets);
 
     app.run(move |cx| {
@@ -2132,8 +2140,15 @@ fn main() {
         };
 
         cx.spawn(async move |cx| {
-            cx.open_window(window_options, |window, cx| {
-                let view = cx.new(|cx| XtceEditor::new(window, cx));
+            cx.open_window(window_options, move |window, cx| {
+                let (document, startup_error) = match startup_result {
+                    Ok(document) => (document, None),
+                    Err(error) => (XtceDocument::untitled(), Some(error)),
+                };
+                let view = cx.new(|cx| XtceEditor::new(document, window, cx));
+                if let Some(error) = startup_error {
+                    window.push_notification(error, cx);
+                }
                 cx.new(|cx| Root::new(view, window, cx))
             })
             .expect("failed to open XTCE editor window");
@@ -2146,7 +2161,7 @@ fn main() {
 mod tests {
     use std::collections::HashSet;
 
-    use super::{ElementKind, ElementSelection, ElementTree, XtceDocument};
+    use super::{ElementKind, ElementSelection, ElementTree, XtceDocument, startup_document};
 
     fn sample_document() -> xtce::SpaceSystem {
         xtce::from_str(include_str!("../../xtce/tests/fixtures/sample.xml"))
@@ -2239,6 +2254,16 @@ mod tests {
         assert_eq!(document.selection.kind, ElementKind::SpaceSystem);
         assert!(document.selection.system_path.is_empty());
         XtceDocument::serialize(&document.root).expect("new document should serialize");
+    }
+
+    #[test]
+    fn startup_without_a_file_uses_an_empty_document() {
+        let document = startup_document(None).expect("empty startup should succeed");
+
+        assert_eq!(document.file_name, "untitled.xml");
+        assert_eq!(document.root.name, "NewSpaceSystem");
+        assert!(document.root.telemetry_meta_data.is_none());
+        assert!(document.root.command_meta_data.is_none());
     }
 
     #[test]
