@@ -1,10 +1,10 @@
-use gpui::{App, Context, Div, Window};
+use gpui::{App, Context, Div, Entity, ParentElement, Styled, Window};
 
 use super::{
     alias_set::AliasSetForm, ancillary_data_set::AncillaryDataSetForm,
-    command_metadata::CommandMetaDataForm, header::HeaderForm, parameter::ParameterForm,
-    parameter_set::ParameterSetForm, parameter_type::ParameterTypeForm,
-    service_set::ServiceSetForm, space_system::SpaceSystemForm,
+    argument_type::ArgumentTypeForm, command_metadata::CommandMetaDataForm, header::HeaderForm,
+    meta_command::MetaCommandForm, parameter::ParameterForm, parameter_set::ParameterSetForm,
+    parameter_type::ParameterTypeForm, service_set::ServiceSetForm, space_system::SpaceSystemForm,
     telemetry_metadata::TelemetryMetaDataForm,
 };
 use crate::{ElementKind, XtceDocument, XtceEditor};
@@ -17,8 +17,10 @@ pub(crate) struct ElementForms {
     telemetry_metadata: TelemetryMetaDataForm,
     command_metadata: CommandMetaDataForm,
     parameter_set: ParameterSetForm,
-    parameter: ParameterForm,
-    parameter_type: ParameterTypeForm,
+    parameter: Entity<ParameterForm>,
+    parameter_type: Entity<ParameterTypeForm>,
+    argument_type: Entity<ArgumentTypeForm>,
+    meta_command: Entity<MetaCommandForm>,
     service_set: ServiceSetForm,
 }
 
@@ -73,7 +75,7 @@ impl ElementForms {
                     Some(xtce::ParameterSetTypeContent::Parameter(_))
                 ) =>
             {
-                Some(self.parameter.name(cx))
+                Some(self.parameter.read(cx).name(cx))
             }
             ElementKind::CommandParameter(index)
                 if matches!(
@@ -81,11 +83,13 @@ impl ElementForms {
                     Some(xtce::ParameterSetTypeContent::Parameter(_))
                 ) =>
             {
-                Some(self.parameter.name(cx))
+                Some(self.parameter.read(cx).name(cx))
             }
             ElementKind::TelemetryParameterType(_) | ElementKind::CommandParameterType(_) => {
-                Some(self.parameter_type.name(cx))
+                Some(self.parameter_type.read(cx).name(cx))
             }
+            ElementKind::ArgumentType(_) => Some(self.argument_type.read(cx).name(cx)),
+            ElementKind::MetaCommand(_) => Some(self.meta_command.read(cx).name(cx)),
             _ => None,
         }
     }
@@ -94,6 +98,7 @@ impl ElementForms {
         &self,
         kind: ElementKind,
         system: &xtce::SpaceSystem,
+        cx: &App,
     ) -> Option<Div> {
         match kind {
             ElementKind::SpaceSystem => Some(self.space_system.render_name_editor()),
@@ -103,7 +108,7 @@ impl ElementForms {
                     Some(xtce::ParameterSetTypeContent::Parameter(_))
                 ) =>
             {
-                Some(self.parameter.render_name_editor())
+                Some(self.parameter.read(cx).render_name_editor())
             }
             ElementKind::CommandParameter(index)
                 if matches!(
@@ -111,11 +116,13 @@ impl ElementForms {
                     Some(xtce::ParameterSetTypeContent::Parameter(_))
                 ) =>
             {
-                Some(self.parameter.render_name_editor())
+                Some(self.parameter.read(cx).render_name_editor())
             }
             ElementKind::TelemetryParameterType(_) | ElementKind::CommandParameterType(_) => {
-                Some(self.parameter_type.render_name_editor())
+                Some(self.parameter_type.read(cx).render_name_editor())
             }
+            ElementKind::ArgumentType(_) => Some(self.argument_type.read(cx).render_name_editor()),
+            ElementKind::MetaCommand(_) => Some(self.meta_command.read(cx).render_name_editor()),
             _ => None,
         }
     }
@@ -152,6 +159,18 @@ impl ElementForms {
             ),
             parameter_type: ParameterTypeForm::new(
                 telemetry_parameter_type_set(system).and_then(|set| set.content.first()),
+                window,
+                cx,
+            ),
+            argument_type: ArgumentTypeForm::new(
+                argument_type_set(system).and_then(|set| set.content.first()),
+                window,
+                cx,
+            ),
+            meta_command: MetaCommandForm::new(
+                meta_command_set(system).and_then(|set| set.content.first()),
+                meta_command_set(system),
+                argument_type_set(system),
                 window,
                 cx,
             ),
@@ -195,34 +214,62 @@ impl ElementForms {
                 );
             }
             ElementKind::TelemetryParameter(index) => {
-                self.parameter.load(
-                    telemetry_parameter_set(system).and_then(|set| set.content.get(index)),
-                    telemetry_parameter_type_set(system),
-                    window,
-                    cx,
-                );
+                self.parameter.update(cx, |form, cx| {
+                    form.load(
+                        telemetry_parameter_set(system).and_then(|set| set.content.get(index)),
+                        telemetry_parameter_type_set(system),
+                        window,
+                        cx,
+                    );
+                });
             }
             ElementKind::CommandParameter(index) => {
-                self.parameter.load(
-                    command_parameter_set(system).and_then(|set| set.content.get(index)),
-                    command_parameter_type_set(system),
-                    window,
-                    cx,
-                );
+                self.parameter.update(cx, |form, cx| {
+                    form.load(
+                        command_parameter_set(system).and_then(|set| set.content.get(index)),
+                        command_parameter_type_set(system),
+                        window,
+                        cx,
+                    );
+                });
             }
             ElementKind::TelemetryParameterType(index) => {
-                self.parameter_type.load(
-                    telemetry_parameter_type_set(system).and_then(|set| set.content.get(index)),
-                    window,
-                    cx,
-                );
+                self.parameter_type.update(cx, |form, cx| {
+                    form.load(
+                        telemetry_parameter_type_set(system).and_then(|set| set.content.get(index)),
+                        window,
+                        cx,
+                    );
+                });
             }
             ElementKind::CommandParameterType(index) => {
-                self.parameter_type.load(
-                    command_parameter_type_set(system).and_then(|set| set.content.get(index)),
-                    window,
-                    cx,
-                );
+                self.parameter_type.update(cx, |form, cx| {
+                    form.load(
+                        command_parameter_type_set(system).and_then(|set| set.content.get(index)),
+                        window,
+                        cx,
+                    );
+                });
+            }
+            ElementKind::ArgumentType(index) => {
+                self.argument_type.update(cx, |form, cx| {
+                    form.load(
+                        argument_type_set(system).and_then(|set| set.content.get(index)),
+                        window,
+                        cx,
+                    );
+                });
+            }
+            ElementKind::MetaCommand(index) => {
+                self.meta_command.update(cx, |form, cx| {
+                    form.load(
+                        meta_command_set(system).and_then(|set| set.content.get(index)),
+                        meta_command_set(system),
+                        argument_type_set(system),
+                        window,
+                        cx,
+                    );
+                });
             }
             _ => {}
         }
@@ -259,28 +306,42 @@ impl ElementForms {
                 if let Some(parameter) =
                     telemetry_parameter_set_mut(system).and_then(|set| set.content.get_mut(index))
                 {
-                    self.parameter.apply_to(parameter, cx);
+                    self.parameter.read(cx).apply_to(parameter, cx);
                 }
             }
             ElementKind::CommandParameter(index) => {
                 if let Some(parameter) =
                     command_parameter_set_mut(system).and_then(|set| set.content.get_mut(index))
                 {
-                    self.parameter.apply_to(parameter, cx);
+                    self.parameter.read(cx).apply_to(parameter, cx);
                 }
             }
             ElementKind::TelemetryParameterType(index) => {
                 if let Some(parameter_type) = telemetry_parameter_type_set_mut(system)
                     .and_then(|set| set.content.get_mut(index))
                 {
-                    self.parameter_type.apply_to(parameter_type, cx);
+                    self.parameter_type.read(cx).apply_to(parameter_type, cx);
                 }
             }
             ElementKind::CommandParameterType(index) => {
                 if let Some(parameter_type) = command_parameter_type_set_mut(system)
                     .and_then(|set| set.content.get_mut(index))
                 {
-                    self.parameter_type.apply_to(parameter_type, cx);
+                    self.parameter_type.read(cx).apply_to(parameter_type, cx);
+                }
+            }
+            ElementKind::ArgumentType(index) => {
+                if let Some(argument_type) =
+                    argument_type_set_mut(system).and_then(|set| set.content.get_mut(index))
+                {
+                    self.argument_type.read(cx).apply_to(argument_type, cx);
+                }
+            }
+            ElementKind::MetaCommand(index) => {
+                if let Some(command) =
+                    meta_command_set_mut(system).and_then(|set| set.content.get_mut(index))
+                {
+                    self.meta_command.read(cx).apply_to(command, cx);
                 }
             }
             _ => {}
@@ -297,6 +358,8 @@ impl ElementForms {
                 | ElementKind::CommandParameter(_)
                 | ElementKind::TelemetryParameterType(_)
                 | ElementKind::CommandParameterType(_)
+                | ElementKind::ArgumentType(_)
+                | ElementKind::MetaCommand(_)
         )
     }
 
@@ -305,22 +368,22 @@ impl ElementForms {
             ElementKind::TelemetryParameterSet | ElementKind::CommandParameterSet => {
                 self.parameter_set.render(cx)
             }
-            ElementKind::TelemetryParameter(index) => self.parameter.render(
-                telemetry_parameter_set(system).and_then(|set| set.content.get(index)),
-                cx,
-            ),
-            ElementKind::CommandParameter(index) => self.parameter.render(
-                command_parameter_set(system).and_then(|set| set.content.get(index)),
-                cx,
-            ),
-            ElementKind::TelemetryParameterType(index) => self.parameter_type.render(
-                telemetry_parameter_type_set(system).and_then(|set| set.content.get(index)),
-                cx,
-            ),
-            ElementKind::CommandParameterType(index) => self.parameter_type.render(
-                command_parameter_type_set(system).and_then(|set| set.content.get(index)),
-                cx,
-            ),
+            ElementKind::TelemetryParameter(_) | ElementKind::CommandParameter(_) => {
+                gpui_component::v_flex()
+                    .w_full()
+                    .child(self.parameter.clone())
+            }
+            ElementKind::TelemetryParameterType(_) | ElementKind::CommandParameterType(_) => {
+                gpui_component::v_flex()
+                    .w_full()
+                    .child(self.parameter_type.clone())
+            }
+            ElementKind::ArgumentType(_) => gpui_component::v_flex()
+                .w_full()
+                .child(self.argument_type.clone()),
+            ElementKind::MetaCommand(_) => gpui_component::v_flex()
+                .w_full()
+                .child(self.meta_command.clone()),
             ElementKind::TelemetryMetaData
             | ElementKind::TelemetryParameterTypeSet
             | ElementKind::ContainerSet
@@ -333,9 +396,7 @@ impl ElementForms {
             ElementKind::CommandMetaData
             | ElementKind::CommandParameterTypeSet
             | ElementKind::ArgumentTypeSet
-            | ElementKind::ArgumentType(_)
             | ElementKind::MetaCommandSet
-            | ElementKind::MetaCommand(_)
             | ElementKind::CommandContainerSet
             | ElementKind::CommandStreamSet
             | ElementKind::CommandAlgorithmSet => {
@@ -426,6 +487,34 @@ fn command_parameter_type_set_mut(
         .command_meta_data
         .as_mut()
         .and_then(|metadata| metadata.parameter_type_set.as_mut())
+}
+
+fn argument_type_set(system: &xtce::SpaceSystem) -> Option<&xtce::ArgumentTypeSetType> {
+    system
+        .command_meta_data
+        .as_ref()
+        .and_then(|metadata| metadata.argument_type_set.as_ref())
+}
+
+fn argument_type_set_mut(system: &mut xtce::SpaceSystem) -> Option<&mut xtce::ArgumentTypeSetType> {
+    system
+        .command_meta_data
+        .as_mut()
+        .and_then(|metadata| metadata.argument_type_set.as_mut())
+}
+
+fn meta_command_set(system: &xtce::SpaceSystem) -> Option<&xtce::MetaCommandSetType> {
+    system
+        .command_meta_data
+        .as_ref()
+        .and_then(|metadata| metadata.meta_command_set.as_ref())
+}
+
+fn meta_command_set_mut(system: &mut xtce::SpaceSystem) -> Option<&mut xtce::MetaCommandSetType> {
+    system
+        .command_meta_data
+        .as_mut()
+        .and_then(|metadata| metadata.meta_command_set.as_mut())
 }
 
 fn parameter_title(parameter: &xtce::ParameterSetTypeContent) -> String {

@@ -220,9 +220,12 @@ fn input(
     cx: &mut Context<XtceEditor>,
 ) -> Entity<InputState> {
     cx.new(|cx| {
-        InputState::new(window, cx)
-            .multi_line(multi_line)
-            .default_value(value.to_owned())
+        let input = InputState::new(window, cx).default_value(value.to_owned());
+        if multi_line {
+            input.auto_grow(3, 12)
+        } else {
+            input
+        }
     })
 }
 

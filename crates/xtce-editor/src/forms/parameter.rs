@@ -1,7 +1,10 @@
 use std::{cell::RefCell, rc::Rc};
 
 use anyhow::Result;
-use gpui::{App, AppContext, Context, Div, Entity, ParentElement, Styled, Task, Window};
+use gpui::{
+    App, AppContext, Context, Div, Entity, IntoElement, ParentElement, Render, Styled,
+    Subscription, Task, Window,
+};
 use gpui_component::{
     h_flex,
     input::{CompletionProvider, Input, InputEvent, InputState, Rope, RopeExt},
@@ -15,7 +18,15 @@ use lsp_types::{
 use super::{field, optional_value};
 use crate::XtceEditor;
 
+#[derive(Clone, Copy)]
+enum ParameterElementKind {
+    Parameter,
+    Reference,
+    Missing,
+}
+
 pub(super) struct ParameterForm {
+    element_kind: ParameterElementKind,
     name_input: Entity<InputState>,
     parameter_type_ref_input: Entity<InputState>,
     initial_value_input: Entity<InputState>,
@@ -23,6 +34,7 @@ pub(super) struct ParameterForm {
     long_description_input: Entity<InputState>,
     parameter_ref_input: Entity<InputState>,
     parameter_type_names: Rc<RefCell<Vec<String>>>,
+    _subscriptions: Vec<Subscription>,
 }
 
 impl ParameterForm {
@@ -42,40 +54,59 @@ impl ParameterForm {
         parameter_type_set: Option<&xtce::ParameterTypeSetType>,
         window: &mut Window,
         cx: &mut Context<XtceEditor>,
-    ) -> Self {
+    ) -> Entity<Self> {
         let values = ParameterValues::from_parameter(parameter);
         let parameter_type_names = Rc::new(RefCell::new(parameter_type_names(parameter_type_set)));
         let name_input = input(&values.name, false, window, cx);
-        cx.subscribe(&name_input, |_, _, _: &InputEvent, cx| cx.notify())
-            .detach();
-        let parameter_type_ref_input = cx.new(|cx| {
-            let mut input = InputState::new(window, cx)
-                .default_value(values.parameter_type_ref.clone())
-                .placeholder("Start typing a ParameterType name");
-            input.lsp.completion_provider = Some(Rc::new(ParameterTypeCompletionProvider {
-                names: parameter_type_names.clone(),
-            }));
-            input
+        let name_subscription = cx.subscribe(&name_input, |editor, _, _: &InputEvent, cx| {
+            editor.refresh_tree(cx);
+            cx.notify();
         });
-        Self {
-            name_input,
-            parameter_type_ref_input,
-            initial_value_input: input(&values.initial_value, false, window, cx),
-            short_description_input: input(&values.short_description, false, window, cx),
-            long_description_input: input(&values.long_description, true, window, cx),
-            parameter_ref_input: input(&values.parameter_ref, false, window, cx),
-            parameter_type_names,
-        }
+        cx.new(move |cx| {
+            let parameter_type_ref_input = cx.new(|cx| {
+                let mut input = InputState::new(window, cx)
+                    .default_value(values.parameter_type_ref.clone())
+                    .placeholder("Start typing a ParameterType name");
+                input.lsp.completion_provider = Some(Rc::new(ParameterTypeCompletionProvider {
+                    names: parameter_type_names.clone(),
+                }));
+                input
+            });
+            Self {
+                element_kind: match parameter {
+                    Some(xtce::ParameterSetTypeContent::Parameter(_)) => {
+                        ParameterElementKind::Parameter
+                    }
+                    Some(xtce::ParameterSetTypeContent::ParameterRef(_)) => {
+                        ParameterElementKind::Reference
+                    }
+                    None => ParameterElementKind::Missing,
+                },
+                name_input,
+                parameter_type_ref_input,
+                initial_value_input: input(&values.initial_value, false, window, cx),
+                short_description_input: input(&values.short_description, false, window, cx),
+                long_description_input: input(&values.long_description, true, window, cx),
+                parameter_ref_input: input(&values.parameter_ref, false, window, cx),
+                parameter_type_names,
+                _subscriptions: vec![name_subscription],
+            }
+        })
     }
 
     pub(super) fn load(
-        &self,
+        &mut self,
         parameter: Option<&xtce::ParameterSetTypeContent>,
         parameter_type_set: Option<&xtce::ParameterTypeSetType>,
         window: &mut Window,
-        cx: &mut Context<XtceEditor>,
+        cx: &mut Context<Self>,
     ) {
         *self.parameter_type_names.borrow_mut() = parameter_type_names(parameter_type_set);
+        self.element_kind = match parameter {
+            Some(xtce::ParameterSetTypeContent::Parameter(_)) => ParameterElementKind::Parameter,
+            Some(xtce::ParameterSetTypeContent::ParameterRef(_)) => ParameterElementKind::Reference,
+            None => ParameterElementKind::Missing,
+        };
         let values = ParameterValues::from_parameter(parameter);
         for (input, value) in [
             (&self.name_input, values.name),
@@ -87,6 +118,7 @@ impl ParameterForm {
         ] {
             input.update(cx, |input, cx| input.set_value(value, window, cx));
         }
+        cx.notify();
     }
 
     pub(super) fn apply_to(&self, parameter: &mut xtce::ParameterSetTypeContent, cx: &App) {
@@ -101,13 +133,9 @@ impl ParameterForm {
         .apply_to(parameter);
     }
 
-    pub(super) fn render(
-        &self,
-        parameter: Option<&xtce::ParameterSetTypeContent>,
-        cx: &App,
-    ) -> Div {
-        match parameter {
-            Some(xtce::ParameterSetTypeContent::Parameter(_)) => v_flex()
+    fn render_form(&self, cx: &App) -> Div {
+        match self.element_kind {
+            ParameterElementKind::Parameter => v_flex()
                 .gap_5()
                 .child(h_flex().gap_4().items_start().child(field(
                     "Parameter type reference",
@@ -138,14 +166,20 @@ impl ParameterForm {
                     &self.long_description_input,
                     cx,
                 )),
-            Some(xtce::ParameterSetTypeContent::ParameterRef(_)) => field(
+            ParameterElementKind::Reference => field(
                 "Parameter reference",
                 "Required",
                 &self.parameter_ref_input,
                 cx,
             ),
-            None => v_flex(),
+            ParameterElementKind::Missing => v_flex(),
         }
+    }
+}
+
+impl Render for ParameterForm {
+    fn render(&mut self, _: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+        self.render_form(cx)
     }
 }
 
@@ -285,12 +319,15 @@ fn input(
     value: &str,
     multi_line: bool,
     window: &mut Window,
-    cx: &mut Context<XtceEditor>,
+    cx: &mut impl AppContext,
 ) -> Entity<InputState> {
     cx.new(|cx| {
-        InputState::new(window, cx)
-            .multi_line(multi_line)
-            .default_value(value.to_owned())
+        let input = InputState::new(window, cx).default_value(value.to_owned());
+        if multi_line {
+            input.auto_grow(3, 12)
+        } else {
+            input
+        }
     })
 }
 

@@ -1,8 +1,9 @@
-use std::{cell::Cell, rc::Rc};
-
-use gpui::{App, AppContext, Context, Div, Entity, ParentElement, Styled, Window, div};
+use gpui::{
+    App, AppContext, Context, Div, Entity, IntoElement, ParentElement, Render, Styled,
+    Subscription, Window, div,
+};
 use gpui_component::{
-    ActiveTheme, IndexPath, StyledExt, h_flex,
+    IndexPath, StyledExt, h_flex,
     input::InputState,
     select::{Select, SelectEvent, SelectState},
     v_flex,
@@ -10,7 +11,6 @@ use gpui_component::{
 use strum::{Display, EnumString, VariantArray};
 
 use super::{field, impl_select_item};
-use crate::XtceEditor;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(crate) enum DataEncodingKind {
@@ -153,7 +153,6 @@ enum FloatSizeChoice {
 impl_select_item!(FloatSizeChoice);
 
 pub(super) struct DataEncodingForm {
-    kind: Rc<Cell<Option<DataEncodingKind>>>,
     kind_select: Entity<SelectState<Vec<DataEncodingChoice>>>,
     bit_order_select: Entity<SelectState<Vec<BitOrderChoice>>>,
     byte_order_select: Entity<SelectState<Vec<ByteOrderChoice>>>,
@@ -161,243 +160,186 @@ pub(super) struct DataEncodingForm {
     integer_encoding_select: Entity<SelectState<Vec<IntegerEncodingChoice>>>,
     string_encoding_select: Entity<SelectState<Vec<StringEncodingChoice>>>,
     float_size_select: Entity<SelectState<Vec<FloatSizeChoice>>>,
-    bit_order_input: Entity<InputState>,
-    byte_order_input: Entity<InputState>,
-    encoding_input: Entity<InputState>,
     size_in_bits_input: Entity<InputState>,
     change_threshold_input: Entity<InputState>,
+    _subscriptions: Vec<Subscription>,
 }
 
 impl DataEncodingForm {
     pub(super) fn new(
         encoding: Option<DataEncodingRef<'_>>,
         window: &mut Window,
-        cx: &mut Context<XtceEditor>,
-    ) -> Self {
+        cx: &mut impl AppContext,
+    ) -> Entity<Self> {
         let values = DataEncodingValues::from_encoding(encoding);
         let kind = encoding.map(|encoding| encoding.kind());
-        let kind_state = Rc::new(Cell::new(kind));
-        let kind_choice = DataEncodingChoice::from_kind(kind);
-        let kind_select = cx.new(|cx| {
-            SelectState::new(
-                DataEncodingChoice::VARIANTS.to_vec(),
-                Some(
-                    IndexPath::default().row(
-                        DataEncodingChoice::VARIANTS
-                            .iter()
-                            .position(|option| option == &kind_choice)
-                            .unwrap_or_default(),
-                    ),
-                ),
+        cx.new(move |cx| {
+            let kind_choice = DataEncodingChoice::from_kind(kind);
+            let kind_select = select(DataEncodingChoice::VARIANTS, kind_choice, window, cx);
+            let bit_order_select = select(
+                BitOrderChoice::VARIANTS,
+                parse_choice(&values.bit_order, BitOrderChoice::MostSignificantFirst),
                 window,
                 cx,
-            )
-        });
-        let bit_order_select = select(
-            BitOrderChoice::VARIANTS,
-            parse_choice(&values.bit_order, BitOrderChoice::MostSignificantFirst),
-            window,
-            cx,
-        );
-        let byte_order_select = select(
-            ByteOrderChoice::VARIANTS,
-            parse_choice(&values.byte_order, ByteOrderChoice::MostSignificantFirst),
-            window,
-            cx,
-        );
-        let float_encoding_select = select(
-            FloatEncodingChoice::VARIANTS,
-            parse_choice(&values.encoding, FloatEncodingChoice::Ieee7541985),
-            window,
-            cx,
-        );
-        let integer_encoding_select = select(
-            IntegerEncodingChoice::VARIANTS,
-            parse_choice(&values.encoding, IntegerEncodingChoice::Unsigned),
-            window,
-            cx,
-        );
-        let string_encoding_select = select(
-            StringEncodingChoice::VARIANTS,
-            parse_choice(&values.encoding, StringEncodingChoice::Utf8),
-            window,
-            cx,
-        );
-        let float_size_select = select(
-            FloatSizeChoice::VARIANTS,
-            parse_choice(&values.size_in_bits, FloatSizeChoice::_32),
-            window,
-            cx,
-        );
-        let bit_order_input = input(&values.bit_order, window, cx);
-        let byte_order_input = input(&values.byte_order, window, cx);
-        let encoding_input = input(&values.encoding, window, cx);
-        let size_in_bits_input = input(&values.size_in_bits, window, cx);
-        let change_threshold_input = input(&values.change_threshold, window, cx);
-        subscribe_select_to_input(&bit_order_select, &bit_order_input, window, cx);
-        subscribe_select_to_input(&byte_order_select, &byte_order_input, window, cx);
-        subscribe_select_to_input(&float_encoding_select, &encoding_input, window, cx);
-        subscribe_select_to_input(&integer_encoding_select, &encoding_input, window, cx);
-        subscribe_select_to_input(&string_encoding_select, &encoding_input, window, cx);
-        subscribe_select_to_input(&float_size_select, &size_in_bits_input, window, cx);
+            );
+            let byte_order_select = select(
+                ByteOrderChoice::VARIANTS,
+                parse_choice(&values.byte_order, ByteOrderChoice::MostSignificantFirst),
+                window,
+                cx,
+            );
+            let float_encoding_select = select(
+                FloatEncodingChoice::VARIANTS,
+                parse_choice(&values.encoding, FloatEncodingChoice::Ieee7541985),
+                window,
+                cx,
+            );
+            let integer_encoding_select = select(
+                IntegerEncodingChoice::VARIANTS,
+                parse_choice(&values.encoding, IntegerEncodingChoice::Unsigned),
+                window,
+                cx,
+            );
+            let string_encoding_select = select(
+                StringEncodingChoice::VARIANTS,
+                parse_choice(&values.encoding, StringEncodingChoice::Utf8),
+                window,
+                cx,
+            );
+            let float_size_select = select(
+                FloatSizeChoice::VARIANTS,
+                parse_choice(&values.size_in_bits, FloatSizeChoice::_32),
+                window,
+                cx,
+            );
+            let size_in_bits_input = input(&values.size_in_bits, window, cx);
+            let change_threshold_input = input(&values.change_threshold, window, cx);
+            let kind_subscription = cx.subscribe_in(
+                &kind_select,
+                window,
+                |this: &mut DataEncodingForm,
+                 _,
+                 event: &SelectEvent<Vec<DataEncodingChoice>>,
+                 window,
+                 cx| {
+                    let SelectEvent::Confirm(selected_kind) = event;
+                    let selected_kind = (*selected_kind).unwrap_or(DataEncodingChoice::None).kind();
+                    let values = DataEncodingValues::defaults(selected_kind);
+                    sync_select(
+                        &this.bit_order_select,
+                        parse_choice(&values.bit_order, BitOrderChoice::MostSignificantFirst),
+                        window,
+                        cx,
+                    );
+                    sync_select(
+                        &this.byte_order_select,
+                        parse_choice(&values.byte_order, ByteOrderChoice::MostSignificantFirst),
+                        window,
+                        cx,
+                    );
+                    sync_select(
+                        &this.float_encoding_select,
+                        parse_choice(&values.encoding, FloatEncodingChoice::Ieee7541985),
+                        window,
+                        cx,
+                    );
+                    sync_select(
+                        &this.integer_encoding_select,
+                        parse_choice(&values.encoding, IntegerEncodingChoice::Unsigned),
+                        window,
+                        cx,
+                    );
+                    sync_select(
+                        &this.string_encoding_select,
+                        parse_choice(&values.encoding, StringEncodingChoice::Utf8),
+                        window,
+                        cx,
+                    );
+                    sync_select(
+                        &this.float_size_select,
+                        parse_choice(&values.size_in_bits, FloatSizeChoice::_32),
+                        window,
+                        cx,
+                    );
+                    this.size_in_bits_input.update(cx, |input, cx| {
+                        input.set_value(values.size_in_bits, window, cx)
+                    });
+                    this.change_threshold_input.update(cx, |input, cx| {
+                        input.set_value(values.change_threshold, window, cx)
+                    });
+                    cx.notify();
+                },
+            );
 
-        let inputs = [
-            bit_order_input.clone(),
-            byte_order_input.clone(),
-            encoding_input.clone(),
-            size_in_bits_input.clone(),
-            change_threshold_input.clone(),
-        ];
-        let subscription_kind = kind_state.clone();
-        let subscription_bit_order = bit_order_select.clone();
-        let subscription_byte_order = byte_order_select.clone();
-        let subscription_float_encoding = float_encoding_select.clone();
-        let subscription_integer_encoding = integer_encoding_select.clone();
-        let subscription_string_encoding = string_encoding_select.clone();
-        let subscription_float_size = float_size_select.clone();
-        cx.subscribe_in(
-            &kind_select,
-            window,
-            move |_, _, event: &SelectEvent<Vec<DataEncodingChoice>>, window, cx| {
-                let SelectEvent::Confirm(selected_kind) = event;
-                let selected_kind = (*selected_kind).unwrap_or(DataEncodingChoice::None).kind();
-                if subscription_kind.replace(selected_kind) == selected_kind {
-                    return;
-                }
-                let values = DataEncodingValues::defaults(selected_kind);
-                for (input, value) in inputs.iter().zip(values.into_fields()) {
-                    input.update(cx, |input, cx| input.set_value(value, window, cx));
-                }
-                sync_select(
-                    &subscription_bit_order,
-                    parse_choice(&value(&inputs[0], cx), BitOrderChoice::MostSignificantFirst),
-                    window,
-                    cx,
-                );
-                sync_select(
-                    &subscription_byte_order,
-                    parse_choice(
-                        &value(&inputs[1], cx),
-                        ByteOrderChoice::MostSignificantFirst,
-                    ),
-                    window,
-                    cx,
-                );
-                sync_select(
-                    &subscription_float_encoding,
-                    parse_choice(&value(&inputs[2], cx), FloatEncodingChoice::Ieee7541985),
-                    window,
-                    cx,
-                );
-                sync_select(
-                    &subscription_integer_encoding,
-                    parse_choice(&value(&inputs[2], cx), IntegerEncodingChoice::Unsigned),
-                    window,
-                    cx,
-                );
-                sync_select(
-                    &subscription_string_encoding,
-                    parse_choice(&value(&inputs[2], cx), StringEncodingChoice::Utf8),
-                    window,
-                    cx,
-                );
-                sync_select(
-                    &subscription_float_size,
-                    parse_choice(&value(&inputs[3], cx), FloatSizeChoice::_32),
-                    window,
-                    cx,
-                );
-                cx.notify();
-            },
-        )
-        .detach();
-
-        Self {
-            kind: kind_state,
-            kind_select,
-            bit_order_select,
-            byte_order_select,
-            float_encoding_select,
-            integer_encoding_select,
-            string_encoding_select,
-            float_size_select,
-            bit_order_input,
-            byte_order_input,
-            encoding_input,
-            size_in_bits_input,
-            change_threshold_input,
-        }
+            Self {
+                kind_select,
+                bit_order_select,
+                byte_order_select,
+                float_encoding_select,
+                integer_encoding_select,
+                string_encoding_select,
+                float_size_select,
+                size_in_bits_input,
+                change_threshold_input,
+                _subscriptions: vec![kind_subscription],
+            }
+        })
     }
 
     pub(super) fn load(
-        &self,
+        &mut self,
         encoding: Option<DataEncodingRef<'_>>,
         window: &mut Window,
-        cx: &mut Context<XtceEditor>,
+        cx: &mut Context<Self>,
     ) {
         let values = DataEncodingValues::from_encoding(encoding);
         let kind = encoding.map(|encoding| encoding.kind());
-        self.kind.set(kind);
         self.kind_select.update(cx, |select, cx| {
             select.set_selected_value(&DataEncodingChoice::from_kind(kind), window, cx);
         });
         for (input, value) in [
-            (&self.bit_order_input, values.bit_order),
-            (&self.byte_order_input, values.byte_order),
-            (&self.encoding_input, values.encoding),
-            (&self.size_in_bits_input, values.size_in_bits),
+            (&self.size_in_bits_input, values.size_in_bits.clone()),
             (&self.change_threshold_input, values.change_threshold),
         ] {
             input.update(cx, |input, cx| input.set_value(value, window, cx));
         }
         sync_select(
             &self.bit_order_select,
-            parse_choice(
-                &value(&self.bit_order_input, cx),
-                BitOrderChoice::MostSignificantFirst,
-            ),
+            parse_choice(&values.bit_order, BitOrderChoice::MostSignificantFirst),
             window,
             cx,
         );
         sync_select(
             &self.byte_order_select,
-            parse_choice(
-                &value(&self.byte_order_input, cx),
-                ByteOrderChoice::MostSignificantFirst,
-            ),
+            parse_choice(&values.byte_order, ByteOrderChoice::MostSignificantFirst),
             window,
             cx,
         );
         sync_select(
             &self.float_encoding_select,
-            parse_choice(
-                &value(&self.encoding_input, cx),
-                FloatEncodingChoice::Ieee7541985,
-            ),
+            parse_choice(&values.encoding, FloatEncodingChoice::Ieee7541985),
             window,
             cx,
         );
         sync_select(
             &self.integer_encoding_select,
-            parse_choice(
-                &value(&self.encoding_input, cx),
-                IntegerEncodingChoice::Unsigned,
-            ),
+            parse_choice(&values.encoding, IntegerEncodingChoice::Unsigned),
             window,
             cx,
         );
         sync_select(
             &self.string_encoding_select,
-            parse_choice(&value(&self.encoding_input, cx), StringEncodingChoice::Utf8),
+            parse_choice(&values.encoding, StringEncodingChoice::Utf8),
             window,
             cx,
         );
         sync_select(
             &self.float_size_select,
-            parse_choice(&value(&self.size_in_bits_input, cx), FloatSizeChoice::_32),
+            parse_choice(&values.size_in_bits, FloatSizeChoice::_32),
             window,
             cx,
         );
+        cx.notify();
     }
 
     pub(super) fn selected_kind(&self, cx: &App) -> Option<DataEncodingKind> {
@@ -411,16 +353,48 @@ impl DataEncodingForm {
 
     pub(super) fn apply_to(&self, encoding: DataEncodingMut<'_>, cx: &App) {
         DataEncodingValues {
-            bit_order: value(&self.bit_order_input, cx),
-            byte_order: value(&self.byte_order_input, cx),
-            encoding: value(&self.encoding_input, cx),
-            size_in_bits: value(&self.size_in_bits_input, cx),
+            bit_order: selected_value(
+                &self.bit_order_select,
+                BitOrderChoice::MostSignificantFirst,
+                cx,
+            )
+            .to_string(),
+            byte_order: selected_value(
+                &self.byte_order_select,
+                ByteOrderChoice::MostSignificantFirst,
+                cx,
+            )
+            .to_string(),
+            encoding: match self.selected_kind(cx) {
+                Some(DataEncodingKind::Float) => selected_value(
+                    &self.float_encoding_select,
+                    FloatEncodingChoice::Ieee7541985,
+                    cx,
+                )
+                .to_string(),
+                Some(DataEncodingKind::Integer) => selected_value(
+                    &self.integer_encoding_select,
+                    IntegerEncodingChoice::Unsigned,
+                    cx,
+                )
+                .to_string(),
+                Some(DataEncodingKind::String) => {
+                    selected_value(&self.string_encoding_select, StringEncodingChoice::Utf8, cx)
+                        .to_string()
+                }
+                _ => String::new(),
+            },
+            size_in_bits: if self.selected_kind(cx) == Some(DataEncodingKind::Float) {
+                selected_value(&self.float_size_select, FloatSizeChoice::_32, cx).to_string()
+            } else {
+                value(&self.size_in_bits_input, cx)
+            },
             change_threshold: value(&self.change_threshold_input, cx),
         }
         .apply_to(encoding);
     }
 
-    pub(super) fn render(&self, cx: &App) -> Div {
+    fn render_form(&self, cx: &App) -> Div {
         let kind = self.selected_kind(cx);
         let mut form = v_flex().gap_5().child(
             v_flex()
@@ -493,6 +467,12 @@ impl DataEncodingForm {
                 )),
         );
         form
+    }
+}
+
+impl Render for DataEncodingForm {
+    fn render(&mut self, _: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+        self.render_form(cx)
     }
 }
 
@@ -760,16 +740,6 @@ impl DataEncodingValues {
             }
             None => Self::from_encoding(None),
         }
-    }
-
-    fn into_fields(self) -> [String; 5] {
-        [
-            self.bit_order,
-            self.byte_order,
-            self.encoding,
-            self.size_in_bits,
-            self.change_threshold,
-        ]
     }
 
     fn from_encoding(encoding: Option<DataEncodingRef<'_>>) -> Self {
@@ -1045,7 +1015,7 @@ fn string_encoding_from_str(value: &str) -> Option<xtce::StringEncodingType> {
     }
 }
 
-fn input(value: &str, window: &mut Window, cx: &mut Context<XtceEditor>) -> Entity<InputState> {
+fn input(value: &str, window: &mut Window, cx: &mut impl AppContext) -> Entity<InputState> {
     cx.new(|cx| InputState::new(window, cx).default_value(value.to_owned()))
 }
 
@@ -1060,7 +1030,7 @@ fn select<T>(
     options: &'static [T],
     selected: T,
     window: &mut Window,
-    cx: &mut Context<XtceEditor>,
+    cx: &mut impl AppContext,
 ) -> Entity<SelectState<Vec<T>>>
 where
     T: Clone + Copy + PartialEq + gpui_component::select::SelectItem<Value = T> + 'static,
@@ -1079,40 +1049,11 @@ where
     })
 }
 
-fn subscribe_select_to_input<T>(
-    select: &Entity<SelectState<Vec<T>>>,
-    input: &Entity<InputState>,
-    window: &mut Window,
-    cx: &mut Context<XtceEditor>,
-) where
-    T: Clone
-        + Copy
-        + PartialEq
-        + ToString
-        + gpui_component::select::SelectItem<Value = T>
-        + 'static,
-{
-    let input = input.clone();
-    cx.subscribe_in(
-        select,
-        window,
-        move |_, _, event: &SelectEvent<Vec<T>>, window, cx| {
-            let SelectEvent::Confirm(Some(value)) = event else {
-                return;
-            };
-            input.update(cx, |input, cx| {
-                input.set_value(value.to_string(), window, cx);
-            });
-        },
-    )
-    .detach();
-}
-
 fn sync_select<T>(
     select: &Entity<SelectState<Vec<T>>>,
     value: T,
     window: &mut Window,
-    cx: &mut Context<XtceEditor>,
+    cx: &mut impl AppContext,
 ) where
     T: Clone + Copy + PartialEq + gpui_component::select::SelectItem<Value = T> + 'static,
 {
@@ -1121,34 +1062,40 @@ fn sync_select<T>(
     });
 }
 
+fn selected_value<T>(select: &Entity<SelectState<Vec<T>>>, fallback: T, cx: &App) -> T
+where
+    T: Clone + Copy + PartialEq + gpui_component::select::SelectItem<Value = T> + 'static,
+{
+    select
+        .read(cx)
+        .selected_value()
+        .copied()
+        .unwrap_or(fallback)
+}
+
 fn select_field<T>(
     label: &'static str,
     hint: &'static str,
     select: &Entity<SelectState<Vec<T>>>,
-    cx: &App,
+    _cx: &App,
 ) -> Div
 where
     T: Clone + PartialEq + gpui_component::select::SelectItem<Value = T> + 'static,
 {
-    v_flex()
-        .w_full()
-        .gap_2()
-        .child(
-            h_flex()
-                .justify_between()
-                .child(div().text_sm().font_medium().child(label))
-                .child(
-                    div()
-                        .text_xs()
-                        .text_color(cx.theme().muted_foreground)
-                        .child(hint),
-                ),
-        )
-        .child(Select::new(select).w_full())
+    let required = hint == "Required";
+    let field = gpui_component::form::field()
+        .label(label)
+        .required(required)
+        .child(Select::new(select).w_full());
+    v_flex().w_full().child(if required {
+        field
+    } else {
+        field.description(hint)
+    })
 }
 
-fn value(input: &Entity<InputState>, cx: &App) -> String {
-    input.read(cx).value().to_string()
+fn value(input: &Entity<InputState>, cx: &impl AppContext) -> String {
+    cx.read_entity(input, |input, _| input.value().to_string())
 }
 
 #[cfg(test)]

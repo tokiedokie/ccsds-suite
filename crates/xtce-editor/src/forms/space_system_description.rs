@@ -22,7 +22,7 @@ impl SpaceSystemDescriptionFields {
             }),
             long_description_input: cx.new(|cx| {
                 InputState::new(window, cx)
-                    .multi_line(true)
+                    .auto_grow(4, 20)
                     .default_value(system.long_description.clone().unwrap_or_default())
             }),
         }

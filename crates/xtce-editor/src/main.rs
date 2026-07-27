@@ -1,14 +1,17 @@
 mod forms;
 
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
 
 use gpui::{prelude::FluentBuilder, *};
 use gpui_component::{
     ActiveTheme, GlobalState, Icon, IconName, Root, Sizable, StyledExt, TitleBar, WindowExt,
     button::{Button, ButtonVariants},
     h_flex,
-    input::{Input, InputState},
+    input::{Input, InputEvent as ComponentInputEvent, InputState},
+    list::ListItem,
     menu::{AppMenuBar, DropdownMenu, PopupMenuItem},
+    resizable::{h_resizable, resizable_panel},
+    tree::{TreeEvent, TreeItem, TreeState, tree},
     v_flex,
 };
 
@@ -101,11 +104,14 @@ struct ElementSelection {
     kind: ElementKind,
 }
 
+#[derive(Clone)]
 struct TreeNode {
     selection: ElementSelection,
     label: String,
     level: usize,
     has_children: bool,
+    can_add_telemetry_metadata: bool,
+    can_add_command_metadata: bool,
 }
 
 struct XtceDocument {
@@ -121,6 +127,14 @@ struct EditorChrome {
 struct ElementTree {
     search_input: Entity<InputState>,
     collapsed: HashSet<ElementSelection>,
+    tree_state: Entity<TreeState>,
+    nodes: HashMap<SharedString, TreeNode>,
+    ordered_nodes: Vec<TreeNode>,
+    node_count: usize,
+    file_name: String,
+    selection: ElementSelection,
+    editor: WeakEntity<XtceEditor>,
+    _subscriptions: Vec<Subscription>,
 }
 
 struct ElementInspector {
@@ -130,7 +144,7 @@ struct ElementInspector {
 struct XtceEditor {
     document: XtceDocument,
     chrome: EditorChrome,
-    tree: ElementTree,
+    tree: Entity<ElementTree>,
     inspector: ElementInspector,
 }
 
@@ -141,25 +155,29 @@ impl XtceEditor {
         let inspector = ElementInspector {
             forms: ElementForms::new(&root, window, cx),
         };
-        let collapsed = ElementTree::collapsed_by_default(&root);
+        let selection = ElementSelection {
+            system_path: Vec::new(),
+            kind: ElementKind::SpaceSystem,
+        };
+        let tree = ElementTree::new(
+            &root,
+            selection.clone(),
+            "sample.xml".to_owned(),
+            cx.entity().downgrade(),
+            window,
+            cx,
+        );
 
         Self {
             document: XtceDocument {
                 root,
-                selection: ElementSelection {
-                    system_path: Vec::new(),
-                    kind: ElementKind::SpaceSystem,
-                },
+                selection,
                 file_name: "sample.xml".to_owned(),
             },
             chrome: EditorChrome {
                 app_menu_bar: AppMenuBar::new(cx),
             },
-            tree: ElementTree {
-                search_input: cx
-                    .new(|cx| InputState::new(window, cx).placeholder("Filter elements…")),
-                collapsed,
-            },
+            tree,
             inspector,
         }
     }
@@ -169,6 +187,7 @@ impl XtceEditor {
         self.inspector
             .forms
             .load(kind, self.document.selected_system(), window, cx);
+        self.refresh_tree(cx);
         cx.notify();
     }
 
@@ -177,7 +196,28 @@ impl XtceEditor {
         let path = self.document.selection.system_path.clone();
         let system = XtceDocument::system_at_path_mut(&mut self.document.root, &path);
         self.inspector.forms.apply_to(kind, system, cx);
+        self.refresh_tree(cx);
         cx.notify();
+    }
+
+    fn refresh_tree(&mut self, cx: &mut Context<Self>) {
+        let mut nodes = Vec::new();
+        XtceDocument::collect_tree_nodes(&self.document.root, &mut Vec::new(), 0, &mut nodes);
+        if let Some(draft_name) = self.inspector.forms.draft_name(
+            self.document.selection.kind,
+            self.document.selected_system(),
+            cx,
+        ) && let Some(selected) = nodes
+            .iter_mut()
+            .find(|node| node.selection == self.document.selection)
+        {
+            selected.label = draft_name;
+        }
+        let selection = self.document.selection.clone();
+        let file_name = self.document.file_name.clone();
+        self.tree.update(cx, |tree, cx| {
+            tree.load_nodes(nodes, selection, file_name, cx);
+        });
     }
 
     fn save_document(&mut self, window: &mut Window, cx: &mut Context<Self>) {
@@ -205,6 +245,7 @@ impl XtceEditor {
                         if let Some(file_name) = file_name {
                             this.document.file_name = file_name;
                         }
+                        this.refresh_tree(cx);
                         format!("Saved {}", path.display())
                     }
                     Err(error) => format!("Could not save {}: {error}", path.display()),
@@ -218,18 +259,21 @@ impl XtceEditor {
     fn new_document(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         let document = XtceDocument::untitled();
         let forms = ElementForms::new(&document.root, window, cx);
-        self.tree.collapsed = ElementTree::collapsed_by_default(&document.root);
         self.document = document;
         self.inspector.forms = forms;
+        self.refresh_tree(cx);
         window.push_notification("Created a new XTCE document", cx);
         cx.notify();
     }
 
+    #[allow(dead_code)]
     fn toggle_tree_node(&mut self, selection: &ElementSelection, cx: &mut Context<Self>) {
-        if !self.tree.collapsed.insert(selection.clone()) {
-            self.tree.collapsed.remove(selection);
-        }
-        cx.notify();
+        self.tree.update(cx, |tree, cx| {
+            if !tree.collapsed.insert(selection.clone()) {
+                tree.collapsed.remove(selection);
+            }
+            tree.rebuild(cx);
+        });
     }
 
     fn add_tree_child(
@@ -243,7 +287,9 @@ impl XtceEditor {
         let Some(kind) = XtceDocument::add_collection_item(system, parent.kind) else {
             return;
         };
-        self.tree.collapsed.remove(parent);
+        self.tree.update(cx, |tree, _| {
+            tree.collapsed.remove(parent);
+        });
         self.document.selection = ElementSelection {
             system_path: parent.system_path.clone(),
             kind,
@@ -263,7 +309,9 @@ impl XtceEditor {
         if !XtceDocument::add_metadata(system, kind) {
             return;
         }
-        self.tree.collapsed.remove(parent);
+        self.tree.update(cx, |tree, _| {
+            tree.collapsed.remove(parent);
+        });
         self.document.selection = ElementSelection {
             system_path: parent.system_path.clone(),
             kind,
@@ -280,7 +328,9 @@ impl XtceEditor {
         self.save_selected_element(cx);
         let system = XtceDocument::system_at_path_mut(&mut self.document.root, &parent.system_path);
         let index = XtceDocument::add_space_system(system);
-        self.tree.collapsed.remove(parent);
+        self.tree.update(cx, |tree, _| {
+            tree.collapsed.remove(parent);
+        });
         let mut system_path = parent.system_path.clone();
         system_path.push(index);
         self.document.selection = ElementSelection {
@@ -590,6 +640,8 @@ impl XtceDocument {
             label: system.name.clone(),
             level,
             has_children,
+            can_add_telemetry_metadata: system.telemetry_meta_data.is_none(),
+            can_add_command_metadata: system.command_meta_data.is_none(),
         });
 
         let child_level = level + 1;
@@ -782,6 +834,8 @@ impl XtceDocument {
             label: kind.label().to_owned(),
             level,
             has_children,
+            can_add_telemetry_metadata: false,
+            can_add_command_metadata: false,
         });
     }
 
@@ -800,6 +854,8 @@ impl XtceDocument {
             label,
             level,
             has_children: false,
+            can_add_telemetry_metadata: false,
+            can_add_command_metadata: false,
         });
     }
 
@@ -865,6 +921,313 @@ impl XtceDocument {
 }
 
 impl ElementTree {
+    fn new(
+        root: &xtce::SpaceSystem,
+        selection: ElementSelection,
+        file_name: String,
+        editor: WeakEntity<XtceEditor>,
+        window: &mut Window,
+        cx: &mut Context<XtceEditor>,
+    ) -> Entity<Self> {
+        let mut nodes = Vec::new();
+        XtceDocument::collect_tree_nodes(root, &mut Vec::new(), 0, &mut nodes);
+        cx.new(move |cx| {
+            let search_input =
+                cx.new(|cx| InputState::new(window, cx).placeholder("Filter elements…"));
+            let tree_state = cx.new(|cx| TreeState::new(cx));
+            let search_subscription = cx.subscribe(
+                &search_input,
+                |this: &mut ElementTree, _, event: &ComponentInputEvent, cx| {
+                    if matches!(event, ComponentInputEvent::Change) {
+                        this.rebuild(cx);
+                    }
+                },
+            );
+            let tree_subscription = cx.subscribe(
+                &tree_state,
+                |this: &mut ElementTree, _, event: &TreeEvent, _| {
+                    let id = match event {
+                        TreeEvent::Expanded(id) | TreeEvent::Collapsed(id) => id,
+                    };
+                    let Some(node) = this.nodes.get(id) else {
+                        return;
+                    };
+                    match event {
+                        TreeEvent::Expanded(_) => {
+                            this.collapsed.remove(&node.selection);
+                        }
+                        TreeEvent::Collapsed(_) => {
+                            this.collapsed.insert(node.selection.clone());
+                        }
+                    }
+                },
+            );
+            let mut this = Self {
+                search_input,
+                collapsed: Self::collapsed_by_default(root),
+                tree_state,
+                nodes: HashMap::new(),
+                ordered_nodes: Vec::new(),
+                node_count: 0,
+                file_name,
+                selection: selection.clone(),
+                editor,
+                _subscriptions: vec![search_subscription, tree_subscription],
+            };
+            this.load_nodes(nodes, selection, this.file_name.clone(), cx);
+            this
+        })
+    }
+
+    fn node_id(selection: &ElementSelection) -> SharedString {
+        let path = if selection.system_path.is_empty() {
+            "root".to_owned()
+        } else {
+            selection
+                .system_path
+                .iter()
+                .map(usize::to_string)
+                .collect::<Vec<_>>()
+                .join("-")
+        };
+        format!("{path}:{:?}", selection.kind).into()
+    }
+
+    fn load_nodes(
+        &mut self,
+        nodes: Vec<TreeNode>,
+        selection: ElementSelection,
+        file_name: String,
+        cx: &mut Context<Self>,
+    ) {
+        self.node_count = nodes.len();
+        self.file_name = file_name;
+        self.selection = selection.clone();
+        self.ordered_nodes = nodes;
+        self.nodes = self
+            .ordered_nodes
+            .iter()
+            .cloned()
+            .map(|node| (Self::node_id(&node.selection), node))
+            .collect();
+        self.rebuild_with_selection(Some(&selection), cx);
+    }
+
+    fn rebuild(&mut self, cx: &mut Context<Self>) {
+        let selection = self.selection.clone();
+        self.rebuild_with_selection(Some(&selection), cx);
+    }
+
+    fn rebuild_with_selection(
+        &mut self,
+        selected: Option<&ElementSelection>,
+        cx: &mut Context<Self>,
+    ) {
+        let query = self
+            .search_input
+            .read(cx)
+            .value()
+            .trim()
+            .to_ascii_lowercase();
+        let mut index = 0;
+        let items = Self::build_items(&self.ordered_nodes, &mut index, 0, &query, &self.collapsed);
+        let selected_id = selected.map(Self::node_id);
+        let selected_item = selected_id
+            .as_ref()
+            .and_then(|id| Self::find_item(&items, id))
+            .cloned();
+        self.tree_state.update(cx, |state, cx| {
+            state.set_items(items, cx);
+            state.set_selected_item(selected_item.as_ref(), cx);
+        });
+        cx.notify();
+    }
+
+    fn build_items(
+        nodes: &[TreeNode],
+        index: &mut usize,
+        level: usize,
+        query: &str,
+        collapsed: &HashSet<ElementSelection>,
+    ) -> Vec<TreeItem> {
+        let mut items = Vec::new();
+        while *index < nodes.len() {
+            if nodes[*index].level < level {
+                break;
+            }
+            if nodes[*index].level > level {
+                break;
+            }
+            let node = nodes[*index].clone();
+            *index += 1;
+            let child_level = nodes
+                .get(*index)
+                .filter(|next| next.level > level)
+                .map(|next| next.level);
+            let children = child_level
+                .map(|level| Self::build_items(nodes, index, level, query, collapsed))
+                .unwrap_or_default();
+            let matches = query.is_empty() || node.label.to_ascii_lowercase().contains(query);
+            if !matches && children.is_empty() {
+                continue;
+            }
+            let expanded = if query.is_empty() {
+                !collapsed.contains(&node.selection)
+            } else {
+                !children.is_empty()
+            };
+            items.push(
+                TreeItem::new(Self::node_id(&node.selection), node.label)
+                    .expanded(expanded)
+                    .children(children),
+            );
+        }
+        items
+    }
+
+    fn find_item<'a>(items: &'a [TreeItem], id: &SharedString) -> Option<&'a TreeItem> {
+        items.iter().find_map(|item| {
+            if &item.id == id {
+                Some(item)
+            } else {
+                Self::find_item(&item.children, id)
+            }
+        })
+    }
+
+    fn render_entry(
+        &mut self,
+        index: usize,
+        entry: &gpui_component::tree::TreeEntry,
+        selected: bool,
+        cx: &mut Context<Self>,
+    ) -> ListItem {
+        let item = entry.item();
+        let Some(node) = self.nodes.get(&item.id).cloned() else {
+            return ListItem::new(index).child(item.label.clone());
+        };
+        let editor = self.editor.clone();
+        let selection = node.selection.clone();
+        let add_parent = node.selection.clone();
+        let metadata_parent = node.selection.clone();
+        let can_add_child = node.selection.kind.can_add_child();
+        let can_add_element = node.selection.kind == ElementKind::SpaceSystem;
+        let icon = if node.selection.kind.uses_folder_icon() {
+            if entry.is_expanded() {
+                IconName::FolderOpen
+            } else {
+                IconName::Folder
+            }
+        } else {
+            IconName::File
+        };
+        ListItem::new(index)
+            .w_full()
+            .rounded_md()
+            .px_2()
+            .pl(px(10. + entry.depth() as f32 * 18.))
+            .selected(selected)
+            .child(
+                h_flex()
+                    .w_full()
+                    .gap_2()
+                    .child(Icon::new(icon).small())
+                    .child(div().flex_1().truncate().child(item.label.clone()))
+                    .when(can_add_child, |row| {
+                        let editor = editor.clone();
+                        row.child(
+                            Button::new(format!("{}-add", item.id))
+                                .ghost()
+                                .xsmall()
+                                .icon(IconName::Plus)
+                                .on_click(move |_, window, cx| {
+                                    cx.stop_propagation();
+                                    _ = editor.update(cx, |this, cx| {
+                                        this.add_tree_child(&add_parent, window, cx);
+                                    });
+                                }),
+                        )
+                    })
+                    .when(can_add_element, |row| {
+                        row.child(
+                            Button::new(format!("{}-add-metadata", item.id))
+                                .ghost()
+                                .xsmall()
+                                .icon(IconName::Plus)
+                                .dropdown_menu(move |menu, _, _| {
+                                    let space_system_editor = editor.clone();
+                                    let space_system_parent = metadata_parent.clone();
+                                    let telemetry_editor = editor.clone();
+                                    let telemetry_parent = metadata_parent.clone();
+                                    let command_editor = editor.clone();
+                                    let command_parent = metadata_parent.clone();
+                                    menu.item(
+                                        PopupMenuItem::new("SpaceSystem")
+                                            .icon(IconName::Folder)
+                                            .on_click(move |_, window, cx| {
+                                                _ = space_system_editor.update(cx, |this, cx| {
+                                                    this.add_space_system(
+                                                        &space_system_parent,
+                                                        window,
+                                                        cx,
+                                                    );
+                                                });
+                                            }),
+                                    )
+                                    .separator()
+                                    .item(
+                                        PopupMenuItem::new("TelemetryMetaData")
+                                            .icon(IconName::Folder)
+                                            .disabled(!node.can_add_telemetry_metadata)
+                                            .on_click(move |_, window, cx| {
+                                                _ = telemetry_editor.update(cx, |this, cx| {
+                                                    this.add_metadata(
+                                                        &telemetry_parent,
+                                                        ElementKind::TelemetryMetaData,
+                                                        window,
+                                                        cx,
+                                                    );
+                                                });
+                                            }),
+                                    )
+                                    .item(
+                                        PopupMenuItem::new("CommandMetaData")
+                                            .icon(IconName::Folder)
+                                            .disabled(!node.can_add_command_metadata)
+                                            .on_click(move |_, window, cx| {
+                                                _ = command_editor.update(cx, |this, cx| {
+                                                    this.add_metadata(
+                                                        &command_parent,
+                                                        ElementKind::CommandMetaData,
+                                                        window,
+                                                        cx,
+                                                    );
+                                                });
+                                            }),
+                                    )
+                                }),
+                        )
+                    }),
+            )
+            .on_mouse_down(
+                MouseButton::Left,
+                cx.listener(move |this, _, window, _| {
+                    let editor = this.editor.clone();
+                    let selection = selection.clone();
+                    window.on_next_frame(move |window, cx| {
+                        _ = editor.update(cx, |editor, cx| {
+                            if editor.document.selection == selection {
+                                return;
+                            }
+                            editor.save_selected_element(cx);
+                            editor.document.selection = selection;
+                            editor.load_selected_element(window, cx);
+                        });
+                    });
+                }),
+            )
+    }
+
     fn collapsed_by_default(root: &xtce::SpaceSystem) -> HashSet<ElementSelection> {
         let mut nodes = Vec::new();
         XtceDocument::collect_tree_nodes(root, &mut Vec::new(), 0, &mut nodes);
@@ -875,6 +1238,7 @@ impl ElementTree {
             .collect()
     }
 
+    #[cfg(test)]
     fn visible_nodes(nodes: Vec<TreeNode>, collapsed: &HashSet<ElementSelection>) -> Vec<TreeNode> {
         let mut hidden_below_level = None;
         let mut visible = Vec::with_capacity(nodes.len());
@@ -895,6 +1259,7 @@ impl ElementTree {
         visible
     }
 
+    #[allow(dead_code)]
     fn tree_item(
         id: SharedString,
         node: TreeNode,
@@ -1077,62 +1442,12 @@ impl ElementInspector {
     }
 }
 
-impl ElementTree {
-    fn render(
-        &self,
-        document: &XtceDocument,
-        draft_name: Option<&str>,
-        cx: &mut Context<XtceEditor>,
-    ) -> Div {
-        let mut nodes = Vec::new();
-        XtceDocument::collect_tree_nodes(&document.root, &mut Vec::new(), 0, &mut nodes);
-        let element_count = nodes.len();
-        let nodes = Self::visible_nodes(nodes, &self.collapsed);
-        let mut tree = v_flex()
-            .id("element-tree")
-            .flex_1()
-            .overflow_y_scroll()
-            .p_2()
-            .gap_0p5();
-
-        for mut node in nodes {
-            let path_id = if node.selection.system_path.is_empty() {
-                "root".to_owned()
-            } else {
-                node.selection
-                    .system_path
-                    .iter()
-                    .map(usize::to_string)
-                    .collect::<Vec<_>>()
-                    .join("-")
-            };
-            let id = format!("tree-{path_id}-{:?}", node.selection.kind);
-            let selected = node.selection == document.selection;
-            let selected_system =
-                XtceDocument::system_at_path(&document.root, &node.selection.system_path);
-            let can_add_telemetry_metadata = node.selection.kind == ElementKind::SpaceSystem
-                && selected_system.telemetry_meta_data.is_none();
-            let can_add_command_metadata = node.selection.kind == ElementKind::SpaceSystem
-                && selected_system.command_meta_data.is_none();
-            if selected && let Some(draft_name) = draft_name {
-                node.label = draft_name.to_owned();
-            }
-            let collapsed = self.collapsed.contains(&node.selection);
-            tree = tree.child(Self::tree_item(
-                id.into(),
-                node,
-                selected,
-                collapsed,
-                can_add_telemetry_metadata,
-                can_add_command_metadata,
-                cx,
-            ));
-        }
-
+impl Render for ElementTree {
+    fn render(&mut self, _: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+        let view = cx.entity();
         v_flex()
-            .w(px(292.))
+            .w_full()
             .h_full()
-            .flex_none()
             .border_r_1()
             .border_color(cx.theme().border)
             .bg(cx.theme().sidebar)
@@ -1151,7 +1466,7 @@ impl ElementTree {
                                 div()
                                     .text_xs()
                                     .text_color(cx.theme().muted_foreground)
-                                    .child(document.file_name.clone()),
+                                    .child(self.file_name.clone()),
                             ),
                     )
                     .child(
@@ -1169,7 +1484,21 @@ impl ElementTree {
                     .border_color(cx.theme().border)
                     .child(Input::new(&self.search_input).prefix(IconName::Search)),
             )
-            .child(tree)
+            .child(
+                div()
+                    .id("element-tree")
+                    .flex_1()
+                    .min_h_0()
+                    .p_2()
+                    .child(tree(
+                        &self.tree_state,
+                        move |index, entry, selected, _, cx| {
+                            view.update(cx, |this, cx| {
+                                this.render_entry(index, entry, selected, cx)
+                            })
+                        },
+                    )),
+            )
             .child(
                 h_flex()
                     .h(px(38.))
@@ -1179,7 +1508,7 @@ impl ElementTree {
                     .border_color(cx.theme().border)
                     .text_xs()
                     .text_color(cx.theme().muted_foreground)
-                    .child(format!("{element_count} elements"))
+                    .child(format!("{} elements", self.node_count))
                     .child(div().flex_1())
                     .child("XTCE 1.3"),
             )
@@ -1199,7 +1528,7 @@ impl ElementInspector {
             .element_title(kind, document.selected_system(), cx);
         let name_editor = self
             .forms
-            .render_name_editor(kind, document.selected_system());
+            .render_name_editor(kind, document.selected_system(), cx);
         let form = self.forms.render(kind, document.selected_system(), cx);
 
         v_flex()
@@ -1309,7 +1638,7 @@ impl ElementInspector {
                 .element_title(ElementKind::SpaceSystem, document.selected_system(), cx);
         let name_editor = self
             .forms
-            .render_name_editor(ElementKind::SpaceSystem, document.selected_system())
+            .render_name_editor(ElementKind::SpaceSystem, document.selected_system(), cx)
             .expect("SpaceSystem has a name editor");
 
         let identity_fields =
@@ -1449,12 +1778,11 @@ impl ElementInspector {
 }
 
 impl Render for XtceEditor {
-    fn render(&mut self, _: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
-        let draft_name = self.inspector.forms.draft_name(
-            self.document.selection.kind,
-            self.document.selected_system(),
-            cx,
-        );
+    fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+        let sheet_layer = Root::render_sheet_layer(window, cx);
+        let dialog_layer = Root::render_dialog_layer(window, cx);
+        let notification_layer = Root::render_notification_layer(window, cx);
+
         v_flex()
             .on_action(cx.listener(|this, _: &NewDocument, window, cx| {
                 this.new_document(window, cx);
@@ -1462,6 +1790,7 @@ impl Render for XtceEditor {
             .on_action(cx.listener(|this, _: &SaveDocument, window, cx| {
                 this.save_document(window, cx);
             }))
+            .relative()
             .size_full()
             .bg(cx.theme().background)
             .text_color(cx.theme().foreground)
@@ -1481,14 +1810,20 @@ impl Render for XtceEditor {
                 ),
             )
             .child(
-                h_flex()
-                    .id("workspace")
-                    .flex_1()
-                    .min_h_0()
-                    .overflow_hidden()
-                    .child(self.tree.render(&self.document, draft_name.as_deref(), cx))
-                    .child(self.inspector.render(&self.document, cx)),
+                div().flex_1().min_h_0().overflow_hidden().child(
+                    h_resizable("workspace")
+                        .child(
+                            resizable_panel()
+                                .size(px(292.))
+                                .size_range(px(220.)..px(520.))
+                                .child(self.tree.clone()),
+                        )
+                        .child(resizable_panel().child(self.inspector.render(&self.document, cx))),
+                ),
             )
+            .children(sheet_layer)
+            .children(dialog_layer)
+            .children(notification_layer)
     }
 }
 
@@ -1887,6 +2222,55 @@ mod tests {
                 .filter(|node| !node.has_children)
                 .all(|node| !collapsed.contains(&node.selection))
         );
+    }
+
+    #[test]
+    fn tree_state_items_preserve_the_document_hierarchy() {
+        let document = sample_document();
+        let mut nodes = Vec::new();
+        XtceDocument::collect_tree_nodes(&document, &mut Vec::new(), 0, &mut nodes);
+        let collapsed = HashSet::new();
+        let mut index = 0;
+
+        let items = ElementTree::build_items(&nodes, &mut index, 0, "", &collapsed);
+
+        assert_eq!(items.len(), 1);
+        assert_eq!(items[0].label.as_ref(), "ExampleMission");
+        assert!(
+            items[0]
+                .children
+                .iter()
+                .any(|item| item.label.as_ref() == "Payload")
+        );
+        assert!(
+            items[0]
+                .children
+                .iter()
+                .any(|item| item.label.as_ref() == "GroundSegment")
+        );
+    }
+
+    #[test]
+    fn tree_search_keeps_matching_items_and_their_ancestors() {
+        fn contains_label(items: &[gpui_component::tree::TreeItem], label: &str) -> bool {
+            items
+                .iter()
+                .any(|item| item.label.as_ref() == label || contains_label(&item.children, label))
+        }
+
+        let document = sample_document();
+        let mut nodes = Vec::new();
+        XtceDocument::collect_tree_nodes(&document, &mut Vec::new(), 0, &mut nodes);
+        let collapsed = ElementTree::collapsed_by_default(&document);
+        let mut index = 0;
+
+        let items = ElementTree::build_items(&nodes, &mut index, 0, "samplecount", &collapsed);
+
+        assert_eq!(items.len(), 1);
+        assert_eq!(items[0].label.as_ref(), "ExampleMission");
+        assert!(items[0].is_expanded());
+        assert!(contains_label(&items, "SampleCount"));
+        assert!(!contains_label(&items, "OperationalFlag"));
     }
 
     #[test]

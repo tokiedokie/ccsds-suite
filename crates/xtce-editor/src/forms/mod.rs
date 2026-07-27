@@ -1,9 +1,11 @@
 mod alias_set;
 mod ancillary_data_set;
+mod argument_type;
 mod command_metadata;
 mod data_encoding;
 mod element_forms;
 mod header;
+mod meta_command;
 mod parameter;
 mod parameter_set;
 mod parameter_type;
@@ -13,9 +15,10 @@ mod space_system_description;
 mod space_system_identity;
 mod telemetry_metadata;
 
-use gpui::{App, Div, Entity, ParentElement, Styled, div};
+use gpui::{App, Div, Entity, ParentElement, Styled, div, prelude::FluentBuilder};
 use gpui_component::{
     ActiveTheme, StyledExt,
+    form::{field as form_field, v_form},
     input::{Input, InputState},
     v_flex,
 };
@@ -44,23 +47,20 @@ pub(super) fn field(
     label: &'static str,
     hint: &'static str,
     input: &Entity<InputState>,
-    cx: &App,
+    _cx: &App,
 ) -> Div {
-    v_flex()
-        .gap_2()
-        .w_full()
-        .child(
-            gpui_component::h_flex()
-                .justify_between()
-                .child(div().text_sm().font_medium().child(label))
-                .child(
-                    div()
-                        .text_xs()
-                        .text_color(cx.theme().muted_foreground)
-                        .child(hint),
-                ),
-        )
-        .child(Input::new(input))
+    let required = hint == "Required";
+    v_flex().w_full().child(
+        v_form().child(
+            form_field()
+                .label(label)
+                .required(required)
+                .when(!required && !hint.is_empty(), |field| {
+                    field.description(hint)
+                })
+                .child(Input::new(input)),
+        ),
+    )
 }
 
 pub(super) fn optional_value(value: String) -> Option<String> {

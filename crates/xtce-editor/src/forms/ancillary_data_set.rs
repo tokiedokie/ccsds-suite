@@ -17,7 +17,7 @@ impl AncillaryDataSetForm {
         Self {
             entries_input: cx.new(|cx| {
                 InputState::new(window, cx)
-                    .multi_line(true)
+                    .auto_grow(4, 20)
                     .default_value(Self::encode(data_set))
             }),
         }

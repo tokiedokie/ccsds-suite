@@ -1,4 +1,4 @@
-use gpui::{App, AppContext, Context, Div, Entity, ParentElement, Styled, Window};
+use gpui::{App, AppContext, Context, Div, Entity, ParentElement, Styled, Subscription, Window};
 use gpui_component::{
     h_flex,
     input::{Input, InputEvent, InputState},
@@ -13,6 +13,7 @@ pub(super) struct SpaceSystemIdentityFields {
     asset_type_input: Entity<InputState>,
     status_input: Entity<InputState>,
     base_input: Entity<InputState>,
+    _subscriptions: Vec<Subscription>,
 }
 
 impl SpaceSystemIdentityFields {
@@ -23,8 +24,10 @@ impl SpaceSystemIdentityFields {
     ) -> Self {
         let name_input =
             cx.new(|cx| InputState::new(window, cx).default_value(system.name.clone()));
-        cx.subscribe(&name_input, |_, _, _: &InputEvent, cx| cx.notify())
-            .detach();
+        let name_subscription = cx.subscribe(&name_input, |editor, _, _: &InputEvent, cx| {
+            editor.refresh_tree(cx);
+            cx.notify();
+        });
         Self {
             name_input,
             asset_type_input: cx
@@ -36,6 +39,7 @@ impl SpaceSystemIdentityFields {
             base_input: cx.new(|cx| {
                 InputState::new(window, cx).default_value(system.base.clone().unwrap_or_default())
             }),
+            _subscriptions: vec![name_subscription],
         }
     }
 
