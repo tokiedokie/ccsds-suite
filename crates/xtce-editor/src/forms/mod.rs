@@ -6,6 +6,7 @@ mod command_metadata;
 mod container_binary_encoding;
 mod container_rate;
 mod data_encoding;
+mod default_calibrator;
 mod element_forms;
 mod enumeration_list;
 mod header;

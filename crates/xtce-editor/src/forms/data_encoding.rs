@@ -10,7 +10,7 @@ use gpui_component::{
 };
 use strum::{Display, EnumString, VariantArray};
 
-use super::{field, impl_select_item};
+use super::{default_calibrator::DefaultCalibratorForm, field, impl_select_item};
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(crate) enum DataEncodingKind {
@@ -162,6 +162,7 @@ pub(super) struct DataEncodingForm {
     float_size_select: Entity<SelectState<Vec<FloatSizeChoice>>>,
     size_in_bits_input: Entity<InputState>,
     change_threshold_input: Entity<InputState>,
+    default_calibrator: Entity<DefaultCalibratorForm>,
     _subscriptions: Vec<Subscription>,
 }
 
@@ -214,6 +215,11 @@ impl DataEncodingForm {
             );
             let size_in_bits_input = input(&values.size_in_bits, window, cx);
             let change_threshold_input = input(&values.change_threshold, window, cx);
+            let default_calibrator = DefaultCalibratorForm::new(
+                encoding.and_then(DataEncodingRef::default_calibrator),
+                window,
+                cx,
+            );
             let kind_subscription = cx.subscribe_in(
                 &kind_select,
                 window,
@@ -281,6 +287,7 @@ impl DataEncodingForm {
                 float_size_select,
                 size_in_bits_input,
                 change_threshold_input,
+                default_calibrator,
                 _subscriptions: vec![kind_subscription],
             }
         })
@@ -339,6 +346,13 @@ impl DataEncodingForm {
             window,
             cx,
         );
+        self.default_calibrator.update(cx, |form, cx| {
+            form.load(
+                encoding.and_then(DataEncodingRef::default_calibrator),
+                window,
+                cx,
+            );
+        });
         cx.notify();
     }
 
@@ -351,7 +365,10 @@ impl DataEncodingForm {
             .kind()
     }
 
-    pub(super) fn apply_to(&self, encoding: DataEncodingMut<'_>, cx: &App) {
+    pub(super) fn apply_to(&self, mut encoding: DataEncodingMut<'_>, cx: &App) {
+        if let Some(calibrator) = encoding.default_calibrator_mut() {
+            self.default_calibrator.read(cx).apply_to(calibrator, cx);
+        }
         DataEncodingValues {
             bit_order: selected_value(
                 &self.bit_order_select,
@@ -466,6 +483,9 @@ impl DataEncodingForm {
                     cx,
                 )),
         );
+        if matches!(kind, DataEncodingKind::Float | DataEncodingKind::Integer) {
+            form = form.child(self.default_calibrator.clone());
+        }
         form
     }
 }
@@ -484,13 +504,21 @@ pub(super) enum DataEncodingRef<'a> {
     String(&'a xtce::StringDataEncodingType),
 }
 
-impl DataEncodingRef<'_> {
+impl<'a> DataEncodingRef<'a> {
     fn kind(self) -> DataEncodingKind {
         match self {
             Self::Binary(_) => DataEncodingKind::Binary,
             Self::Float(_) => DataEncodingKind::Float,
             Self::Integer(_) => DataEncodingKind::Integer,
             Self::String(_) => DataEncodingKind::String,
+        }
+    }
+
+    fn default_calibrator(self) -> Option<&'a xtce::CalibratorType> {
+        match self {
+            Self::Float(value) => value.default_calibrator.as_ref(),
+            Self::Integer(value) => value.default_calibrator.as_ref(),
+            Self::Binary(_) | Self::String(_) => None,
         }
     }
 }
@@ -500,6 +528,16 @@ pub(super) enum DataEncodingMut<'a> {
     Float(&'a mut xtce::FloatDataEncodingType),
     Integer(&'a mut xtce::IntegerDataEncodingType),
     String(&'a mut xtce::StringDataEncodingType),
+}
+
+impl DataEncodingMut<'_> {
+    fn default_calibrator_mut(&mut self) -> Option<&mut Option<xtce::CalibratorType>> {
+        match self {
+            Self::Float(value) => Some(&mut value.default_calibrator),
+            Self::Integer(value) => Some(&mut value.default_calibrator),
+            Self::Binary(_) | Self::String(_) => None,
+        }
+    }
 }
 
 pub(super) fn find_data_encoding(
