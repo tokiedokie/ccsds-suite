@@ -18,8 +18,8 @@ impl TelemetryMetaDataForm {
                 &["Element", "Items"],
                 telemetry_sections(metadata),
                 vec![
-                    Some(ElementKind::TelemetryParameterTypeSet),
-                    Some(ElementKind::TelemetryParameterSet),
+                    None,
+                    None,
                     Some(ElementKind::ContainerSet),
                     Some(ElementKind::MessageSet),
                     Some(ElementKind::TelemetryStreamSet),

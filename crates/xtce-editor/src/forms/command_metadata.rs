@@ -21,8 +21,8 @@ impl CommandMetaDataForm {
                 &["Element", "Items"],
                 command_sections(metadata),
                 vec![
-                    Some(ElementKind::CommandParameterTypeSet),
-                    Some(ElementKind::CommandParameterSet),
+                    None,
+                    None,
                     Some(ElementKind::ArgumentTypeSet),
                     Some(ElementKind::MetaCommandSet),
                     Some(ElementKind::CommandContainerSet),

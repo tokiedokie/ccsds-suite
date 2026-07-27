@@ -93,6 +93,16 @@ impl ElementKind {
         )
     }
 
+    fn is_directory_only(self) -> bool {
+        matches!(
+            self,
+            Self::TelemetryParameterTypeSet
+                | Self::TelemetryParameterSet
+                | Self::CommandParameterTypeSet
+                | Self::CommandParameterSet
+        )
+    }
+
     fn uses_folder_icon(self) -> bool {
         matches!(
             self,
@@ -118,9 +128,36 @@ struct ElementSelection {
 }
 
 #[derive(Clone)]
+pub(crate) struct DraggedTelemetryParameter {
+    reference: String,
+}
+
+struct ParameterDragPreview {
+    reference: String,
+}
+
+impl Render for ParameterDragPreview {
+    fn render(&mut self, _: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+        h_flex()
+            .gap_2()
+            .px_3()
+            .py_2()
+            .rounded_md()
+            .border_1()
+            .border_color(cx.theme().border)
+            .bg(cx.theme().background)
+            .shadow_md()
+            .text_sm()
+            .child(Icon::new(IconName::File).small())
+            .child(self.reference.clone())
+    }
+}
+
+#[derive(Clone)]
 struct TreeNode {
     selection: ElementSelection,
     label: String,
+    drag_parameter_reference: Option<String>,
     level: usize,
     has_children: bool,
     can_add_telemetry_metadata: bool,
@@ -226,7 +263,13 @@ impl XtceEditor {
             .iter_mut()
             .find(|node| node.selection == self.document.selection)
         {
-            selected.label = draft_name;
+            selected.label = draft_name.clone();
+            if matches!(
+                self.document.selection.kind,
+                ElementKind::TelemetryParameter(_)
+            ) {
+                selected.drag_parameter_reference = Some(draft_name);
+            }
         }
         let selection = self.document.selection.clone();
         let file_name = self.document.file_name.clone();
@@ -860,6 +903,7 @@ impl XtceDocument {
                 kind: ElementKind::SpaceSystem,
             },
             label: system.name.clone(),
+            drag_parameter_reference: None,
             level,
             has_children,
             can_add_telemetry_metadata: system.telemetry_meta_data.is_none(),
@@ -909,6 +953,12 @@ impl XtceDocument {
                 !parameters.is_empty(),
             );
             for (index, parameter) in parameters.iter().enumerate() {
+                let reference = match parameter {
+                    xtce::ParameterSetTypeContent::Parameter(parameter) => {
+                        Some(parameter.name.clone())
+                    }
+                    xtce::ParameterSetTypeContent::ParameterRef(_) => None,
+                };
                 Self::push_named_tree_node(
                     nodes,
                     path,
@@ -916,6 +966,10 @@ impl XtceDocument {
                     Self::parameter_label(parameter),
                     child_level + 2,
                 );
+                nodes
+                    .last_mut()
+                    .expect("the parameter tree node was just added")
+                    .drag_parameter_reference = reference;
             }
             let containers = metadata
                 .container_set
@@ -1074,6 +1128,7 @@ impl XtceDocument {
                 kind,
             },
             label: kind.label().to_owned(),
+            drag_parameter_reference: None,
             level,
             has_children,
             can_add_telemetry_metadata: false,
@@ -1094,6 +1149,7 @@ impl XtceDocument {
                 kind,
             },
             label,
+            drag_parameter_reference: None,
             level,
             has_children: false,
             can_add_telemetry_metadata: false,
@@ -1360,6 +1416,11 @@ impl ElementTree {
         let metadata_parent = node.selection.clone();
         let can_add_child = node.selection.kind.can_add_child();
         let can_add_element = node.selection.kind == ElementKind::SpaceSystem;
+        let directory_only = node.selection.kind.is_directory_only();
+        let dragged_parameter = node
+            .drag_parameter_reference
+            .clone()
+            .map(|reference| DraggedTelemetryParameter { reference });
         let icon = if node.selection.kind.uses_folder_icon() {
             if entry.is_expanded() {
                 IconName::FolderOpen
@@ -1377,8 +1438,16 @@ impl ElementTree {
             .selected(selected)
             .child(
                 h_flex()
+                    .id(format!("tree-node-drag-{index}"))
                     .w_full()
                     .gap_2()
+                    .when_some(dragged_parameter, |row, dragged| {
+                        row.cursor_grab().on_drag(dragged, |dragged, _, _, cx| {
+                            cx.stop_propagation();
+                            let reference = dragged.reference.clone();
+                            cx.new(|_| ParameterDragPreview { reference })
+                        })
+                    })
                     .child(Icon::new(icon).small())
                     .child(div().flex_1().truncate().child(item.label.clone()))
                     .when(can_add_child, |row| {
@@ -1457,9 +1526,8 @@ impl ElementTree {
                         )
                     }),
             )
-            .on_mouse_down(
-                MouseButton::Left,
-                cx.listener(move |this, _, window, _| {
+            .when(!directory_only, |item| {
+                item.on_click(cx.listener(move |this, _, window, _| {
                     let editor = this.editor.clone();
                     let selection = selection.clone();
                     window.on_next_frame(move |window, cx| {
@@ -1472,8 +1540,8 @@ impl ElementTree {
                             editor.load_selected_element(window, cx);
                         });
                     });
-                }),
-            )
+                }))
+            })
     }
 
     fn collapsed_by_default(root: &xtce::SpaceSystem) -> HashSet<ElementSelection> {
@@ -1778,7 +1846,6 @@ impl ElementInspector {
             .forms
             .render_name_editor(kind, document.selected_system(), cx);
         let form = self.forms.render(kind, document.selected_system(), cx);
-
         v_flex()
             .flex_1()
             .min_w_0()
@@ -2158,6 +2225,19 @@ mod tests {
     use std::collections::HashSet;
 
     use super::{ElementKind, ElementSelection, ElementTree, XtceDocument, startup_document};
+
+    #[test]
+    fn parameter_collections_are_directory_only_nodes() {
+        for kind in [
+            ElementKind::TelemetryParameterTypeSet,
+            ElementKind::TelemetryParameterSet,
+            ElementKind::CommandParameterTypeSet,
+            ElementKind::CommandParameterSet,
+        ] {
+            assert!(kind.is_directory_only());
+        }
+        assert!(!ElementKind::ContainerSet.is_directory_only());
+    }
 
     fn sample_document() -> xtce::SpaceSystem {
         xtce::from_str(include_str!("../../xtce/tests/fixtures/sample.xml"))

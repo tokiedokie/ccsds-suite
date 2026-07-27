@@ -30,7 +30,7 @@ use super::{
     container_binary_encoding::ContainerBinaryEncodingForm, container_rate::ContainerRateForm,
     field, impl_select_item, optional_value,
 };
-use crate::XtceEditor;
+use crate::{DraggedTelemetryParameter, XtceEditor};
 
 #[derive(Clone, Copy, Debug, Display, EnumString, VariantArray, PartialEq, Eq)]
 enum AbstractChoice {
@@ -642,6 +642,15 @@ impl TelemetryEntryListView {
         cx.notify();
     }
 
+    fn add_parameter_reference(&mut self, reference: String, cx: &mut Context<Self>) {
+        let index = self.rows.len();
+        self.rows
+            .push(EntryRowData::new_parameter_reference(reference));
+        self.list_state.splice(index..index, 1);
+        self.list_state.scroll_to_reveal_item(index);
+        cx.notify();
+    }
+
     fn render_list_item(
         &mut self,
         index: usize,
@@ -727,9 +736,32 @@ impl Render for TelemetryEntryListView {
     fn render(&mut self, _: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         let row_count = self.rows.len();
         let optional_columns_visible = self.optional_columns_visible.get();
+        let reference_context = self.context.clone();
         v_flex()
+            .id("telemetry-entry-list-drop-target")
             .w_full()
             .gap_3()
+            .can_drop(move |value, _, _| {
+                value
+                    .downcast_ref::<DraggedTelemetryParameter>()
+                    .is_some_and(|parameter| {
+                        reference_context
+                            .borrow()
+                            .parameter_names
+                            .contains(&parameter.reference)
+                    })
+            })
+            .drag_over::<DraggedTelemetryParameter>(|style, _, _, cx| {
+                style
+                    .border_2()
+                    .border_color(cx.theme().drag_border)
+                    .bg(cx.theme().sidebar_accent.opacity(0.25))
+            })
+            .on_drop(
+                cx.listener(|this, parameter: &DraggedTelemetryParameter, _, cx| {
+                    this.add_parameter_reference(parameter.reference.clone(), cx);
+                }),
+            )
             .child(
                 h_flex()
                     .justify_between()
@@ -880,6 +912,19 @@ impl EntryRowData {
                 description: String::new(),
             },
         }
+    }
+
+    fn new_parameter_reference(reference: String) -> Self {
+        let mut row = Self::new_editable(EntryKind::ParameterReference);
+        let EntryRowContent::Editable {
+            reference: row_reference,
+            ..
+        } = &mut row.content
+        else {
+            unreachable!()
+        };
+        *row_reference = reference;
+        row
     }
 }
 
@@ -1454,9 +1499,23 @@ fn touch_cache(cache_order: &mut VecDeque<usize>, index: usize) {
 #[cfg(test)]
 mod tests {
     use super::{
-        EntryKind, apply_entry_rows, decode_restriction_criteria, fixed_integer_value,
-        restriction_criteria_values, rows_from_entry_list,
+        EntryKind, EntryRowContent, EntryRowData, apply_entry_rows, decode_restriction_criteria,
+        fixed_integer_value, restriction_criteria_values, rows_from_entry_list,
     };
+
+    #[test]
+    fn dropped_parameter_becomes_a_parameter_reference_row() {
+        let row = EntryRowData::new_parameter_reference("temperature".to_owned());
+
+        assert!(matches!(
+            row.content,
+            EntryRowContent::Editable {
+                kind: EntryKind::ParameterReference,
+                reference,
+                ..
+            } if reference == "temperature"
+        ));
+    }
 
     #[test]
     fn blank_idle_pattern_uses_the_schema_default() {
