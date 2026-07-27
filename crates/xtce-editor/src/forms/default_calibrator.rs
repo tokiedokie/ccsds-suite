@@ -12,12 +12,16 @@ use gpui_component::{
 };
 use strum::{Display, EnumString, VariantArray};
 
-use super::{field, impl_select_item, optional_value};
+use super::{
+    field, impl_select_item, optional_value,
+    rpn_operation::{RpnOperationEntry, RpnOperationForm},
+};
 
 #[derive(Clone, Copy, Debug, Display, EnumString, VariantArray, PartialEq, Eq)]
 enum CalibratorKind {
     Polynomial,
     Spline,
+    MathOperation,
 }
 impl_select_item!(CalibratorKind);
 
@@ -37,13 +41,13 @@ struct CalibratorRow {
 
 pub(super) struct DefaultCalibratorForm {
     present: bool,
-    unsupported: bool,
     kind: CalibratorKind,
     kind_select: Entity<SelectState<Vec<CalibratorKind>>>,
     name: Entity<InputState>,
     short_description: Entity<InputState>,
     order: Entity<InputState>,
     extrapolate: Entity<SelectState<Vec<BooleanChoice>>>,
+    math_operation: Entity<RpnOperationForm>,
     rows: Vec<Entity<CalibratorRow>>,
 }
 
@@ -66,6 +70,7 @@ impl DefaultCalibratorForm {
         cx.new(move |cx| {
             let kind_select = select(values.kind, window, cx);
             let rows = row_entities(&values.rows, window, cx);
+            let math_operation = RpnOperationForm::new(values.math_operation, window, cx);
             let kind_subscription = cx.subscribe_in(
                 &kind_select,
                 window,
@@ -77,7 +82,6 @@ impl DefaultCalibratorForm {
                         return;
                     }
                     this.kind = *kind;
-                    this.unsupported = false;
                     this.rows = row_entities(&default_rows(*kind), window, cx);
                     cx.notify();
                 },
@@ -85,13 +89,13 @@ impl DefaultCalibratorForm {
             kind_subscription.detach();
             Self {
                 present: calibrator.is_some(),
-                unsupported: values.unsupported,
                 kind: values.kind,
                 kind_select,
                 name: input(&values.name, window, cx),
                 short_description: input(&values.short_description, window, cx),
                 order: input(&values.order, window, cx),
                 extrapolate: select_boolean(values.extrapolate, window, cx),
+                math_operation,
                 rows,
             }
         })
@@ -105,7 +109,6 @@ impl DefaultCalibratorForm {
     ) {
         let values = CalibratorValues::from_calibrator(calibrator);
         self.present = calibrator.is_some();
-        self.unsupported = values.unsupported;
         self.kind = values.kind;
         self.kind_select.update(cx, |select, cx| {
             select.set_selected_value(&values.kind, window, cx);
@@ -128,6 +131,9 @@ impl DefaultCalibratorForm {
                 cx,
             );
         });
+        self.math_operation.update(cx, |form, cx| {
+            form.load(values.math_operation, window, cx);
+        });
         self.rows = row_entities(&values.rows, window, cx);
         cx.notify();
     }
@@ -135,9 +141,6 @@ impl DefaultCalibratorForm {
     pub(super) fn apply_to(&self, calibrator: &mut Option<xtce::CalibratorType>, cx: &App) {
         if !self.present {
             *calibrator = None;
-            return;
-        }
-        if self.unsupported {
             return;
         }
         let calibrator = calibrator.get_or_insert_with(|| xtce::CalibratorType {
@@ -252,6 +255,48 @@ impl DefaultCalibratorForm {
                     );
                 }
             }
+            CalibratorKind::MathOperation => {
+                let entries = self
+                    .math_operation
+                    .read(cx)
+                    .entries(cx)
+                    .into_iter()
+                    .map(math_calibrator_content)
+                    .collect::<Vec<_>>();
+                if let Some(existing) =
+                    calibrator
+                        .content
+                        .iter_mut()
+                        .find_map(|content| match content {
+                            xtce::CalibratorTypeContent::MathOperationCalibrator(value) => {
+                                Some(value)
+                            }
+                            _ => None,
+                        })
+                {
+                    let ancillary =
+                        std::mem::take(&mut existing.content)
+                            .into_iter()
+                            .find(|content| {
+                                matches!(
+                                    content,
+                                    xtce::MathOperationCalibratorTypeContent::AncillaryDataSet(_)
+                                )
+                            });
+                    existing.content = ancillary.into_iter().chain(entries).collect();
+                } else {
+                    replace_algorithm(
+                        calibrator,
+                        xtce::CalibratorTypeContent::MathOperationCalibrator(
+                            xtce::MathOperationCalibratorType {
+                                name: None,
+                                short_description: None,
+                                content: entries,
+                            },
+                        ),
+                    );
+                }
+            }
         }
     }
 
@@ -294,6 +339,17 @@ impl DefaultCalibratorForm {
                     .collect::<Vec<_>>();
                 format!("f(x): {}", points.join(" → "))
             }
+            CalibratorKind::MathOperation => {
+                let operation = self
+                    .math_operation
+                    .read(cx)
+                    .entries(cx)
+                    .iter()
+                    .map(rpn_entry_preview)
+                    .collect::<Vec<_>>()
+                    .join("  ");
+                format!("RPN: {operation}")
+            }
         }
     }
 }
@@ -317,7 +373,6 @@ impl Render for DefaultCalibratorForm {
                             .label("Remove default calibrator")
                             .on_click(cx.listener(|this, _, _, cx| {
                                 this.present = false;
-                                this.unsupported = false;
                                 cx.notify();
                             }))
                     } else {
@@ -327,20 +382,11 @@ impl Render for DefaultCalibratorForm {
                             .label("Add default calibrator")
                             .on_click(cx.listener(|this, _, _, cx| {
                                 this.present = true;
-                                this.unsupported = false;
                                 cx.notify();
                             }))
                     }),
             )
-            .when(present && self.unsupported, |form| {
-                form.child(
-                    div()
-                        .text_sm()
-                        .text_color(cx.theme().muted_foreground)
-                        .child("MathOperationCalibrator is preserved without modification."),
-                )
-            })
-            .when(present && !self.unsupported, |form| {
+            .when(present, |form| {
                 form.child(
                     v_flex()
                         .gap_4()
@@ -392,7 +438,12 @@ impl Render for DefaultCalibratorForm {
                                         .child(formula),
                                 ),
                         )
-                        .child(render_rows(kind, &self.rows, cx)),
+                        .when(kind == CalibratorKind::MathOperation, |body| {
+                            body.child(self.math_operation.clone())
+                        })
+                        .when(kind != CalibratorKind::MathOperation, |body| {
+                            body.child(render_rows(kind, &self.rows, cx))
+                        }),
                 )
             })
     }
@@ -501,19 +552,18 @@ fn render_rows(
 }
 
 struct CalibratorValues {
-    unsupported: bool,
     kind: CalibratorKind,
     name: String,
     short_description: String,
     order: String,
     extrapolate: bool,
+    math_operation: Vec<RpnOperationEntry>,
     rows: Vec<CalibratorRowData>,
 }
 
 impl CalibratorValues {
     fn from_calibrator(value: Option<&xtce::CalibratorType>) -> Self {
         let mut result = Self {
-            unsupported: false,
             kind: CalibratorKind::Polynomial,
             name: value
                 .and_then(|value| value.name.clone())
@@ -523,6 +573,7 @@ impl CalibratorValues {
                 .unwrap_or_default(),
             order: "1".to_owned(),
             extrapolate: false,
+            math_operation: Vec::new(),
             rows: default_rows(CalibratorKind::Polynomial),
         };
         let Some(value) = value else {
@@ -559,8 +610,10 @@ impl CalibratorValues {
                         })
                         .collect();
                 }
-                xtce::CalibratorTypeContent::MathOperationCalibrator(_) => {
-                    result.unsupported = true;
+                xtce::CalibratorTypeContent::MathOperationCalibrator(value) => {
+                    result.kind = CalibratorKind::MathOperation;
+                    result.math_operation = rpn_entries_from_calibrator(&value.content);
+                    result.rows = Vec::new();
                 }
                 xtce::CalibratorTypeContent::AncillaryDataSet(_) => {}
             }
@@ -595,6 +648,72 @@ fn default_rows(kind: CalibratorKind) -> Vec<CalibratorRowData> {
                 third: "1".to_owned(),
             },
         ],
+        CalibratorKind::MathOperation => Vec::new(),
+    }
+}
+
+fn rpn_entries_from_calibrator(
+    content: &[xtce::MathOperationCalibratorTypeContent],
+) -> Vec<RpnOperationEntry> {
+    content
+        .iter()
+        .filter_map(|entry| match entry {
+            xtce::MathOperationCalibratorTypeContent::ValueOperand(value) => {
+                Some(RpnOperationEntry::Value(value.clone()))
+            }
+            xtce::MathOperationCalibratorTypeContent::ThisParameterOperand(value) => {
+                Some(RpnOperationEntry::ThisParameter(value.clone()))
+            }
+            xtce::MathOperationCalibratorTypeContent::Operator(value) => {
+                Some(RpnOperationEntry::Operator(value.clone()))
+            }
+            xtce::MathOperationCalibratorTypeContent::ParameterInstanceRefOperand(value) => {
+                Some(RpnOperationEntry::ParameterInstance {
+                    parameter_ref: value.parameter_ref.clone(),
+                    instance: value.instance,
+                    use_calibrated_value: value.use_calibrated_value,
+                })
+            }
+            xtce::MathOperationCalibratorTypeContent::AncillaryDataSet(_) => None,
+        })
+        .collect()
+}
+
+fn math_calibrator_content(entry: RpnOperationEntry) -> xtce::MathOperationCalibratorTypeContent {
+    match entry {
+        RpnOperationEntry::Value(value) => {
+            xtce::MathOperationCalibratorTypeContent::ValueOperand(value)
+        }
+        RpnOperationEntry::ThisParameter(value) => {
+            xtce::MathOperationCalibratorTypeContent::ThisParameterOperand(value)
+        }
+        RpnOperationEntry::Operator(value) => {
+            xtce::MathOperationCalibratorTypeContent::Operator(value)
+        }
+        RpnOperationEntry::ParameterInstance {
+            parameter_ref,
+            instance,
+            use_calibrated_value,
+        } => xtce::MathOperationCalibratorTypeContent::ParameterInstanceRefOperand(
+            xtce::ParameterInstanceRefType {
+                parameter_ref,
+                instance,
+                use_calibrated_value,
+            },
+        ),
+    }
+}
+
+fn rpn_entry_preview(entry: &RpnOperationEntry) -> String {
+    match entry {
+        RpnOperationEntry::Value(value) => value.clone(),
+        RpnOperationEntry::ThisParameter(value) => format!("this({value})"),
+        RpnOperationEntry::Operator(value) => value.clone(),
+        RpnOperationEntry::ParameterInstance {
+            parameter_ref,
+            instance,
+            ..
+        } => format!("{parameter_ref}[{instance}]"),
     }
 }
 
@@ -682,7 +801,10 @@ fn select_boolean(
 
 #[cfg(test)]
 mod tests {
-    use super::{CalibratorKind, CalibratorValues};
+    use super::{
+        CalibratorKind, CalibratorValues, math_calibrator_content, rpn_entries_from_calibrator,
+    };
+    use crate::forms::rpn_operation::RpnOperationEntry;
 
     #[test]
     fn polynomial_calibrator_is_loaded_as_editable_term_rows() {
@@ -715,5 +837,43 @@ mod tests {
         assert_eq!(values.rows.len(), 2);
         assert_eq!(values.rows[1].first, "0.25");
         assert_eq!(values.rows[1].second, "1");
+    }
+
+    #[test]
+    fn math_operation_calibrator_is_loaded_as_editable_rpn() {
+        let entries = vec![
+            RpnOperationEntry::ThisParameter("raw".to_owned()),
+            RpnOperationEntry::Value("2".to_owned()),
+            RpnOperationEntry::Operator("*".to_owned()),
+            RpnOperationEntry::ParameterInstance {
+                parameter_ref: "P1".to_owned(),
+                instance: 1,
+                use_calibrated_value: false,
+            },
+        ];
+        let content = entries
+            .clone()
+            .into_iter()
+            .map(math_calibrator_content)
+            .collect::<Vec<_>>();
+        assert_eq!(rpn_entries_from_calibrator(&content), entries);
+
+        let calibrator = xtce::CalibratorType {
+            name: Some("scale".to_owned()),
+            short_description: None,
+            content: vec![xtce::CalibratorTypeContent::MathOperationCalibrator(
+                xtce::MathOperationCalibratorType {
+                    name: None,
+                    short_description: None,
+                    content,
+                },
+            )],
+        };
+        let values = CalibratorValues::from_calibrator(Some(&calibrator));
+        assert_eq!(values.kind, CalibratorKind::MathOperation);
+        assert!(matches!(
+            &values.math_operation[2],
+            RpnOperationEntry::Operator(value) if value == "*"
+        ));
     }
 }

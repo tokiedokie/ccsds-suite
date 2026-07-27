@@ -9,7 +9,10 @@ use gpui_component::{
 };
 
 use super::{
-    alias_set::AliasSetForm, ancillary_data_set::AncillaryDataSetForm, field, optional_value,
+    alias_set::AliasSetForm,
+    ancillary_data_set::AncillaryDataSetForm,
+    field, optional_value,
+    rpn_operation::{RpnOperationEntry, RpnOperationForm},
 };
 use crate::XtceEditor;
 
@@ -21,7 +24,7 @@ pub(super) struct MathAlgorithmForm {
     operation_name_input: Entity<InputState>,
     operation_short_description_input: Entity<InputState>,
     output_parameter_ref_input: Entity<InputState>,
-    operation_entries_input: Entity<InputState>,
+    operation_entries: Entity<RpnOperationForm>,
     trigger_set_name_input: Entity<InputState>,
     trigger_rate_input: Entity<InputState>,
     triggers_input: Entity<InputState>,
@@ -57,7 +60,7 @@ impl MathAlgorithmForm {
                 cx,
             ),
             output_parameter_ref_input: input(&values.output_parameter_ref, false, window, cx),
-            operation_entries_input: input(&values.operation_entries, true, window, cx),
+            operation_entries: RpnOperationForm::new(values.operation_entries, window, cx),
             trigger_set_name_input: input(&values.trigger_set_name, false, window, cx),
             trigger_rate_input: input(&values.trigger_rate, false, window, cx),
             triggers_input: input(&values.triggers, true, window, cx),
@@ -102,13 +105,15 @@ impl MathAlgorithmForm {
                 &self.output_parameter_ref_input,
                 values.output_parameter_ref,
             ),
-            (&self.operation_entries_input, values.operation_entries),
             (&self.trigger_set_name_input, values.trigger_set_name),
             (&self.trigger_rate_input, values.trigger_rate),
             (&self.triggers_input, values.triggers),
         ] {
             input.update(cx, |input, cx| input.set_value(value, window, cx));
         }
+        self.operation_entries.update(cx, |form, cx| {
+            form.load(values.operation_entries, window, cx);
+        });
         self.alias_set.load(
             algorithm.and_then(|algorithm| algorithm.alias_set.as_ref()),
             window,
@@ -157,7 +162,13 @@ impl MathAlgorithmForm {
         let mut ancillary_data_set = take_operation_ancillary_data_set(&mut operation.content);
         self.operation_ancillary_data_set
             .apply_to_option(&mut ancillary_data_set, cx);
-        let entries = decode_operation_entries(&value(&self.operation_entries_input, cx));
+        let entries = self
+            .operation_entries
+            .read(cx)
+            .entries(cx)
+            .into_iter()
+            .map(triggered_math_content)
+            .collect();
         let trigger_set = decode_triggers(
             &value(&self.trigger_set_name_input, cx),
             &value(&self.trigger_rate_input, cx),
@@ -217,12 +228,7 @@ impl MathAlgorithmForm {
                         &self.operation_short_description_input,
                         cx,
                     ))
-                    .child(field(
-                        "Operation entries",
-                        "RPN, one per line: value | x, this | name, operator | +, or parameter | ref | instance | calibrated",
-                        &self.operation_entries_input,
-                        cx,
-                    ))
+                    .child(self.operation_entries.clone())
                     .child(self.operation_ancillary_data_set.render(cx)),
             )
             .child(
@@ -233,12 +239,7 @@ impl MathAlgorithmForm {
                         h_flex()
                             .gap_4()
                             .items_start()
-                            .child(field(
-                                "Name",
-                                "Optional",
-                                &self.trigger_set_name_input,
-                                cx,
-                            ))
+                            .child(field("Name", "Optional", &self.trigger_set_name_input, cx))
                             .child(field(
                                 "Trigger rate",
                                 "Optional; defaults to 1",
@@ -271,7 +272,7 @@ struct AlgorithmValues {
     operation_name: String,
     operation_short_description: String,
     output_parameter_ref: String,
-    operation_entries: String,
+    operation_entries: Vec<RpnOperationEntry>,
     trigger_set_name: String,
     trigger_rate: String,
     triggers: String,
@@ -300,7 +301,7 @@ impl AlgorithmValues {
             output_parameter_ref: operation
                 .map(|operation| operation.output_parameter_ref.clone())
                 .unwrap_or_default(),
-            operation_entries: encode_operation_entries(operation),
+            operation_entries: rpn_entries_from_operation(operation),
             trigger_set_name: trigger_set
                 .and_then(|set| set.name.clone())
                 .unwrap_or_default(),
@@ -372,71 +373,58 @@ fn operation_trigger_set(
     })
 }
 
-fn encode_operation_entries(operation: Option<&xtce::TriggeredMathOperationType>) -> String {
+fn rpn_entries_from_operation(
+    operation: Option<&xtce::TriggeredMathOperationType>,
+) -> Vec<RpnOperationEntry> {
     operation
         .into_iter()
         .flat_map(|operation| &operation.content)
         .filter_map(|entry| match entry {
             xtce::TriggeredMathOperationTypeContent::ValueOperand(value) => {
-                Some(format!("value | {value}"))
+                Some(RpnOperationEntry::Value(value.clone()))
             }
             xtce::TriggeredMathOperationTypeContent::ThisParameterOperand(value) => {
-                Some(format!("this | {value}"))
+                Some(RpnOperationEntry::ThisParameter(value.clone()))
             }
             xtce::TriggeredMathOperationTypeContent::Operator(value) => {
-                Some(format!("operator | {value}"))
+                Some(RpnOperationEntry::Operator(value.clone()))
             }
             xtce::TriggeredMathOperationTypeContent::ParameterInstanceRefOperand(value) => {
-                Some(format!(
-                    "parameter | {} | {} | {}",
-                    value.parameter_ref, value.instance, value.use_calibrated_value
-                ))
+                Some(RpnOperationEntry::ParameterInstance {
+                    parameter_ref: value.parameter_ref.clone(),
+                    instance: value.instance,
+                    use_calibrated_value: value.use_calibrated_value,
+                })
             }
             xtce::TriggeredMathOperationTypeContent::AncillaryDataSet(_)
             | xtce::TriggeredMathOperationTypeContent::TriggerSet(_) => None,
         })
-        .collect::<Vec<_>>()
-        .join("\n")
+        .collect()
 }
 
-fn decode_operation_entries(value: &str) -> Vec<xtce::TriggeredMathOperationTypeContent> {
-    value
-        .lines()
-        .filter_map(|line| {
-            let fields = line.split('|').map(str::trim).collect::<Vec<_>>();
-            match fields.first().copied()? {
-                "value" if fields.len() >= 2 => Some(
-                    xtce::TriggeredMathOperationTypeContent::ValueOperand(fields[1].to_owned()),
-                ),
-                "this" if fields.len() >= 2 => Some(
-                    xtce::TriggeredMathOperationTypeContent::ThisParameterOperand(
-                        fields[1].to_owned(),
-                    ),
-                ),
-                "operator" if fields.len() >= 2 => Some(
-                    xtce::TriggeredMathOperationTypeContent::Operator(fields[1].to_owned()),
-                ),
-                "parameter" if fields.len() >= 2 && !fields[1].is_empty() => Some(
-                    xtce::TriggeredMathOperationTypeContent::ParameterInstanceRefOperand(
-                        xtce::ParameterInstanceRefType {
-                            parameter_ref: fields[1].to_owned(),
-                            instance: fields
-                                .get(2)
-                                .and_then(|value| value.parse().ok())
-                                .unwrap_or_else(xtce::ParameterInstanceRefType::default_instance),
-                            use_calibrated_value: fields
-                                .get(3)
-                                .and_then(|value| value.parse().ok())
-                                .unwrap_or_else(
-                                    xtce::ParameterInstanceRefType::default_use_calibrated_value,
-                                ),
-                        },
-                    ),
-                ),
-                _ => None,
-            }
-        })
-        .collect()
+fn triggered_math_content(entry: RpnOperationEntry) -> xtce::TriggeredMathOperationTypeContent {
+    match entry {
+        RpnOperationEntry::Value(value) => {
+            xtce::TriggeredMathOperationTypeContent::ValueOperand(value)
+        }
+        RpnOperationEntry::ThisParameter(value) => {
+            xtce::TriggeredMathOperationTypeContent::ThisParameterOperand(value)
+        }
+        RpnOperationEntry::Operator(value) => {
+            xtce::TriggeredMathOperationTypeContent::Operator(value)
+        }
+        RpnOperationEntry::ParameterInstance {
+            parameter_ref,
+            instance,
+            use_calibrated_value,
+        } => xtce::TriggeredMathOperationTypeContent::ParameterInstanceRefOperand(
+            xtce::ParameterInstanceRefType {
+                parameter_ref,
+                instance,
+                use_calibrated_value,
+            },
+        ),
+    }
 }
 
 fn operation_content(
@@ -548,24 +536,33 @@ fn value(input: &Entity<InputState>, cx: &App) -> String {
 #[cfg(test)]
 mod tests {
     use super::{
-        decode_operation_entries, decode_triggers, default_math_algorithm,
-        encode_operation_entries, encode_triggers,
+        decode_triggers, default_math_algorithm, encode_triggers, rpn_entries_from_operation,
+        triggered_math_content,
     };
+    use crate::forms::rpn_operation::RpnOperationEntry;
 
     #[test]
     fn math_operation_entries_round_trip_in_rpn_order() {
-        let entries =
-            decode_operation_entries("parameter | P1 | 1 | false\nvalue | 2\noperator | *");
+        let entries = vec![
+            RpnOperationEntry::ParameterInstance {
+                parameter_ref: "P1".to_owned(),
+                instance: 1,
+                use_calibrated_value: false,
+            },
+            RpnOperationEntry::Value("2".to_owned()),
+            RpnOperationEntry::Operator("*".to_owned()),
+        ];
         let operation = xtce::TriggeredMathOperationType {
             name: None,
             short_description: None,
             output_parameter_ref: "OUT".to_owned(),
-            content: entries,
+            content: entries
+                .clone()
+                .into_iter()
+                .map(triggered_math_content)
+                .collect(),
         };
-        assert_eq!(
-            encode_operation_entries(Some(&operation)),
-            "parameter | P1 | 1 | false\nvalue | 2\noperator | *"
-        );
+        assert_eq!(rpn_entries_from_operation(Some(&operation)), entries);
     }
 
     #[test]
