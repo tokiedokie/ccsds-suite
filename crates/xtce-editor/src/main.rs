@@ -96,11 +96,15 @@ impl ElementKind {
     fn is_directory_only(self) -> bool {
         matches!(
             self,
-            Self::TelemetryParameterTypeSet
+            Self::TelemetryMetaData
+                | Self::TelemetryParameterTypeSet
                 | Self::TelemetryParameterSet
                 | Self::ContainerSet
+                | Self::CommandMetaData
                 | Self::CommandParameterTypeSet
                 | Self::CommandParameterSet
+                | Self::ArgumentTypeSet
+                | Self::MetaCommandSet
         )
     }
 
@@ -1911,16 +1915,16 @@ impl ElementInspector {
                                             )),
                                     ),
                             )
-                            .child(Self::section(
-                                "Properties",
-                                if ElementForms::is_editable(kind) {
-                                    "Review and edit this XTCE element."
-                                } else {
-                                    "Review the items contained by this XTCE element."
-                                },
-                                form,
-                                cx,
-                            )),
+                            .child(
+                                v_flex()
+                                    .w_full()
+                                    .p_5()
+                                    .rounded_lg()
+                                    .border_1()
+                                    .border_color(cx.theme().border)
+                                    .bg(cx.theme().background)
+                                    .child(form),
+                            ),
                     ),
             )
     }
@@ -2228,17 +2232,20 @@ mod tests {
     use super::{ElementKind, ElementSelection, ElementTree, XtceDocument, startup_document};
 
     #[test]
-    fn parameter_collections_are_directory_only_nodes() {
+    fn element_collections_are_directory_only_nodes() {
         for kind in [
             ElementKind::TelemetryParameterTypeSet,
             ElementKind::TelemetryParameterSet,
+            ElementKind::TelemetryMetaData,
             ElementKind::CommandParameterTypeSet,
             ElementKind::CommandParameterSet,
+            ElementKind::CommandMetaData,
+            ElementKind::ArgumentTypeSet,
+            ElementKind::MetaCommandSet,
         ] {
             assert!(kind.is_directory_only());
         }
         assert!(ElementKind::ContainerSet.is_directory_only());
-        assert!(!ElementKind::ArgumentTypeSet.is_directory_only());
     }
 
     fn sample_document() -> xtce::SpaceSystem {

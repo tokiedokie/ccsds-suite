@@ -22,7 +22,7 @@ pub(crate) struct ElementForms {
     sequence_container: Entity<SequenceContainerForm>,
     argument_type: Entity<ArgumentTypeForm>,
     meta_command: Entity<MetaCommandForm>,
-    service_set: ServiceSetForm,
+    service_set: Entity<ServiceSetForm>,
 }
 
 impl ElementForms {
@@ -184,7 +184,7 @@ impl ElementForms {
                 window,
                 cx,
             ),
-            service_set: ServiceSetForm,
+            service_set: ServiceSetForm::new(system.service_set.as_ref(), window, cx),
         }
     }
 
@@ -273,6 +273,11 @@ impl ElementForms {
                     );
                 });
             }
+            ElementKind::ServiceSet => {
+                self.service_set.update(cx, |form, cx| {
+                    form.load(system.service_set.as_ref(), window, cx);
+                });
+            }
             _ => {}
         }
     }
@@ -335,22 +340,13 @@ impl ElementForms {
                     self.meta_command.read(cx).apply_to(command, cx);
                 }
             }
+            ElementKind::ServiceSet => {
+                self.service_set
+                    .read(cx)
+                    .apply_to(&mut system.service_set, cx);
+            }
             _ => {}
         }
-    }
-
-    pub(crate) fn is_editable(kind: ElementKind) -> bool {
-        matches!(
-            kind,
-            ElementKind::SpaceSystem
-                | ElementKind::TelemetryParameter(_)
-                | ElementKind::CommandParameter(_)
-                | ElementKind::TelemetryParameterType(_)
-                | ElementKind::SequenceContainer(_)
-                | ElementKind::CommandParameterType(_)
-                | ElementKind::ArgumentType(_)
-                | ElementKind::MetaCommand(_)
-        )
     }
 
     pub(crate) fn render(&self, kind: ElementKind, system: &xtce::SpaceSystem, cx: &App) -> Div {
@@ -409,10 +405,9 @@ impl ElementForms {
                 self.editor.clone(),
                 cx,
             ),
-            ElementKind::ServiceSet => {
-                self.service_set
-                    .render(system.service_set.as_ref(), self.editor.clone(), cx)
-            }
+            ElementKind::ServiceSet => gpui_component::v_flex()
+                .w_full()
+                .child(self.service_set.clone()),
             ElementKind::SpaceSystem => self.space_system.render_identity(cx),
         }
     }
