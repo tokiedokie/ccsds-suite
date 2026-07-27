@@ -9,7 +9,6 @@ mod element_forms;
 mod header;
 mod meta_command;
 mod parameter;
-mod parameter_set;
 mod parameter_type;
 mod sequence_container;
 mod service_set;
@@ -18,13 +17,20 @@ mod space_system_description;
 mod space_system_identity;
 mod telemetry_metadata;
 
-use gpui::{App, Div, Entity, ParentElement, Styled, div, prelude::FluentBuilder};
+use std::rc::Rc;
+
+use gpui::{
+    App, Div, Entity, InteractiveElement, IntoElement, ParentElement, StatefulInteractiveElement,
+    Styled, WeakEntity, div, prelude::FluentBuilder, uniform_list,
+};
 use gpui_component::{
     ActiveTheme, StyledExt,
     form::{field as form_field, v_form},
     input::{Input, InputState},
     v_flex,
 };
+
+use crate::{ElementKind, XtceEditor};
 
 pub(crate) use element_forms::ElementForms;
 
@@ -70,21 +76,111 @@ pub(super) fn optional_value(value: String) -> Option<String> {
     (!value.is_empty()).then_some(value)
 }
 
-pub(super) fn property_rows(rows: Vec<(&'static str, String)>, cx: &App) -> Div {
-    let mut content = v_flex().gap_3();
-    for (label, value) in rows {
-        content = content.child(
+pub(super) fn collection_summary(
+    headers: &[&'static str],
+    rows: Vec<Vec<String>>,
+    targets: Vec<Option<ElementKind>>,
+    editor: WeakEntity<XtceEditor>,
+    empty_message: &'static str,
+    cx: &App,
+) -> Div {
+    let row_count = rows.len();
+    let table = v_flex()
+        .w_full()
+        .min_w(gpui::px(headers.len() as f32 * 180.))
+        .rounded_md()
+        .border_1()
+        .border_color(cx.theme().border)
+        .child(
             gpui_component::h_flex()
-                .justify_between()
-                .gap_4()
+                .h(gpui::px(34.))
+                .px_2()
+                .gap_2()
+                .items_center()
+                .bg(cx.theme().muted.opacity(0.5))
+                .text_xs()
+                .font_medium()
+                .children(
+                    headers
+                        .iter()
+                        .map(|header| div().flex_1().min_w_0().truncate().child(*header)),
+                ),
+        )
+        .when(row_count > 0, |table| {
+            let rows = Rc::new(rows);
+            let targets = Rc::new(targets);
+            table.child(
+                uniform_list(
+                    "collection-summary-rows",
+                    row_count,
+                    move |visible_range, _, cx| {
+                        visible_range
+                            .map(|index| {
+                                let target = targets.get(index).copied().flatten();
+                                let editor = editor.clone();
+                                let hover_color = cx.theme().sidebar_accent;
+                                gpui_component::h_flex()
+                                    .id(format!("collection-summary-row-{index}"))
+                                    .w_full()
+                                    .h(gpui::px(42.))
+                                    .px_2()
+                                    .gap_2()
+                                    .items_center()
+                                    .border_b_1()
+                                    .border_color(cx.theme().border)
+                                    .text_sm()
+                                    .children(rows[index].iter().map(|value| {
+                                        div().flex_1().min_w_0().truncate().child(value.clone())
+                                    }))
+                                    .when_some(target, move |row, target| {
+                                        row.cursor_pointer()
+                                            .hover(move |row| row.bg(hover_color))
+                                            .on_click(move |_, window, cx| {
+                                                _ = editor.update(cx, |this, cx| {
+                                                    this.select_summary_element(target, window, cx);
+                                                });
+                                            })
+                                    })
+                            })
+                            .collect::<Vec<_>>()
+                    },
+                )
+                .w_full()
+                .h(gpui::px(row_count.min(12) as f32 * 42.)),
+            )
+        });
+
+    v_flex()
+        .w_full()
+        .gap_3()
+        .child(
+            div()
+                .text_xs()
+                .text_color(cx.theme().muted_foreground)
+                .child(format!("{row_count} items")),
+        )
+        .child(if row_count == 0 {
+            div()
+                .p_4()
+                .rounded_md()
+                .border_1()
+                .border_color(cx.theme().border)
+                .text_sm()
+                .text_color(cx.theme().muted_foreground)
+                .child(empty_message)
+                .into_any_element()
+        } else {
+            div()
+                .id("collection-summary-scroll-boundary")
+                .w_full()
+                .on_scroll_wheel(|_, _, cx| cx.stop_propagation())
                 .child(
                     div()
-                        .text_sm()
-                        .text_color(cx.theme().muted_foreground)
-                        .child(label),
+                        .id("collection-summary-horizontal-scroll")
+                        .w_full()
+                        .overflow_x_scroll()
+                        .child(table),
                 )
-                .child(div().text_sm().font_medium().child(value)),
-        );
-    }
-    content
+                .into_any_element()
+        })
 }

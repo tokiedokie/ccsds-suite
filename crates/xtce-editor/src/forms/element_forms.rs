@@ -1,23 +1,22 @@
-use gpui::{App, Context, Div, Entity, ParentElement, Styled, Window};
+use gpui::{App, Context, Div, Entity, ParentElement, Styled, WeakEntity, Window};
 
 use super::{
     alias_set::AliasSetForm, ancillary_data_set::AncillaryDataSetForm,
     argument_type::ArgumentTypeForm, command_metadata::CommandMetaDataForm, header::HeaderForm,
-    meta_command::MetaCommandForm, parameter::ParameterForm, parameter_set::ParameterSetForm,
-    parameter_type::ParameterTypeForm, sequence_container::SequenceContainerForm,
-    service_set::ServiceSetForm, space_system::SpaceSystemForm,
-    telemetry_metadata::TelemetryMetaDataForm,
+    meta_command::MetaCommandForm, parameter::ParameterForm, parameter_type::ParameterTypeForm,
+    sequence_container::SequenceContainerForm, service_set::ServiceSetForm,
+    space_system::SpaceSystemForm, telemetry_metadata::TelemetryMetaDataForm,
 };
 use crate::{ElementKind, XtceDocument, XtceEditor};
 
 pub(crate) struct ElementForms {
+    editor: WeakEntity<XtceEditor>,
     space_system: SpaceSystemForm,
     alias_set: AliasSetForm,
     ancillary_data_set: AncillaryDataSetForm,
     header: HeaderForm,
     telemetry_metadata: TelemetryMetaDataForm,
     command_metadata: CommandMetaDataForm,
-    parameter_set: ParameterSetForm,
     parameter: Entity<ParameterForm>,
     parameter_type: Entity<ParameterTypeForm>,
     sequence_container: Entity<SequenceContainerForm>,
@@ -143,6 +142,7 @@ impl ElementForms {
         cx: &mut Context<XtceEditor>,
     ) -> Self {
         Self {
+            editor: cx.entity().downgrade(),
             space_system: SpaceSystemForm::new(system, window, cx),
             alias_set: AliasSetForm::new(system.alias_set.as_ref(), window, cx),
             ancillary_data_set: AncillaryDataSetForm::new(
@@ -153,14 +153,6 @@ impl ElementForms {
             header: HeaderForm::new(system.header.as_ref(), window, cx),
             telemetry_metadata: TelemetryMetaDataForm,
             command_metadata: CommandMetaDataForm,
-            parameter_set: ParameterSetForm::new(
-                system
-                    .telemetry_meta_data
-                    .as_ref()
-                    .and_then(|metadata| metadata.parameter_set.as_ref()),
-                window,
-                cx,
-            ),
             parameter: ParameterForm::new(
                 telemetry_parameter_set(system).and_then(|set| set.content.first()),
                 telemetry_parameter_type_set(system),
@@ -209,26 +201,6 @@ impl ElementForms {
                 self.ancillary_data_set
                     .load(system.ancillary_data_set.as_ref(), window, cx);
                 self.header.load(system.header.as_ref(), window, cx);
-            }
-            ElementKind::TelemetryParameterSet => {
-                self.parameter_set.load(
-                    system
-                        .telemetry_meta_data
-                        .as_ref()
-                        .and_then(|metadata| metadata.parameter_set.as_ref()),
-                    window,
-                    cx,
-                );
-            }
-            ElementKind::CommandParameterSet => {
-                self.parameter_set.load(
-                    system
-                        .command_meta_data
-                        .as_ref()
-                        .and_then(|metadata| metadata.parameter_set.as_ref()),
-                    window,
-                    cx,
-                );
             }
             ElementKind::TelemetryParameter(index) => {
                 self.parameter.update(cx, |form, cx| {
@@ -312,24 +284,6 @@ impl ElementForms {
                     .apply_to_option(&mut system.ancillary_data_set, cx);
                 self.header.apply_to_option(&mut system.header, cx);
             }
-            ElementKind::TelemetryParameterSet => {
-                if let Some(parameter_set) = system
-                    .telemetry_meta_data
-                    .as_mut()
-                    .and_then(|metadata| metadata.parameter_set.as_mut())
-                {
-                    self.parameter_set.apply_to(parameter_set, cx);
-                }
-            }
-            ElementKind::CommandParameterSet => {
-                if let Some(parameter_set) = system
-                    .command_meta_data
-                    .as_mut()
-                    .and_then(|metadata| metadata.parameter_set.as_mut())
-                {
-                    self.parameter_set.apply_to(parameter_set, cx);
-                }
-            }
             ElementKind::TelemetryParameter(index) => {
                 if let Some(parameter) =
                     telemetry_parameter_set_mut(system).and_then(|set| set.content.get_mut(index))
@@ -387,9 +341,7 @@ impl ElementForms {
         matches!(
             kind,
             ElementKind::SpaceSystem
-                | ElementKind::TelemetryParameterSet
                 | ElementKind::TelemetryParameter(_)
-                | ElementKind::CommandParameterSet
                 | ElementKind::CommandParameter(_)
                 | ElementKind::TelemetryParameterType(_)
                 | ElementKind::SequenceContainer(_)
@@ -401,9 +353,18 @@ impl ElementForms {
 
     pub(crate) fn render(&self, kind: ElementKind, system: &xtce::SpaceSystem, cx: &App) -> Div {
         match kind {
-            ElementKind::TelemetryParameterSet | ElementKind::CommandParameterSet => {
-                self.parameter_set.render(cx)
-            }
+            ElementKind::TelemetryParameterSet => self.telemetry_metadata.render(
+                kind,
+                system.telemetry_meta_data.as_ref(),
+                self.editor.clone(),
+                cx,
+            ),
+            ElementKind::CommandParameterSet => self.command_metadata.render(
+                kind,
+                system.command_meta_data.as_ref(),
+                self.editor.clone(),
+                cx,
+            ),
             ElementKind::TelemetryParameter(_) | ElementKind::CommandParameter(_) => {
                 gpui_component::v_flex()
                     .w_full()
@@ -428,21 +389,28 @@ impl ElementForms {
             | ElementKind::ContainerSet
             | ElementKind::MessageSet
             | ElementKind::TelemetryStreamSet
-            | ElementKind::TelemetryAlgorithmSet => {
-                self.telemetry_metadata
-                    .render(kind, system.telemetry_meta_data.as_ref(), cx)
-            }
+            | ElementKind::TelemetryAlgorithmSet => self.telemetry_metadata.render(
+                kind,
+                system.telemetry_meta_data.as_ref(),
+                self.editor.clone(),
+                cx,
+            ),
             ElementKind::CommandMetaData
             | ElementKind::CommandParameterTypeSet
             | ElementKind::ArgumentTypeSet
             | ElementKind::MetaCommandSet
             | ElementKind::CommandContainerSet
             | ElementKind::CommandStreamSet
-            | ElementKind::CommandAlgorithmSet => {
-                self.command_metadata
-                    .render(kind, system.command_meta_data.as_ref(), cx)
+            | ElementKind::CommandAlgorithmSet => self.command_metadata.render(
+                kind,
+                system.command_meta_data.as_ref(),
+                self.editor.clone(),
+                cx,
+            ),
+            ElementKind::ServiceSet => {
+                self.service_set
+                    .render(system.service_set.as_ref(), self.editor.clone(), cx)
             }
-            ElementKind::ServiceSet => self.service_set.render(system.service_set.as_ref(), cx),
             ElementKind::SpaceSystem => self.space_system.render_identity(cx),
         }
     }

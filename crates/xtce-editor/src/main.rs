@@ -195,6 +195,17 @@ impl XtceEditor {
         cx.notify();
     }
 
+    fn select_summary_element(
+        &mut self,
+        kind: ElementKind,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        self.save_selected_element(cx);
+        self.document.selection.kind = kind;
+        self.load_selected_element(window, cx);
+    }
+
     fn save_selected_element(&mut self, cx: &mut Context<Self>) {
         let kind = self.document.selection.kind;
         let path = self.document.selection.system_path.clone();
@@ -1837,26 +1848,11 @@ impl ElementInspector {
                                 if ElementForms::is_editable(kind) {
                                     "Review and edit this XTCE element."
                                 } else {
-                                    "Review the structure and item counts for this XTCE element."
+                                    "Review the items contained by this XTCE element."
                                 },
                                 form,
                                 cx,
-                            ))
-                            .when(!ElementForms::is_editable(kind), |this| {
-                                this.child(
-                                    div()
-                                        .p_4()
-                                        .rounded_lg()
-                                        .border_1()
-                                        .border_color(cx.theme().border)
-                                        .bg(cx.theme().background)
-                                        .text_sm()
-                                        .text_color(cx.theme().muted_foreground)
-                                        .child(
-                                            "Typed child-item editors will be added as their tree nodes are introduced.",
-                                        ),
-                                )
-                            }),
+                            )),
                     ),
             )
     }
