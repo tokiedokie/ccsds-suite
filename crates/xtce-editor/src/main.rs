@@ -45,6 +45,7 @@ enum ElementKind {
     TelemetryVariableFrameStream(usize),
     TelemetryCustomStream(usize),
     TelemetryAlgorithmSet,
+    TelemetryCustomAlgorithm(usize),
     CommandMetaData,
     CommandParameterTypeSet,
     CommandParameterType(usize),
@@ -60,6 +61,7 @@ enum ElementKind {
     CommandVariableFrameStream(usize),
     CommandCustomStream(usize),
     CommandAlgorithmSet,
+    CommandCustomAlgorithm(usize),
     ServiceSet,
 }
 
@@ -85,6 +87,9 @@ impl ElementKind {
             }
             Self::TelemetryCustomStream(_) | Self::CommandCustomStream(_) => "CustomStream",
             Self::TelemetryAlgorithmSet | Self::CommandAlgorithmSet => "AlgorithmSet",
+            Self::TelemetryCustomAlgorithm(_) | Self::CommandCustomAlgorithm(_) => {
+                "CustomAlgorithm"
+            }
             Self::CommandMetaData => "CommandMetaData",
             Self::ArgumentTypeSet => "ArgumentTypeSet",
             Self::ArgumentType(_) => "ArgumentType",
@@ -105,6 +110,8 @@ impl ElementKind {
                 | Self::MessageSet
                 | Self::TelemetryStreamSet
                 | Self::CommandStreamSet
+                | Self::TelemetryAlgorithmSet
+                | Self::CommandAlgorithmSet
                 | Self::CommandParameterSet
                 | Self::ArgumentTypeSet
                 | Self::MetaCommandSet
@@ -138,6 +145,8 @@ impl ElementKind {
                 | Self::CommandParameterSet
                 | Self::ArgumentTypeSet
                 | Self::MetaCommandSet
+                | Self::TelemetryAlgorithmSet
+                | Self::CommandAlgorithmSet
         )
     }
 
@@ -158,7 +167,10 @@ impl ElementKind {
             | Self::CommandVariableFrameStream(_)
             | Self::TelemetryCustomStream(_)
             | Self::CommandCustomStream(_) => IconName::GalleryVerticalEnd,
-            Self::TelemetryAlgorithmSet | Self::CommandAlgorithmSet => IconName::Bot,
+            Self::TelemetryAlgorithmSet
+            | Self::CommandAlgorithmSet
+            | Self::TelemetryCustomAlgorithm(_)
+            | Self::CommandCustomAlgorithm(_) => IconName::Bot,
             Self::ArgumentType(_) => IconName::CaseSensitive,
             Self::ServiceSet => IconName::Building2,
             kind if kind.uses_folder_icon() => {
@@ -787,6 +799,42 @@ impl XtceDocument {
             ElementKind::CommandStreamSet => {
                 Self::add_stream_item(system, collection, StreamChildKind::Fixed)
             }
+            ElementKind::TelemetryAlgorithmSet => {
+                let set = system
+                    .telemetry_meta_data
+                    .as_mut()?
+                    .algorithm_set
+                    .get_or_insert_with(|| xtce::AlgorithmSetType {
+                        content: Vec::new(),
+                    });
+                let index = set.content.len();
+                let name = Self::next_unique_name("CustomAlgorithm", |candidate| {
+                    set.content
+                        .iter()
+                        .any(|algorithm| Self::algorithm_label(algorithm) == candidate)
+                });
+                set.content
+                    .push(forms::custom_algorithm::default_custom_algorithm(name));
+                Some(ElementKind::TelemetryCustomAlgorithm(index))
+            }
+            ElementKind::CommandAlgorithmSet => {
+                let set = system
+                    .command_meta_data
+                    .as_mut()?
+                    .algorithm_set
+                    .get_or_insert_with(|| xtce::AlgorithmSetType {
+                        content: Vec::new(),
+                    });
+                let index = set.content.len();
+                let name = Self::next_unique_name("CustomAlgorithm", |candidate| {
+                    set.content
+                        .iter()
+                        .any(|algorithm| Self::algorithm_label(algorithm) == candidate)
+                });
+                set.content
+                    .push(forms::custom_algorithm::default_custom_algorithm(name));
+                Some(ElementKind::CommandCustomAlgorithm(index))
+            }
             ElementKind::CommandParameterSet => {
                 let type_ref = system
                     .command_meta_data
@@ -1248,12 +1296,33 @@ impl XtceDocument {
                     }
                 }
             }
-            for (present, kind) in [(
-                metadata.algorithm_set.is_some(),
+            let algorithms = metadata
+                .algorithm_set
+                .as_ref()
+                .map(|set| set.content.as_slice())
+                .unwrap_or_default();
+            let custom_count = algorithms
+                .iter()
+                .filter(|algorithm| {
+                    matches!(algorithm, xtce::AlgorithmSetTypeContent::CustomAlgorithm(_))
+                })
+                .count();
+            Self::push_tree_node(
+                nodes,
+                path,
                 ElementKind::TelemetryAlgorithmSet,
-            )] {
-                if present {
-                    Self::push_tree_node(nodes, path, kind, child_level + 1, false);
+                child_level + 1,
+                custom_count > 0,
+            );
+            for (index, algorithm) in algorithms.iter().enumerate() {
+                if let xtce::AlgorithmSetTypeContent::CustomAlgorithm(algorithm) = algorithm {
+                    Self::push_named_tree_node(
+                        nodes,
+                        path,
+                        ElementKind::TelemetryCustomAlgorithm(index),
+                        algorithm.name.clone(),
+                        child_level + 2,
+                    );
                 }
             }
         }
@@ -1391,18 +1460,42 @@ impl XtceDocument {
                     }
                 }
             }
-            for (present, kind) in [
-                (
-                    metadata.command_container_set.is_some(),
+            if metadata.command_container_set.is_some() {
+                Self::push_tree_node(
+                    nodes,
+                    path,
                     ElementKind::CommandContainerSet,
-                ),
-                (
-                    metadata.algorithm_set.is_some(),
-                    ElementKind::CommandAlgorithmSet,
-                ),
-            ] {
-                if present {
-                    Self::push_tree_node(nodes, path, kind, child_level + 1, false);
+                    child_level + 1,
+                    false,
+                );
+            }
+            let algorithms = metadata
+                .algorithm_set
+                .as_ref()
+                .map(|set| set.content.as_slice())
+                .unwrap_or_default();
+            let custom_count = algorithms
+                .iter()
+                .filter(|algorithm| {
+                    matches!(algorithm, xtce::AlgorithmSetTypeContent::CustomAlgorithm(_))
+                })
+                .count();
+            Self::push_tree_node(
+                nodes,
+                path,
+                ElementKind::CommandAlgorithmSet,
+                child_level + 1,
+                custom_count > 0,
+            );
+            for (index, algorithm) in algorithms.iter().enumerate() {
+                if let xtce::AlgorithmSetTypeContent::CustomAlgorithm(algorithm) = algorithm {
+                    Self::push_named_tree_node(
+                        nodes,
+                        path,
+                        ElementKind::CommandCustomAlgorithm(index),
+                        algorithm.name.clone(),
+                        child_level + 2,
+                    );
                 }
             }
         }
@@ -1515,6 +1608,13 @@ impl XtceDocument {
             xtce::MetaCommandSetTypeContent::MetaCommand(value) => value.name.clone(),
             xtce::MetaCommandSetTypeContent::MetaCommandRef(value) => format!("→ {value}"),
             xtce::MetaCommandSetTypeContent::BlockMetaCommand(value) => value.name.clone(),
+        }
+    }
+
+    fn algorithm_label(algorithm: &xtce::AlgorithmSetTypeContent) -> String {
+        match algorithm {
+            xtce::AlgorithmSetTypeContent::CustomAlgorithm(value) => value.name.clone(),
+            xtce::AlgorithmSetTypeContent::MathAlgorithm(value) => value.name.clone(),
         }
     }
 
@@ -3045,6 +3145,52 @@ mod tests {
                 .and_then(|set| set.content.into_iter().next()),
             Some(xtce::StreamSetTypeContent::CustomStream(stream))
                 if stream.name == "CustomStream1"
+        ));
+    }
+
+    #[test]
+    fn adds_custom_algorithms_to_telemetry_and_command_metadata() {
+        let mut root = XtceDocument::untitled().root;
+        assert!(XtceDocument::add_metadata(
+            &mut root,
+            ElementKind::TelemetryMetaData
+        ));
+        assert!(XtceDocument::add_metadata(
+            &mut root,
+            ElementKind::CommandMetaData
+        ));
+
+        assert_eq!(
+            XtceDocument::add_collection_item(&mut root, ElementKind::TelemetryAlgorithmSet),
+            Some(ElementKind::TelemetryCustomAlgorithm(0))
+        );
+        assert_eq!(
+            XtceDocument::add_collection_item(&mut root, ElementKind::CommandAlgorithmSet),
+            Some(ElementKind::CommandCustomAlgorithm(0))
+        );
+
+        let mut nodes = Vec::new();
+        XtceDocument::collect_tree_nodes(&root, &mut Vec::new(), 0, &mut nodes);
+        assert!(nodes.iter().any(|node| {
+            node.selection.kind == ElementKind::TelemetryCustomAlgorithm(0)
+                && node.label == "CustomAlgorithm1"
+        }));
+        assert!(nodes.iter().any(|node| {
+            node.selection.kind == ElementKind::CommandCustomAlgorithm(0)
+                && node.label == "CustomAlgorithm1"
+        }));
+
+        let xml = XtceDocument::serialize(&root).expect("custom algorithms should serialize");
+        let reopened =
+            XtceDocument::from_xml(&xml, "custom-algorithm.xml".to_owned()).expect("should reopen");
+        assert!(matches!(
+            reopened
+                .root
+                .telemetry_meta_data
+                .and_then(|metadata| metadata.algorithm_set)
+                .and_then(|set| set.content.into_iter().next()),
+            Some(xtce::AlgorithmSetTypeContent::CustomAlgorithm(algorithm))
+                if algorithm.name == "CustomAlgorithm1"
         ));
     }
 

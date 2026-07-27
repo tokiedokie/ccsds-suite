@@ -166,13 +166,25 @@ impl CommandMetaDataForm {
                 )
             }
             ElementKind::CommandAlgorithmSet => {
-                let rows = metadata
+                let algorithms = metadata
                     .and_then(|value| value.algorithm_set.as_ref())
                     .into_iter()
                     .flat_map(|set| &set.content)
-                    .map(algorithm_row)
                     .collect::<Vec<_>>();
-                let targets = vec![None; rows.len()];
+                let rows = algorithms
+                    .iter()
+                    .map(|algorithm| algorithm_row(algorithm))
+                    .collect::<Vec<_>>();
+                let targets = algorithms
+                    .iter()
+                    .enumerate()
+                    .map(|(index, algorithm)| match algorithm {
+                        xtce::AlgorithmSetTypeContent::CustomAlgorithm(_) => {
+                            Some(ElementKind::CommandCustomAlgorithm(index))
+                        }
+                        xtce::AlgorithmSetTypeContent::MathAlgorithm(_) => None,
+                    })
+                    .collect();
                 collection_summary(
                     &["Type", "Name"],
                     rows,

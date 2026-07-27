@@ -149,13 +149,25 @@ impl TelemetryMetaDataForm {
                 )
             }
             ElementKind::TelemetryAlgorithmSet => {
-                let rows = metadata
+                let algorithms = metadata
                     .and_then(|value| value.algorithm_set.as_ref())
                     .into_iter()
                     .flat_map(|set| &set.content)
-                    .map(algorithm_row)
                     .collect::<Vec<_>>();
-                let targets = no_targets(rows.len());
+                let rows = algorithms
+                    .iter()
+                    .map(|algorithm| algorithm_row(algorithm))
+                    .collect::<Vec<_>>();
+                let targets = algorithms
+                    .iter()
+                    .enumerate()
+                    .map(|(index, algorithm)| match algorithm {
+                        xtce::AlgorithmSetTypeContent::CustomAlgorithm(_) => {
+                            Some(ElementKind::TelemetryCustomAlgorithm(index))
+                        }
+                        xtce::AlgorithmSetTypeContent::MathAlgorithm(_) => None,
+                    })
+                    .collect();
                 collection_summary(
                     &["Type", "Name"],
                     rows,
@@ -175,10 +187,6 @@ impl TelemetryMetaDataForm {
             ),
         }
     }
-}
-
-fn no_targets(count: usize) -> Vec<Option<ElementKind>> {
-    vec![None; count]
 }
 
 fn telemetry_sections(metadata: Option<&xtce::TelemetryMetaDataType>) -> Vec<Vec<String>> {
