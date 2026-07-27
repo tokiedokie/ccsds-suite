@@ -12,6 +12,7 @@ mod data_encoding;
 mod default_calibrator;
 mod element_forms;
 mod enumeration_list;
+mod error_detect_correct;
 pub(super) mod fixed_frame_stream;
 mod header;
 mod input_algorithm;

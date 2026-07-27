@@ -1,5 +1,5 @@
 use gpui::{
-    App, AppContext, Context, Div, Entity, IntoElement, ParentElement, Render, Styled, Window, div,
+    App, AppContext, Context, Entity, IntoElement, ParentElement, Render, Styled, Window, div,
     prelude::FluentBuilder,
 };
 use gpui_component::{
@@ -10,13 +10,15 @@ use gpui_component::{
     v_flex,
 };
 
-use super::{field, input_algorithm::InputAlgorithmForm};
+use super::{
+    error_detect_correct::ErrorDetectCorrectForm, field, input_algorithm::InputAlgorithmForm,
+};
 
 pub(super) struct ContainerBinaryEncodingForm {
     present: bool,
     size_in_bits: Entity<InputState>,
     preserve_complex_size: bool,
-    error_detection_summary: String,
+    error_detection: Entity<ErrorDetectCorrectForm>,
     from_transform_present: bool,
     from_transform: Entity<InputAlgorithmForm>,
     to_transform_present: bool,
@@ -30,6 +32,11 @@ impl ContainerBinaryEncodingForm {
         cx: &mut impl AppContext,
     ) -> Entity<Self> {
         let values = EncodingValues::from_encoding(encoding);
+        let error_detection = ErrorDetectCorrectForm::new(
+            encoding.and_then(|encoding| encoding.error_detect_correct.as_ref()),
+            window,
+            cx,
+        );
         let from_transform = InputAlgorithmForm::new(
             encoding.and_then(|encoding| encoding.from_binary_transform_algorithm.as_ref()),
             window,
@@ -45,7 +52,7 @@ impl ContainerBinaryEncodingForm {
             size_in_bits: cx
                 .new(|cx| InputState::new(window, cx).default_value(values.size_in_bits)),
             preserve_complex_size: values.preserve_complex_size,
-            error_detection_summary: values.error_detection_summary,
+            error_detection,
             from_transform_present: values.from_transform_present,
             from_transform,
             to_transform_present: values.to_transform_present,
@@ -62,11 +69,17 @@ impl ContainerBinaryEncodingForm {
         let values = EncodingValues::from_encoding(encoding);
         self.present = encoding.is_some();
         self.preserve_complex_size = values.preserve_complex_size;
-        self.error_detection_summary = values.error_detection_summary;
         self.from_transform_present = values.from_transform_present;
         self.to_transform_present = values.to_transform_present;
         self.size_in_bits.update(cx, |input, cx| {
             input.set_value(values.size_in_bits, window, cx)
+        });
+        self.error_detection.update(cx, |form, cx| {
+            form.load(
+                encoding.and_then(|encoding| encoding.error_detect_correct.as_ref()),
+                window,
+                cx,
+            );
         });
         self.from_transform.update(cx, |form, cx| {
             form.load(
@@ -110,6 +123,9 @@ impl ContainerBinaryEncodingForm {
             }
             Err(_) => {}
         }
+        self.error_detection
+            .read(cx)
+            .apply_to(&mut encoding.error_detect_correct, cx);
         encoding.from_binary_transform_algorithm = self
             .from_transform_present
             .then(|| self.from_transform.read(cx).algorithm(cx));
@@ -168,11 +184,7 @@ impl Render for ContainerBinaryEncodingForm {
                     &self.size_in_bits,
                     cx,
                 ))
-                .child(v_flex().gap_2().child(summary_row(
-                    "Error detection/correction",
-                    &self.error_detection_summary,
-                    cx,
-                )))
+                .child(self.error_detection.clone())
                 .child(
                     v_flex()
                         .gap_3()
@@ -242,7 +254,6 @@ impl Render for ContainerBinaryEncodingForm {
 struct EncodingValues {
     size_in_bits: String,
     preserve_complex_size: bool,
-    error_detection_summary: String,
     from_transform_present: bool,
     to_transform_present: bool,
 }
@@ -262,36 +273,12 @@ impl EncodingValues {
                         | xtce::IntegerValueType::DiscreteLookupList(_)
                 )
             ),
-            error_detection_summary: presence(
-                encoding.and_then(|encoding| encoding.error_detect_correct.as_ref()),
-            ),
             from_transform_present: encoding
                 .is_some_and(|encoding| encoding.from_binary_transform_algorithm.is_some()),
             to_transform_present: encoding
                 .is_some_and(|encoding| encoding.to_binary_transform_algorithm.is_some()),
         }
     }
-}
-
-fn presence<T>(value: Option<&T>) -> String {
-    if value.is_some() {
-        "Configured (preserved)".to_owned()
-    } else {
-        "Not configured".to_owned()
-    }
-}
-
-fn summary_row(label: &'static str, value: &str, cx: &App) -> Div {
-    h_flex()
-        .justify_between()
-        .gap_4()
-        .child(
-            div()
-                .text_sm()
-                .text_color(cx.theme().muted_foreground)
-                .child(label),
-        )
-        .child(div().text_sm().child(value.to_owned()))
 }
 
 #[cfg(test)]
