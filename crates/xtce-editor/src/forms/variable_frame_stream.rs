@@ -14,7 +14,7 @@ use strum::{Display, EnumString, VariantArray};
 
 use super::{
     alias_set::AliasSetForm, ancillary_data_set::AncillaryDataSetForm, field, impl_select_item,
-    optional_value,
+    input_algorithm::InputAlgorithmForm, optional_value,
 };
 use crate::XtceEditor;
 
@@ -76,6 +76,7 @@ pub(super) struct VariableFrameStreamForm {
     auto_invert_present: bool,
     bad_frames_to_auto_invert_input: Entity<InputState>,
     invert_algorithm_present: bool,
+    invert_algorithm: Entity<InputAlgorithmForm>,
     alias_set: AliasSetForm,
     ancillary_data_set: AncillaryDataSetForm,
     _subscriptions: Vec<Subscription>,
@@ -94,6 +95,7 @@ impl VariableFrameStreamForm {
             editor.refresh_tree(cx);
             cx.notify();
         });
+        let invert_algorithm = InputAlgorithmForm::new(invert_algorithm(stream), window, cx);
         cx.new(move |cx| {
             let reference_kind_select =
                 select(ReferenceKind::VARIANTS, values.reference_kind, window, cx);
@@ -125,6 +127,7 @@ impl VariableFrameStreamForm {
                     cx,
                 ),
                 invert_algorithm_present: values.invert_algorithm_present,
+                invert_algorithm,
                 alias_set: AliasSetForm::new(alias_set(stream), window, cx),
                 ancillary_data_set: AncillaryDataSetForm::new(
                     ancillary_data_set(stream),
@@ -177,6 +180,9 @@ impl VariableFrameStreamForm {
         self.alias_set.load(alias_set(stream), window, cx);
         self.ancillary_data_set
             .load(ancillary_data_set(stream), window, cx);
+        self.invert_algorithm.update(cx, |form, cx| {
+            form.load(invert_algorithm(stream), window, cx);
+        });
         cx.notify();
     }
 
@@ -257,6 +263,9 @@ impl VariableFrameStreamForm {
                 &self.bad_frames_to_auto_invert_input,
                 cx,
             );
+            auto_invert.invert_algorithm = self
+                .invert_algorithm_present
+                .then(|| self.invert_algorithm.read(cx).algorithm(cx));
         } else {
             sync.auto_invert = None;
         }
@@ -282,11 +291,7 @@ impl VariableFrameStreamForm {
                     .gap_4()
                     .items_start()
                     .child(select_field("PCM type", "Required", &self.pcm_select))
-                    .child(select_field(
-                        "Inverted",
-                        "Required",
-                        &self.inverted_select,
-                    ))
+                    .child(select_field("Inverted", "Required", &self.inverted_select))
                     .child(field(
                         "Bit rate (bps)",
                         "Optional",
@@ -404,16 +409,44 @@ impl VariableFrameStreamForm {
                                 &self.bad_frames_to_auto_invert_input,
                                 cx,
                             ))
-                            .when(self.invert_algorithm_present, |section| {
-                                section.child(
-                                    div()
-                                        .text_xs()
-                                        .text_color(cx.theme().muted_foreground)
-                                        .child(
-                                            "The configured invert algorithm is preserved without modification.",
-                                        ),
-                                )
-                            })
+                            .child(
+                                v_flex()
+                                    .gap_3()
+                                    .child(
+                                        h_flex()
+                                            .justify_between()
+                                            .child(
+                                                div()
+                                                    .text_sm()
+                                                    .font_medium()
+                                                    .child("Invert algorithm"),
+                                            )
+                                            .child(if self.invert_algorithm_present {
+                                                Button::new(
+                                                    "remove-variable-frame-invert-algorithm",
+                                                )
+                                                .small()
+                                                .danger()
+                                                .label("Remove")
+                                                .on_click(cx.listener(|this, _, _, cx| {
+                                                    this.invert_algorithm_present = false;
+                                                    cx.notify();
+                                                }))
+                                            } else {
+                                                Button::new("add-variable-frame-invert-algorithm")
+                                                    .small()
+                                                    .icon(IconName::Plus)
+                                                    .label("Add")
+                                                    .on_click(cx.listener(|this, _, _, cx| {
+                                                        this.invert_algorithm_present = true;
+                                                        cx.notify();
+                                                    }))
+                                            }),
+                                    )
+                                    .when(self.invert_algorithm_present, |form| {
+                                        form.child(self.invert_algorithm.clone())
+                                    }),
+                            )
                     }),
             )
             .child(field(
@@ -674,6 +707,15 @@ fn sync_strategy(
     })
 }
 
+fn invert_algorithm(
+    stream: Option<&xtce::VariableFrameStreamType>,
+) -> Option<&xtce::InputAlgorithmType> {
+    stream
+        .and_then(sync_strategy)
+        .and_then(|sync| sync.auto_invert.as_ref())
+        .and_then(|auto_invert| auto_invert.invert_algorithm.as_ref())
+}
+
 pub(crate) fn default_variable_frame_stream(name: String) -> xtce::StreamSetTypeContent {
     xtce::StreamSetTypeContent::VariableFrameStream(xtce::VariableFrameStreamType {
         short_description: None,
@@ -842,7 +884,7 @@ fn update_i64(target: &mut i64, input: &Entity<InputState>, cx: &App) {
 
 #[cfg(test)]
 mod tests {
-    use super::default_variable_frame_stream;
+    use super::{default_variable_frame_stream, invert_algorithm};
 
     #[test]
     fn new_variable_frame_stream_uses_the_schema_flag_defaults() {
@@ -860,5 +902,40 @@ mod tests {
         let sync = sync.expect("sync strategy");
         assert_eq!(sync.flag.flag_size_in_bits, 6);
         assert!(matches!(sync.flag.flag_bit_type, xtce::FlagBitType::Ones));
+    }
+
+    #[test]
+    fn configured_invert_algorithm_is_exposed_to_the_form() {
+        let xtce::StreamSetTypeContent::VariableFrameStream(mut stream) =
+            default_variable_frame_stream("Frames".to_owned())
+        else {
+            unreachable!()
+        };
+        let sync = stream.content.iter_mut().find_map(|content| match content {
+            xtce::VariableFrameStreamTypeContent::SyncStrategy(sync) => Some(sync),
+            _ => None,
+        });
+        sync.expect("sync strategy").auto_invert = Some(xtce::AutoInvertType {
+            bad_frames_to_auto_invert: 10,
+            invert_algorithm: Some(test_algorithm("invert")),
+        });
+
+        assert_eq!(
+            invert_algorithm(Some(&stream)).map(|algorithm| algorithm.name.as_str()),
+            Some("invert")
+        );
+    }
+
+    fn test_algorithm(name: &str) -> xtce::InputAlgorithmType {
+        xtce::InputAlgorithmType {
+            short_description: None,
+            name: name.to_owned(),
+            long_description: None,
+            alias_set: None,
+            ancillary_data_set: None,
+            algorithm_text: None,
+            external_algorithm_set: None,
+            input_set: None,
+        }
     }
 }
