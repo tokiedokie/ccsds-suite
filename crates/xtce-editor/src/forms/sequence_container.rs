@@ -90,8 +90,17 @@ enum EntryKind {
     ParameterSegment,
     #[strum(serialize = "ContainerRefEntry")]
     Container,
+    #[strum(serialize = "ContainerSegmentRefEntry")]
+    ContainerSegment,
 }
 impl_select_item!(EntryKind);
+
+fn entry_reference_placeholder(kind: EntryKind) -> &'static str {
+    match kind {
+        EntryKind::Parameter | EntryKind::ParameterSegment => "Select a parameter...",
+        EntryKind::Container | EntryKind::ContainerSegment => "Select a container...",
+    }
+}
 
 pub(super) struct SequenceContainerForm {
     name_input: Entity<InputState>,
@@ -722,6 +731,7 @@ struct TelemetryEntryListView {
 struct TelemetryEntryRow {
     kind_select: Entity<SelectState<Vec<EntryKind>>>,
     reference_input: Entity<InputState>,
+    reference_kind: EntryKind,
     segment_size_input: Entity<InputState>,
     segment_order_input: Entity<InputState>,
     offset_input: Entity<InputState>,
@@ -1275,7 +1285,7 @@ impl Render for TelemetryEntryListView {
                                             .child(div().w(px(72.)).child("Bit position"))
                                             .child(div().w(px(98.)).child("Actions"))
                                             .child(div().w(px(170.)).child("Type"))
-                                            .child(div().flex_1().child("Reference"))
+                                            .child(div().flex_1().child("Reference target"))
                                             .when(optional_columns_visible, |header| {
                                                 header
                                                     .child(div().w(px(100.)).child("Segment size"))
@@ -1444,6 +1454,7 @@ fn entry_bit_positions(
                 EntryKind::Parameter => parameter_sizes.get(reference).copied(),
                 EntryKind::ParameterSegment => segment_size.trim().parse().ok(),
                 EntryKind::Container => None,
+                EntryKind::ContainerSegment => segment_size.trim().parse().ok(),
             };
             cursor = start.and_then(|start| size.and_then(|size| start.checked_add(size)));
             start.filter(|_| size.is_some())
@@ -1537,6 +1548,7 @@ fn append_packet_rows(
             EntryKind::Parameter => parameter_sizes.get(reference).copied(),
             EntryKind::ParameterSegment => segment_size.trim().parse().ok(),
             EntryKind::Container => None,
+            EntryKind::ContainerSegment => segment_size.trim().parse().ok(),
         };
         let Some(size) = size else {
             layout
@@ -1748,10 +1760,20 @@ fn packet_segment(
 }
 
 impl Render for TelemetryEntryRow {
-    fn render(&mut self, _: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+    fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         let optional_columns_visible = self.optional_columns_visible.get();
-        let segment = selected_value(&self.kind_select, EntryKind::Parameter, cx)
-            == EntryKind::ParameterSegment;
+        let kind = selected_value(&self.kind_select, EntryKind::Parameter, cx);
+        if self.reference_kind != kind {
+            self.reference_kind = kind;
+            self.reference_input.update(cx, |input, cx| {
+                input.set_value("", window, cx);
+                input.set_placeholder(entry_reference_placeholder(kind), window, cx);
+            });
+        }
+        let segment = matches!(
+            kind,
+            EntryKind::ParameterSegment | EntryKind::ContainerSegment
+        );
         h_flex()
             .flex_1()
             .min_w_0()
@@ -1846,7 +1868,9 @@ fn new_entry_row(
                 cx.notify()
             });
         let reference_input = cx.new(|cx| {
-            let mut input = InputState::new(window, cx).default_value(reference);
+            let mut input = InputState::new(window, cx)
+                .default_value(reference)
+                .placeholder(entry_reference_placeholder(kind));
             input.lsp.completion_provider = Some(Rc::new(ReferenceCompletionProvider {
                 context,
                 target: CompletionTarget::Entry(kind_select.clone()),
@@ -1856,6 +1880,7 @@ fn new_entry_row(
         TelemetryEntryRow {
             kind_select,
             reference_input,
+            reference_kind: kind,
             segment_size_input: input(&segment_size, false, window, cx),
             segment_order_input: input(&segment_order, false, window, cx),
             offset_input: input(&offset, false, window, cx),
@@ -1921,6 +1946,20 @@ fn rows_from_entry_list(list: Option<&xtce::EntryListType>) -> Vec<EntryRowData>
                         reference: entry.container_ref.clone(),
                         segment_size: String::new(),
                         segment_order: String::new(),
+                        offset: fixed_offset(entry.location_in_container_in_bits.as_ref()),
+                        description: entry.short_description.clone().unwrap_or_default(),
+                    },
+                    has_complex_location(entry.location_in_container_in_bits.as_ref()),
+                ),
+                xtce::EntryListTypeContent::ContainerSegmentRefEntry(entry) => (
+                    EntryRowContent::Editable {
+                        kind: EntryKind::ContainerSegment,
+                        reference: entry.container_ref.clone(),
+                        segment_size: entry.size_in_bits.to_string(),
+                        segment_order: entry
+                            .order
+                            .map(|value| value.to_string())
+                            .unwrap_or_default(),
                         offset: fixed_offset(entry.location_in_container_in_bits.as_ref()),
                         description: entry.short_description.clone().unwrap_or_default(),
                     },
@@ -2012,6 +2051,22 @@ fn apply_entry_rows(list: &mut xtce::EntryListType, rows: Vec<EntryRowData>) {
                     );
                     xtce::EntryListTypeContent::ContainerRefEntry(entry)
                 }
+                EntryKind::ContainerSegment => {
+                    let mut entry = match source {
+                        Some(xtce::EntryListTypeContent::ContainerSegmentRefEntry(entry)) => entry,
+                        _ => default_container_segment_ref_entry(),
+                    };
+                    entry.container_ref = reference;
+                    entry.size_in_bits = segment_size.trim().parse().unwrap_or_default();
+                    entry.order = segment_order.trim().parse().ok();
+                    entry.short_description = optional_value(description);
+                    apply_location(
+                        &mut entry.location_in_container_in_bits,
+                        &offset,
+                        &row.preserve_complex_location,
+                    );
+                    xtce::EntryListTypeContent::ContainerSegmentRefEntry(entry)
+                }
             },
         };
         row.source_index.set(Some(new_index));
@@ -2065,6 +2120,20 @@ fn default_container_ref_entry() -> xtce::ContainerRefEntryType {
     xtce::ContainerRefEntryType {
         short_description: None,
         container_ref: String::new(),
+        location_in_container_in_bits: None,
+        repeat_entry: None,
+        include_condition: None,
+        time_association: None,
+        ancillary_data_set: None,
+    }
+}
+
+fn default_container_segment_ref_entry() -> xtce::ContainerSegmentRefEntryType {
+    xtce::ContainerSegmentRefEntryType {
+        short_description: None,
+        container_ref: String::new(),
+        order: None,
+        size_in_bits: 0,
         location_in_container_in_bits: None,
         repeat_entry: None,
         include_condition: None,
@@ -3087,6 +3156,46 @@ mod tests {
                 segment_order,
                 ..
             } if reference == "payload" && segment_size == "8" && segment_order == "2"
+        ));
+    }
+
+    #[test]
+    fn container_segment_entry_round_trips_as_an_editable_row() {
+        let mut list = xtce::EntryListType {
+            content: vec![xtce::EntryListTypeContent::ContainerSegmentRefEntry(
+                xtce::ContainerSegmentRefEntryType {
+                    short_description: Some("second fragment".to_owned()),
+                    container_ref: "Payload".to_owned(),
+                    order: Some(1),
+                    size_in_bits: 64,
+                    location_in_container_in_bits: None,
+                    repeat_entry: None,
+                    include_condition: None,
+                    time_association: None,
+                    ancillary_data_set: None,
+                },
+            )],
+        };
+
+        let rows = rows_from_entry_list(Some(&list));
+        assert!(matches!(
+            &rows[0].content,
+            EntryRowContent::Editable {
+                kind: EntryKind::ContainerSegment,
+                reference,
+                segment_size,
+                segment_order,
+                ..
+            } if reference == "Payload" && segment_size == "64" && segment_order == "1"
+        ));
+
+        apply_entry_rows(&mut list, rows);
+        assert!(matches!(
+            &list.content[0],
+            xtce::EntryListTypeContent::ContainerSegmentRefEntry(entry)
+                if entry.container_ref == "Payload"
+                    && entry.size_in_bits == 64
+                    && entry.order == Some(1)
         ));
     }
 
