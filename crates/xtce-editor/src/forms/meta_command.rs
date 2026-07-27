@@ -127,9 +127,9 @@ impl MetaCommandForm {
                 list_state: ListState::new(
                     decode_assignments(&values.base_assignments).len(),
                     ListAlignment::Top,
-                    px(80.),
+                    px(54.),
                 )
-                .with_uniform_item_height(px(72.)),
+                .with_uniform_item_height(px(50.)),
             });
             let argument_list = cx.new(|_| ArgumentListView {
                 rows: command_argument_models(&values.arguments),
@@ -249,7 +249,7 @@ impl MetaCommandForm {
             list.cache_order.clear();
             list.context = self.assignment_context.clone();
             list.list_state
-                .reset_with_uniform_height(list.rows.len(), px(72.));
+                .reset_with_uniform_height(list.rows.len(), px(50.));
             cx.notify();
         });
         self.argument_list.update(cx, |list, cx| {
@@ -355,6 +355,12 @@ impl MetaCommandForm {
         }
         match selected_kind {
             MetaCommandKind::MetaCommand => form
+                .child(select_field(
+                    "Abstract",
+                    "Required",
+                    &self.abstract_select,
+                    cx,
+                ))
                 .child(self.render_arguments(cx))
                 .child(self.render_command_container(cx))
                 .child(self.render_documentation(cx))
@@ -431,12 +437,6 @@ impl MetaCommandForm {
                 v_flex()
                     .pt_3()
                     .gap_4()
-                    .child(select_field(
-                        "Abstract",
-                        "Required",
-                        &self.abstract_select,
-                        cx,
-                    ))
                     .child(field(
                         "Base meta command reference",
                         "Optional",
@@ -757,25 +757,30 @@ impl BaseAssignmentListView {
         let row = self.editor(index, window, cx);
         h_flex()
             .w_full()
-            .gap_3()
-            .items_end()
-            .pb_3()
+            .h(px(50.))
+            .px_2()
+            .gap_2()
+            .border_b_1()
+            .border_color(cx.theme().border)
             .child(row)
             .child(
-                Button::new(format!("remove-base-assignment-{index}"))
-                    .ghost()
-                    .small()
-                    .icon(IconName::Minus)
-                    .on_click(cx.listener(move |this, _, _, cx| {
-                        if index < this.rows.len() {
-                            this.flush_editors(cx);
-                            this.rows.remove(index);
-                            this.editors.clear();
-                            this.cache_order.clear();
-                            this.list_state.splice(index..index + 1, 0);
-                            cx.notify();
-                        }
-                    })),
+                div().w(px(52.)).flex_none().child(
+                    Button::new(format!("remove-base-assignment-{index}"))
+                        .ghost()
+                        .small()
+                        .icon(IconName::Minus)
+                        .tooltip("Remove assignment")
+                        .on_click(cx.listener(move |this, _, _, cx| {
+                            if index < this.rows.len() {
+                                this.flush_editors(cx);
+                                this.rows.remove(index);
+                                this.editors.clear();
+                                this.cache_order.clear();
+                                this.list_state.splice(index..index + 1, 0);
+                                cx.notify();
+                            }
+                        })),
+                ),
             )
             .into_any_element()
     }
@@ -820,32 +825,51 @@ impl Render for BaseAssignmentListView {
                             })),
                     ),
             )
-            .when(row_count > 0, |this| {
-                this.child(
-                    list(
-                        self.list_state.clone(),
-                        cx.processor(BaseAssignmentListView::render_item),
-                    )
+            .child(
+                v_flex()
                     .w_full()
-                    .h(virtual_list_height(row_count, 72., 4)),
-                )
-            })
+                    .rounded_md()
+                    .border_1()
+                    .border_color(cx.theme().border)
+                    .child(
+                        h_flex()
+                            .h(px(34.))
+                            .px_2()
+                            .gap_2()
+                            .bg(cx.theme().muted.opacity(0.5))
+                            .text_xs()
+                            .font_medium()
+                            .child(div().flex_1().child("Argument name"))
+                            .child(div().flex_1().child("Value"))
+                            .child(div().w(px(52.)).flex_none().child("Actions")),
+                    )
+                    .when(row_count > 0, |table| {
+                        table.child(
+                            list(
+                                self.list_state.clone(),
+                                cx.processor(BaseAssignmentListView::render_item),
+                            )
+                            .w_full()
+                            .h(virtual_list_height(row_count, 50., 6)),
+                        )
+                    }),
+            )
     }
 }
 
 impl Render for BaseAssignmentRow {
-    fn render(&mut self, _: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+    fn render(&mut self, _: &mut Window, _: &mut Context<Self>) -> impl IntoElement {
         h_flex()
             .flex_1()
-            .gap_3()
-            .items_end()
-            .child(field(
-                "Argument name",
-                "Inherited argument",
-                &self.name_input,
-                cx,
-            ))
-            .child(field("Value", "Required", &self.value_input, cx))
+            .min_w_0()
+            .gap_2()
+            .child(div().flex_1().min_w_0().child(Input::new(&self.name_input)))
+            .child(
+                div()
+                    .flex_1()
+                    .min_w_0()
+                    .child(Input::new(&self.value_input)),
+            )
     }
 }
 
@@ -884,20 +908,21 @@ impl ArgumentListView {
         cx: &mut Context<Self>,
     ) -> AnyElement {
         let row = self.editor(index, window, cx);
-        v_flex()
+        h_flex()
             .w_full()
-            .gap_3()
-            .p_3()
-            .mb_3()
-            .rounded_md()
-            .border_1()
+            .h(px(50.))
+            .px_2()
+            .gap_2()
+            .border_b_1()
             .border_color(cx.theme().border)
+            .child(row)
             .child(
-                h_flex().justify_end().child(
+                div().w(px(52.)).flex_none().child(
                     Button::new(format!("remove-command-argument-{index}"))
                         .ghost()
                         .small()
                         .icon(IconName::Minus)
+                        .tooltip("Remove argument")
                         .on_click(cx.listener(move |this, _, _, cx| {
                             if index < this.rows.len() {
                                 this.flush_editors(cx);
@@ -908,7 +933,6 @@ impl ArgumentListView {
                         })),
                 ),
             )
-            .child(row)
             .into_any_element()
     }
 }
@@ -966,45 +990,97 @@ impl Render for ArgumentListView {
                             ),
                     ),
             )
-            .when(row_count > 0, |this| {
-                this.child(v_flex().w_full().children(rows))
-            })
+            .child(
+                div()
+                    .id("command-arguments-table-scroll-boundary")
+                    .w_full()
+                    .on_scroll_wheel(|event, _, cx| {
+                        let delta = event.delta.pixel_delta(px(20.));
+                        if delta.x.abs() > delta.y.abs() {
+                            cx.stop_propagation();
+                        }
+                    })
+                    .child(
+                        div()
+                            .id("command-arguments-table-horizontal-scroll")
+                            .w_full()
+                            .overflow_x_scroll()
+                            .child(
+                                v_flex()
+                                    .min_w(if self.optional_fields_open {
+                                        px(900.)
+                                    } else {
+                                        px(620.)
+                                    })
+                                    .rounded_md()
+                                    .border_1()
+                                    .border_color(cx.theme().border)
+                                    .child(
+                                        h_flex()
+                                            .h(px(34.))
+                                            .px_2()
+                                            .gap_2()
+                                            .bg(cx.theme().muted.opacity(0.5))
+                                            .text_xs()
+                                            .font_medium()
+                                            .child(
+                                                div()
+                                                    .w(px(180.))
+                                                    .flex_none()
+                                                    .child("Argument name"),
+                                            )
+                                            .child(div().flex_1().child("Argument type reference"))
+                                            .when(self.optional_fields_open, |header| {
+                                                header
+                                                    .child(
+                                                        div()
+                                                            .w(px(180.))
+                                                            .flex_none()
+                                                            .child("Initial value"),
+                                                    )
+                                                    .child(
+                                                        div().flex_1().child("Short description"),
+                                                    )
+                                            })
+                                            .child(div().w(px(52.)).flex_none().child("Actions")),
+                                    )
+                                    .when(row_count > 0, |table| table.children(rows)),
+                            ),
+                    ),
+            )
     }
 }
 
 impl Render for CommandArgumentRow {
-    fn render(&mut self, _: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
-        v_flex()
-            .gap_3()
+    fn render(&mut self, _: &mut Window, _: &mut Context<Self>) -> impl IntoElement {
+        h_flex()
+            .flex_1()
+            .min_w_0()
+            .gap_2()
             .child(
-                h_flex()
-                    .gap_3()
-                    .items_end()
-                    .child(field("Argument name", "Required", &self.name_input, cx))
-                    .child(field(
-                        "Argument type reference",
-                        "Required",
-                        &self.type_ref_input,
-                        cx,
-                    )),
+                div()
+                    .w(px(180.))
+                    .flex_none()
+                    .child(Input::new(&self.name_input)),
+            )
+            .child(
+                div()
+                    .flex_1()
+                    .min_w_0()
+                    .child(Input::new(&self.type_ref_input)),
             )
             .when(self.optional_fields_open, |row| {
                 row.child(
-                    h_flex()
-                        .gap_3()
-                        .items_start()
-                        .child(field(
-                            "Initial value",
-                            "Optional",
-                            &self.initial_value_input,
-                            cx,
-                        ))
-                        .child(field(
-                            "Short description",
-                            "Optional",
-                            &self.short_description_input,
-                            cx,
-                        )),
+                    div()
+                        .w(px(180.))
+                        .flex_none()
+                        .child(Input::new(&self.initial_value_input)),
+                )
+                .child(
+                    div()
+                        .flex_1()
+                        .min_w_0()
+                        .child(Input::new(&self.short_description_input)),
                 )
             })
     }
