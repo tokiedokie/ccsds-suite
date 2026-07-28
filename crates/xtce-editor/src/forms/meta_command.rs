@@ -29,7 +29,8 @@ use strum::{Display, EnumString, VariantArray};
 use super::{
     alias_set::AliasSetForm, ancillary_data_set::AncillaryDataSetForm,
     container_binary_encoding::ContainerBinaryEncodingForm, container_rate::ContainerRateForm,
-    context_significance::ContextSignificanceListForm, field, impl_select_item, optional_value,
+    context_significance::ContextSignificanceListForm, dynamic_value::DynamicValueForm, field,
+    impl_select_item, optional_value,
 };
 use crate::XtceEditor;
 
@@ -5433,6 +5434,16 @@ impl std::fmt::Display for VerifierStageChoice {
 
 impl_select_item!(VerifierStageChoice);
 
+#[derive(Clone, Copy, Debug, Display, EnumString, VariantArray, PartialEq, Eq)]
+enum PercentCompleteChoice {
+    None,
+    #[strum(serialize = "Fixed value")]
+    Fixed,
+    #[strum(serialize = "Dynamic value")]
+    Dynamic,
+}
+impl_select_item!(PercentCompleteChoice);
+
 pub(super) struct VerifierListForm {
     rows: Vec<Entity<VerifierRowForm>>,
 }
@@ -5444,6 +5455,9 @@ struct VerifierRowForm {
     value: Entity<InputState>,
     time_to_stop: Entity<InputState>,
     return_parameter: Entity<InputState>,
+    percent_complete_kind: Entity<SelectState<Vec<PercentCompleteChoice>>>,
+    percent_complete_fixed: Entity<InputState>,
+    percent_complete_dynamic: Entity<DynamicValueForm>,
 }
 
 pub(super) struct VerifierModel {
@@ -5453,6 +5467,9 @@ pub(super) struct VerifierModel {
     value: String,
     time_to_stop: String,
     return_parameter: String,
+    percent_complete_kind: PercentCompleteChoice,
+    percent_complete_fixed: String,
+    percent_complete_dynamic: Option<xtce::DynamicValueType>,
 }
 
 impl VerifierListForm {
@@ -5506,6 +5523,21 @@ impl VerifierListForm {
             let val = value(&row_read.value, cx);
             let time_to_stop = value(&row_read.time_to_stop, cx).trim().to_owned();
             let return_parameter = value(&row_read.return_parameter, cx).trim().to_owned();
+            let percent_complete = match selected_value(
+                &row_read.percent_complete_kind,
+                PercentCompleteChoice::None,
+                cx,
+            ) {
+                PercentCompleteChoice::None => None,
+                PercentCompleteChoice::Fixed => value(&row_read.percent_complete_fixed, cx)
+                    .trim()
+                    .parse()
+                    .ok()
+                    .map(xtce::PercentCompleteType::FixedValue),
+                PercentCompleteChoice::Dynamic => Some(xtce::PercentCompleteType::DynamicValue(
+                    row_read.percent_complete_dynamic.read(cx).value(cx),
+                )),
+            };
             match stage {
                 VerifierStageChoice::Release => {}
                 VerifierStageChoice::Received => {
@@ -5518,7 +5550,13 @@ impl VerifierListForm {
                     queued = Some(build_queued_verifier(param, op_str, val, time_to_stop));
                 }
                 VerifierStageChoice::Execution => {
-                    execution.push(build_execution_verifier(param, op_str, val, time_to_stop));
+                    execution.push(build_execution_verifier(
+                        param,
+                        op_str,
+                        val,
+                        time_to_stop,
+                        percent_complete,
+                    ));
                 }
                 VerifierStageChoice::Complete => {
                     complete.push(build_complete_verifier(
@@ -5627,7 +5665,7 @@ fn verifier_models(set: Option<&xtce::VerifierSetType>) -> Vec<VerifierModel> {
         }
     }
     for v in &set.execution_verifier {
-        if let Some(m) = parse_verifier_items(
+        if let Some(mut m) = parse_verifier_items(
             &v.content,
             VerifierStageChoice::Execution,
             |item| match item {
@@ -5639,6 +5677,21 @@ fn verifier_models(set: Option<&xtce::VerifierSetType>) -> Vec<VerifierModel> {
                 _ => None,
             },
         ) {
+            if let Some(percent_complete) = v.content.iter().find_map(|item| match item {
+                xtce::ExecutionVerifierTypeContent::PercentComplete(value) => Some(value),
+                _ => None,
+            }) {
+                match percent_complete {
+                    xtce::PercentCompleteType::FixedValue(value) => {
+                        m.percent_complete_kind = PercentCompleteChoice::Fixed;
+                        m.percent_complete_fixed = value.to_string();
+                    }
+                    xtce::PercentCompleteType::DynamicValue(value) => {
+                        m.percent_complete_kind = PercentCompleteChoice::Dynamic;
+                        m.percent_complete_dynamic = Some(copy_dynamic_value(value));
+                    }
+                }
+            }
             models.push(m);
         }
     }
@@ -5759,7 +5812,26 @@ fn parse_verifier_items<T>(
         value: val,
         time_to_stop: stop,
         return_parameter: String::new(),
+        percent_complete_kind: PercentCompleteChoice::None,
+        percent_complete_fixed: String::new(),
+        percent_complete_dynamic: None,
     })
+}
+
+fn copy_dynamic_value(value: &xtce::DynamicValueType) -> xtce::DynamicValueType {
+    xtce::DynamicValueType {
+        parameter_instance_ref: xtce::ParameterInstanceRefType {
+            parameter_ref: value.parameter_instance_ref.parameter_ref.clone(),
+            instance: value.parameter_instance_ref.instance,
+            use_calibrated_value: value.parameter_instance_ref.use_calibrated_value,
+        },
+        linear_adjustment: value.linear_adjustment.as_ref().map(|adjustment| {
+            xtce::LinearAdjustmentType {
+                slope: adjustment.slope,
+                intercept: adjustment.intercept,
+            }
+        }),
+    }
 }
 
 fn build_received_verifier(
@@ -5863,6 +5935,7 @@ fn build_execution_verifier(
     op: &str,
     val: String,
     time_to_stop: String,
+    percent_complete: Option<xtce::PercentCompleteType>,
 ) -> xtce::ExecutionVerifierType {
     let mut content = vec![xtce::ExecutionVerifierTypeContent::Comparison(
         xtce::ComparisonType {
@@ -5881,6 +5954,11 @@ fn build_execution_verifier(
                 time_window_is_relative_to:
                     xtce::TimeWindowIsRelativeToType::TimeLastVerifierPassed,
             },
+        ));
+    }
+    if let Some(percent_complete) = percent_complete {
+        content.push(xtce::ExecutionVerifierTypeContent::PercentComplete(
+            percent_complete,
         ));
     }
     xtce::ExecutionVerifierType {
@@ -6055,6 +6133,15 @@ fn verifier_entity(
     let value_input = input(&model.value, false, window, cx);
     let time_to_stop = input(&model.time_to_stop, false, window, cx);
     let return_parameter = input(&model.return_parameter, false, window, cx);
+    let percent_complete_kind = select(
+        PercentCompleteChoice::VARIANTS,
+        model.percent_complete_kind,
+        window,
+        cx,
+    );
+    let percent_complete_fixed = input(&model.percent_complete_fixed, false, window, cx);
+    let percent_complete_dynamic =
+        DynamicValueForm::new(model.percent_complete_dynamic.as_ref(), window, cx);
     let operator = select(
         ComparisonOperatorChoice::VARIANTS,
         model.operator,
@@ -6069,6 +6156,9 @@ fn verifier_entity(
         value: value_input,
         time_to_stop,
         return_parameter,
+        percent_complete_kind,
+        percent_complete_fixed,
+        percent_complete_dynamic,
     })
 }
 
@@ -6519,6 +6609,9 @@ impl Render for VerifierListForm {
                                         value: String::new(),
                                         time_to_stop: String::new(),
                                         return_parameter: String::new(),
+                                        percent_complete_kind: PercentCompleteChoice::None,
+                                        percent_complete_fixed: String::new(),
+                                        percent_complete_dynamic: None,
                                     },
                                     window,
                                     cx,
@@ -6604,10 +6697,38 @@ fn open_verifier_options(editor: Entity<VerifierRowForm>, window: &mut Window, c
                 let row = editor.read(cx);
                 let stage = selected_value(&row.stage, VerifierStageChoice::Execution, cx);
                 let return_parameter = row.return_parameter.clone();
+                let percent_complete_kind = row.percent_complete_kind.clone();
+                let percent_complete_fixed = row.percent_complete_fixed.clone();
+                let percent_complete_dynamic = row.percent_complete_dynamic.clone();
+                let percent_complete_choice =
+                    selected_value(&percent_complete_kind, PercentCompleteChoice::None, cx);
                 content.child(
                     v_flex()
                         .p_4()
                         .gap_3()
+                        .when(stage == VerifierStageChoice::Execution, |form| {
+                            form.child(select_field(
+                                "Percent complete source",
+                                "Optional",
+                                &percent_complete_kind,
+                                cx,
+                            ))
+                            .when(
+                                percent_complete_choice == PercentCompleteChoice::Fixed,
+                                |form| {
+                                    form.child(field(
+                                        "Percent complete",
+                                        "Required; numeric percentage",
+                                        &percent_complete_fixed,
+                                        cx,
+                                    ))
+                                },
+                            )
+                            .when(
+                                percent_complete_choice == PercentCompleteChoice::Dynamic,
+                                |form| form.child(percent_complete_dynamic),
+                            )
+                        })
                         .when(
                             matches!(
                                 stage,
@@ -6625,7 +6746,9 @@ fn open_verifier_options(editor: Entity<VerifierRowForm>, window: &mut Window, c
                         .when(
                             !matches!(
                                 stage,
-                                VerifierStageChoice::Complete | VerifierStageChoice::Failed
+                                VerifierStageChoice::Execution
+                                    | VerifierStageChoice::Complete
+                                    | VerifierStageChoice::Failed
                             ),
                             |form| {
                                 form.child(
@@ -7571,7 +7694,10 @@ mod tests {
 
     #[test]
     fn meta_command_verifiers_roundtrip() {
-        use super::{ComparisonOperatorChoice, VerifierStageChoice, verifier_models};
+        use super::{
+            ComparisonOperatorChoice, PercentCompleteChoice, VerifierStageChoice,
+            build_execution_verifier, verifier_models,
+        };
 
         let exec = xtce::ExecutionVerifierType {
             short_description: None,
@@ -7590,6 +7716,9 @@ mod tests {
                     time_window_is_relative_to:
                         xtce::TimeWindowIsRelativeToType::TimeLastVerifierPassed,
                 }),
+                xtce::ExecutionVerifierTypeContent::PercentComplete(
+                    xtce::PercentCompleteType::FixedValue(42.5),
+                ),
             ],
         };
 
@@ -7634,6 +7763,11 @@ mod tests {
         assert_eq!(models[0].operator, ComparisonOperatorChoice::Equal);
         assert_eq!(models[0].value, "RUNNING");
         assert_eq!(models[0].time_to_stop, "PT5S");
+        assert_eq!(
+            models[0].percent_complete_kind,
+            PercentCompleteChoice::Fixed
+        );
+        assert_eq!(models[0].percent_complete_fixed, "42.5");
 
         assert_eq!(models[1].stage, VerifierStageChoice::Complete);
         assert_eq!(models[1].parameter, "EXEC_STATUS");
@@ -7641,6 +7775,20 @@ mod tests {
         assert_eq!(models[1].value, "COMPLETED");
         assert_eq!(models[1].time_to_stop, "PT30S");
         assert_eq!(models[1].return_parameter, "COMMAND_RESULT");
+
+        let rebuilt = build_execution_verifier(
+            "EXEC_STATUS".to_owned(),
+            "==",
+            "RUNNING".to_owned(),
+            "PT5S".to_owned(),
+            Some(xtce::PercentCompleteType::FixedValue(42.5)),
+        );
+        assert!(rebuilt.content.iter().any(|item| matches!(
+            item,
+            xtce::ExecutionVerifierTypeContent::PercentComplete(
+                xtce::PercentCompleteType::FixedValue(value)
+            ) if *value == 42.5
+        )));
     }
 
     #[test]
