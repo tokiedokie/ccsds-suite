@@ -134,6 +134,7 @@ pub(super) struct MetaCommandForm {
     name_or_ref_input: Entity<InputState>,
     short_description_input: Entity<InputState>,
     long_description_input: Entity<InputState>,
+    alias_set: AliasSetForm,
     system_name_input: Entity<InputState>,
     base_meta_command_ref_input: Entity<InputState>,
     base_assignment_list: Entity<BaseAssignmentListView>,
@@ -162,6 +163,7 @@ pub(super) struct MetaCommandForm {
     parameter_to_set_list: Entity<ParameterToSetListForm>,
     parameters_to_suspend_alarms: Entity<ParametersToSuspendAlarmsOnSetForm>,
     documentation_open: bool,
+    metadata_open: bool,
     inheritance_open: bool,
     identification_open: bool,
     significance_open: bool,
@@ -186,6 +188,17 @@ impl MetaCommandForm {
         cx: &mut Context<XtceEditor>,
     ) -> Entity<Self> {
         let values = MetaCommandValues::from_command(command);
+        let alias_set = AliasSetForm::new(
+            command.and_then(|command| match command {
+                xtce::MetaCommandSetTypeContent::MetaCommand(command) => command.alias_set.as_ref(),
+                xtce::MetaCommandSetTypeContent::BlockMetaCommand(command) => {
+                    command.alias_set.as_ref()
+                }
+                xtce::MetaCommandSetTypeContent::MetaCommandRef(_) => None,
+            }),
+            window,
+            cx,
+        );
         let command_container = command.and_then(|command| match command {
             xtce::MetaCommandSetTypeContent::MetaCommand(command) => {
                 command.command_container.as_ref()
@@ -297,6 +310,7 @@ impl MetaCommandForm {
                 name_or_ref_input,
                 short_description_input: input(&values.short_description, false, window, cx),
                 long_description_input: input(&values.long_description, true, window, cx),
+                alias_set,
                 system_name_input: input(&values.system_name, false, window, cx),
                 base_meta_command_ref_input,
                 base_assignment_list,
@@ -411,6 +425,7 @@ impl MetaCommandForm {
                     cx,
                 ),
                 documentation_open: false,
+                metadata_open: false,
                 inheritance_open: false,
                 identification_open: false,
                 significance_open: false,
@@ -437,11 +452,23 @@ impl MetaCommandForm {
         cx: &mut Context<Self>,
     ) {
         let values = MetaCommandValues::from_command(command);
+        self.alias_set.load(
+            command.and_then(|command| match command {
+                xtce::MetaCommandSetTypeContent::MetaCommand(command) => command.alias_set.as_ref(),
+                xtce::MetaCommandSetTypeContent::BlockMetaCommand(command) => {
+                    command.alias_set.as_ref()
+                }
+                xtce::MetaCommandSetTypeContent::MetaCommandRef(_) => None,
+            }),
+            window,
+            cx,
+        );
         let interlock_values = InterlockValues::from_interlock(command.and_then(|cmd| match cmd {
             xtce::MetaCommandSetTypeContent::MetaCommand(cmd) => cmd.interlock.as_ref(),
             _ => None,
         }));
         self.documentation_open = false;
+        self.metadata_open = false;
         self.inheritance_open = false;
         self.identification_open = false;
         self.significance_open = false;
@@ -689,6 +716,15 @@ impl MetaCommandForm {
             default_significance,
         }
         .apply_to(command);
+        match command {
+            xtce::MetaCommandSetTypeContent::MetaCommand(command) => {
+                self.alias_set.apply_to_option(&mut command.alias_set, cx);
+            }
+            xtce::MetaCommandSetTypeContent::BlockMetaCommand(command) => {
+                self.alias_set.apply_to_option(&mut command.alias_set, cx);
+            }
+            xtce::MetaCommandSetTypeContent::MetaCommandRef(_) => {}
+        }
         if let xtce::MetaCommandSetTypeContent::MetaCommand(cmd) = command {
             if let Some(container) = cmd.command_container.as_mut() {
                 self.container_alias_set
@@ -757,6 +793,7 @@ impl MetaCommandForm {
                 ))
                 .child(self.render_arguments(cx))
                 .child(self.render_documentation(cx))
+                .child(self.render_metadata(cx))
                 .child(self.render_inheritance(cx))
                 .child(self.render_identification(cx))
                 .child(self.render_significance(cx))
@@ -773,7 +810,8 @@ impl MetaCommandForm {
                     &self.block_steps_input,
                     cx,
                 ))
-                .child(self.render_documentation(cx)),
+                .child(self.render_documentation(cx))
+                .child(self.render_metadata(cx)),
             MetaCommandKind::MetaCommandRef => unreachable!(),
         }
     }
@@ -813,6 +851,27 @@ impl MetaCommandForm {
                         cx,
                     )),
             )
+    }
+
+    fn render_metadata(&self, cx: &mut Context<Self>) -> Collapsible {
+        Collapsible::new()
+            .open(self.metadata_open)
+            .child(
+                Button::new("toggle-meta-command-metadata")
+                    .small()
+                    .link()
+                    .icon(if self.metadata_open {
+                        IconName::ChevronDown
+                    } else {
+                        IconName::ChevronRight
+                    })
+                    .label("Metadata")
+                    .on_click(cx.listener(|this, _, _, cx| {
+                        this.metadata_open = !this.metadata_open;
+                        cx.notify();
+                    })),
+            )
+            .content(v_flex().pt_3().child(self.alias_set.render(cx)))
     }
 
     fn render_inheritance(&self, cx: &mut Context<Self>) -> Collapsible {
