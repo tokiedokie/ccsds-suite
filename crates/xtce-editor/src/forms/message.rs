@@ -210,6 +210,7 @@ pub(super) struct MessageCriteriaForm {
     _subscriptions: Vec<Subscription>,
 }
 
+#[derive(Clone, Copy)]
 pub(super) enum MessageCriteriaRef<'a> {
     Comparison(&'a xtce::ComparisonType),
     ComparisonList(&'a xtce::ComparisonListType),
