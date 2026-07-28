@@ -27,8 +27,9 @@ use lsp_types::{
 use strum::{Display, EnumString, VariantArray};
 
 use super::{
-    alias_set::AliasSetForm, container_binary_encoding::ContainerBinaryEncodingForm,
-    container_rate::ContainerRateForm, field, impl_select_item, optional_value,
+    alias_set::AliasSetForm, ancillary_data_set::AncillaryDataSetForm,
+    container_binary_encoding::ContainerBinaryEncodingForm, container_rate::ContainerRateForm,
+    field, impl_select_item, optional_value,
 };
 use crate::XtceEditor;
 
@@ -145,6 +146,7 @@ pub(super) struct MetaCommandForm {
     container_long_description_input: Entity<InputState>,
     container_base_ref_input: Entity<InputState>,
     container_alias_set: AliasSetForm,
+    container_ancillary_data_set: AncillaryDataSetForm,
     container_rate: Entity<ContainerRateForm>,
     container_binary_encoding: Entity<ContainerBinaryEncodingForm>,
     entry_list: Entity<EntryListView>,
@@ -192,6 +194,11 @@ impl MetaCommandForm {
         });
         let container_alias_set = AliasSetForm::new(
             command_container.and_then(|container| container.alias_set.as_ref()),
+            window,
+            cx,
+        );
+        let container_ancillary_data_set = AncillaryDataSetForm::new(
+            command_container.and_then(|container| container.ancillary_data_set.as_ref()),
             window,
             cx,
         );
@@ -317,6 +324,7 @@ impl MetaCommandForm {
                     cx,
                 ),
                 container_alias_set,
+                container_ancillary_data_set,
                 container_rate,
                 container_binary_encoding,
                 entry_list,
@@ -454,6 +462,11 @@ impl MetaCommandForm {
         });
         self.container_alias_set.load(
             command_container.and_then(|container| container.alias_set.as_ref()),
+            window,
+            cx,
+        );
+        self.container_ancillary_data_set.load(
+            command_container.and_then(|container| container.ancillary_data_set.as_ref()),
             window,
             cx,
         );
@@ -680,6 +693,8 @@ impl MetaCommandForm {
             if let Some(container) = cmd.command_container.as_mut() {
                 self.container_alias_set
                     .apply_to_option(&mut container.alias_set, cx);
+                self.container_ancillary_data_set
+                    .apply_to_option(&mut container.ancillary_data_set, cx);
                 self.container_rate.read(cx).apply_to(
                     &mut container.default_rate_in_stream,
                     &mut container.rate_in_stream_set,
@@ -1128,7 +1143,8 @@ impl MetaCommandForm {
                         v_flex()
                             .pt_3()
                             .gap_4()
-                            .child(self.container_alias_set.render(cx)),
+                            .child(self.container_alias_set.render(cx))
+                            .child(self.container_ancillary_data_set.render(cx)),
                     ),
             )
             .child(
