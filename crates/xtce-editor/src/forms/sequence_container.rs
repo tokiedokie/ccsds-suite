@@ -11,7 +11,7 @@ use gpui::{
     Subscription, Task, Window, div, list, prelude::FluentBuilder, px,
 };
 use gpui_component::{
-    ActiveTheme, Disableable, IconName, IndexPath, Sizable, StyledExt,
+    ActiveTheme, Disableable, IconName, IndexPath, Sizable, StyledExt, WindowExt,
     button::{Button, ButtonVariants},
     collapsible::Collapsible,
     h_flex,
@@ -743,7 +743,6 @@ struct TelemetryEntryListView {
     context: Rc<RefCell<ReferenceContext>>,
     base_container_ref_input: Entity<InputState>,
     container_name_input: Entity<InputState>,
-    optional_columns_visible: Rc<Cell<bool>>,
     packet_layout_open: bool,
     bit_positions: Vec<Option<u64>>,
     list_state: ListState,
@@ -762,7 +761,6 @@ struct TelemetryEntryRow {
     description_input: Entity<InputState>,
     source_index: Rc<Cell<Option<usize>>>,
     preserve_complex_location: Rc<Cell<bool>>,
-    optional_columns_visible: Rc<Cell<bool>>,
     _subscriptions: Vec<Subscription>,
 }
 
@@ -979,7 +977,6 @@ impl TelemetryEntryListView {
         _: &mut Window,
         _: &mut Context<Self>,
     ) -> Self {
-        let optional_columns_visible = Rc::new(Cell::new(false));
         let row_count = rows.len();
         Self {
             list_state: ListState::new(rows.len(), ListAlignment::Top, px(58.))
@@ -990,7 +987,6 @@ impl TelemetryEntryListView {
             context,
             base_container_ref_input,
             container_name_input,
-            optional_columns_visible,
             packet_layout_open: true,
             bit_positions: vec![None; row_count],
         }
@@ -1000,7 +996,6 @@ impl TelemetryEntryListView {
         self.rows = rows;
         self.editors.clear();
         self.cache_order.clear();
-        self.optional_columns_visible.set(false);
         self.packet_layout_open = true;
         self.bit_positions = vec![None; self.rows.len()];
         self.list_state
@@ -1021,13 +1016,7 @@ impl TelemetryEntryListView {
             touch_cache(&mut self.cache_order, index);
             return Some(editor);
         }
-        let editor = new_entry_row(
-            self.rows[index].clone(),
-            self.context.clone(),
-            self.optional_columns_visible.clone(),
-            window,
-            cx,
-        );
+        let editor = new_entry_row(self.rows[index].clone(), self.context.clone(), window, cx);
         self.editors.insert(index, editor.clone());
         touch_cache(&mut self.cache_order, index);
         while self.editors.len() > 24 {
@@ -1101,10 +1090,23 @@ impl TelemetryEntryListView {
         window: &mut Window,
         cx: &mut Context<Self>,
     ) -> AnyElement {
+        let editor = self.editor(index, window, cx);
+        let details = editor.as_ref().map(|editor| {
+            let editor = editor.clone();
+            Button::new(format!("edit-telemetry-entry-details-{index}"))
+                .small()
+                .label("Details")
+                .tooltip("Edit entry details")
+                .on_click(move |_, window, cx| {
+                    open_entry_details(editor.clone(), window, cx);
+                })
+                .into_any_element()
+        });
         let controls = h_flex()
-            .w(px(98.))
+            .w(px(160.))
             .flex_none()
             .gap_1()
+            .children(details)
             .child(
                 Button::new(format!("move-telemetry-entry-up-{index}"))
                     .ghost()
@@ -1139,7 +1141,7 @@ impl TelemetryEntryListView {
                         this.remove_entry(index, cx);
                     })),
             );
-        let content = match self.editor(index, window, cx) {
+        let content = match editor {
             Some(editor) => editor.into_any_element(),
             None => {
                 let label = match &self.rows[index].content {
@@ -1181,7 +1183,6 @@ impl TelemetryEntryListView {
 impl Render for TelemetryEntryListView {
     fn render(&mut self, _: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         let row_count = self.rows.len();
-        let optional_columns_visible = self.optional_columns_visible.get();
         let reference_context = self.context.clone();
         let rows = self.current_rows(cx);
         let base_container_ref = value(&self.base_container_ref_input, cx);
@@ -1243,39 +1244,18 @@ impl Render for TelemetryEntryListView {
                             ),
                     )
                     .child(
-                        h_flex()
-                            .gap_2()
-                            .child(
-                                Button::new("toggle-telemetry-entry-optional-columns")
-                                    .small()
-                                    .label(if optional_columns_visible {
-                                        "Hide optional columns"
-                                    } else {
-                                        "Show optional columns"
-                                    })
-                                    .on_click(cx.listener(|this, _, _, cx| {
-                                        this.optional_columns_visible
-                                            .set(!this.optional_columns_visible.get());
-                                        for editor in this.editors.values() {
-                                            editor.update(cx, |_, cx| cx.notify());
-                                        }
-                                        cx.notify();
-                                    })),
-                            )
-                            .child(
-                                Button::new("add-telemetry-container-entry")
-                                    .small()
-                                    .icon(IconName::Plus)
-                                    .label("Add entry")
-                                    .on_click(cx.listener(|this, _, _, cx| {
-                                        let index = this.rows.len();
-                                        this.rows
-                                            .push(EntryRowData::new_editable(EntryKind::Parameter));
-                                        this.list_state.splice(index..index, 1);
-                                        this.list_state.scroll_to_reveal_item(index);
-                                        cx.notify();
-                                    })),
-                            ),
+                        Button::new("add-telemetry-container-entry")
+                            .small()
+                            .icon(IconName::Plus)
+                            .label("Add entry")
+                            .on_click(cx.listener(|this, _, _, cx| {
+                                let index = this.rows.len();
+                                this.rows
+                                    .push(EntryRowData::new_editable(EntryKind::Parameter));
+                                this.list_state.splice(index..index, 1);
+                                this.list_state.scroll_to_reveal_item(index);
+                                cx.notify();
+                            })),
                     ),
             )
             .child(
@@ -1290,11 +1270,7 @@ impl Render for TelemetryEntryListView {
                             .overflow_x_scroll()
                             .child(
                                 v_flex()
-                                    .min_w(if optional_columns_visible {
-                                        px(1_458.)
-                                    } else {
-                                        px(638.)
-                                    })
+                                    .min_w(px(700.))
                                     .rounded_md()
                                     .border_1()
                                     .border_color(cx.theme().border)
@@ -1307,23 +1283,9 @@ impl Render for TelemetryEntryListView {
                                             .text_xs()
                                             .font_medium()
                                             .child(div().w(px(72.)).child("Bit position"))
-                                            .child(div().w(px(98.)).child("Actions"))
+                                            .child(div().w(px(160.)).child("Actions"))
                                             .child(div().w(px(170.)).child("Type"))
-                                            .child(div().flex_1().child("Reference target"))
-                                            .when(optional_columns_visible, |header| {
-                                                header
-                                                    .child(div().w(px(100.)).child("Segment size"))
-                                                    .child(div().w(px(80.)).child("Order"))
-                                                    .child(div().w(px(90.)).child("Instance"))
-                                                    .child(
-                                                        div().w(px(140.)).child("Parameter value"),
-                                                    )
-                                                    .child(
-                                                        div().w(px(130.)).child("Alias namespace"),
-                                                    )
-                                                    .child(div().w(px(100.)).child("Offset"))
-                                                    .child(div().flex_1().child("Description"))
-                                            }),
+                                            .child(div().flex_1().child("Reference target")),
                                     )
                                     .child(
                                         list(
@@ -1796,7 +1758,6 @@ fn packet_segment(
 
 impl Render for TelemetryEntryRow {
     fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
-        let optional_columns_visible = self.optional_columns_visible.get();
         let kind = selected_value(&self.kind_select, EntryKind::Parameter, cx);
         if self.reference_kind != kind {
             self.reference_kind = kind;
@@ -1805,11 +1766,6 @@ impl Render for TelemetryEntryRow {
                 input.set_placeholder(entry_reference_placeholder(kind), window, cx);
             });
         }
-        let segment = matches!(
-            kind,
-            EntryKind::ParameterSegment | EntryKind::ContainerSegment | EntryKind::StreamSegment
-        );
-        let indirect = kind == EntryKind::IndirectParameter;
         h_flex()
             .flex_1()
             .min_w_0()
@@ -1826,36 +1782,63 @@ impl Render for TelemetryEntryRow {
                     .min_w_0()
                     .child(Input::new(&self.reference_input)),
             )
-            .when(optional_columns_visible, |row| {
-                row.child(div().w(px(100.)).flex_none().when(segment, |cell| {
-                    cell.child(Input::new(&self.segment_size_input))
-                }))
-                .child(div().w(px(80.)).flex_none().when(segment, |cell| {
-                    cell.child(Input::new(&self.segment_order_input))
-                }))
-                .child(div().w(px(90.)).flex_none().when(indirect, |cell| {
-                    cell.child(Input::new(&self.instance_input))
-                }))
-                .child(div().w(px(140.)).flex_none().when(indirect, |cell| {
-                    cell.child(Select::new(&self.calibrated_select).w_full())
-                }))
-                .child(div().w(px(130.)).flex_none().when(indirect, |cell| {
-                    cell.child(Input::new(&self.alias_namespace_input))
-                }))
-                .child(
-                    div()
-                        .w(px(100.))
-                        .flex_none()
-                        .child(Input::new(&self.offset_input)),
-                )
-                .child(
-                    div()
-                        .flex_1()
-                        .min_w_0()
-                        .child(Input::new(&self.description_input)),
+    }
+}
+
+fn open_entry_details(editor: Entity<TelemetryEntryRow>, window: &mut Window, cx: &mut App) {
+    let title = {
+        let row = editor.read(cx);
+        format!(
+            "{} details",
+            selected_value(&row.kind_select, EntryKind::Parameter, cx)
+        )
+    };
+    window.open_dialog(cx, move |dialog, _, _| {
+        let editor = editor.clone();
+        dialog
+            .title(title.clone())
+            .w(px(560.))
+            .content(move |content, _, cx| {
+                let row = editor.read(cx);
+                let kind = selected_value(&row.kind_select, EntryKind::Parameter, cx);
+                let segment_size = row.segment_size_input.clone();
+                let segment_order = row.segment_order_input.clone();
+                let instance = row.instance_input.clone();
+                let calibrated = row.calibrated_select.clone();
+                let alias_namespace = row.alias_namespace_input.clone();
+                let offset = row.offset_input.clone();
+                let description = row.description_input.clone();
+                let segment = matches!(
+                    kind,
+                    EntryKind::ParameterSegment
+                        | EntryKind::ContainerSegment
+                        | EntryKind::StreamSegment
+                );
+                let indirect = kind == EntryKind::IndirectParameter;
+                content.child(
+                    v_flex()
+                        .p_4()
+                        .gap_3()
+                        .when(segment, |form| {
+                            form.child(field("Segment size", "Required", &segment_size, cx))
+                                .child(field("Order", "Optional", &segment_order, cx))
+                        })
+                        .when(indirect, |form| {
+                            form.child(field("Instance", "Optional; defaults to 0", &instance, cx))
+                                .child(
+                                    v_flex()
+                                        .w_full()
+                                        .gap_1()
+                                        .child(div().text_sm().child("Parameter value"))
+                                        .child(Select::new(&calibrated).w_full()),
+                                )
+                                .child(field("Alias namespace", "Optional", &alias_namespace, cx))
+                        })
+                        .child(field("Offset", "Optional", &offset, cx))
+                        .child(field("Description", "Optional", &description, cx)),
                 )
             })
-    }
+    });
 }
 
 impl EntryRowData {
@@ -1894,7 +1877,6 @@ impl EntryRowData {
 fn new_entry_row(
     row: EntryRowData,
     context: Rc<RefCell<ReferenceContext>>,
-    optional_columns_visible: Rc<Cell<bool>>,
     window: &mut Window,
     cx: &mut impl AppContext,
 ) -> Entity<TelemetryEntryRow> {
@@ -1950,7 +1932,6 @@ fn new_entry_row(
             description_input: input(&description, false, window, cx),
             source_index: row.source_index,
             preserve_complex_location: row.preserve_complex_location,
-            optional_columns_visible,
             _subscriptions: vec![kind_subscription],
         }
     })
