@@ -56,6 +56,8 @@ enum CommandContainerEntryKind {
     ParameterSegmentRef,
     #[strum(serialize = "ContainerRefEntry")]
     ContainerRef,
+    #[strum(serialize = "ContainerSegmentRefEntry")]
+    ContainerSegmentRef,
     #[strum(serialize = "FixedValueEntry")]
     FixedValue,
 }
@@ -67,6 +69,7 @@ fn command_entry_placeholder(kind: CommandContainerEntryKind) -> &'static str {
         CommandContainerEntryKind::ParameterRef
         | CommandContainerEntryKind::ParameterSegmentRef => "Select a parameter...",
         CommandContainerEntryKind::ContainerRef => "Select a container...",
+        CommandContainerEntryKind::ContainerSegmentRef => "Select a container...",
         CommandContainerEntryKind::FixedValue => "Optional entry name",
     }
 }
@@ -1184,6 +1187,15 @@ fn container_entry_data(
             offset: secondary.trim().parse().ok(),
             description: optional_value(description),
         },
+        CommandContainerEntryKind::ContainerSegmentRef => {
+            EditableContainerEntry::ContainerSegmentRef {
+                reference: primary,
+                size_in_bits: tertiary.trim().parse().unwrap_or(i64::MIN),
+                order: order.trim().parse().ok(),
+                offset: secondary.trim().parse().ok(),
+                description: optional_value(description),
+            }
+        }
         CommandContainerEntryKind::FixedValue => EditableContainerEntry::FixedValue {
             name: optional_value(primary),
             binary_value: secondary,
@@ -2007,7 +2019,11 @@ fn open_command_entry_details(
                 let order = row.order_input.clone();
                 let description = row.description_input.clone();
                 let fixed = kind == CommandContainerEntryKind::FixedValue;
-                let segment = kind == CommandContainerEntryKind::ParameterSegmentRef;
+                let segment = matches!(
+                    kind,
+                    CommandContainerEntryKind::ParameterSegmentRef
+                        | CommandContainerEntryKind::ContainerSegmentRef
+                );
                 content.child(
                     v_flex()
                         .p_4()
@@ -2877,6 +2893,20 @@ fn new_command_container_entry_row(
             String::new(),
             description.unwrap_or_default(),
         ),
+        EditableContainerEntry::ContainerSegmentRef {
+            reference,
+            size_in_bits,
+            order,
+            offset,
+            description,
+        } => (
+            CommandContainerEntryKind::ContainerSegmentRef,
+            reference,
+            offset.map(|value| value.to_string()).unwrap_or_default(),
+            size_in_bits.to_string(),
+            order.map(|value| value.to_string()).unwrap_or_default(),
+            description.unwrap_or_default(),
+        ),
         EditableContainerEntry::FixedValue {
             name,
             binary_value,
@@ -2949,6 +2979,25 @@ fn command_container_entry_rows_value(rows: &Entity<EntryListView>, cx: &App) ->
 }
 
 fn encode_editable_entry(entry: &EditableContainerEntry) -> Option<String> {
+    if let EditableContainerEntry::ContainerSegmentRef {
+        reference,
+        size_in_bits,
+        order,
+        offset,
+        description,
+    } = entry
+    {
+        return (!reference.trim().is_empty() && *size_in_bits != i64::MIN).then(|| {
+            format!(
+                "ContainerSegmentRefEntry | {} | {} | {} | {} | {}",
+                reference.trim(),
+                size_in_bits,
+                order.map(|value| value.to_string()).unwrap_or_default(),
+                offset.map(|value| value.to_string()).unwrap_or_default(),
+                description.as_deref().unwrap_or_default()
+            )
+        });
+    }
     if let EditableContainerEntry::ParameterSegmentRef {
         reference,
         size_in_bits,
@@ -3015,6 +3064,7 @@ fn encode_editable_entry(entry: &EditableContainerEntry) -> Option<String> {
             )
         }
         EditableContainerEntry::ParameterSegmentRef { .. } => unreachable!(),
+        EditableContainerEntry::ContainerSegmentRef { .. } => unreachable!(),
     };
     if primary.trim().is_empty() && kind != CommandContainerEntryKind::FixedValue {
         return None;
@@ -3334,6 +3384,13 @@ enum EditableContainerEntry {
         offset: Option<i64>,
         description: Option<String>,
     },
+    ContainerSegmentRef {
+        reference: String,
+        size_in_bits: i64,
+        order: Option<i64>,
+        offset: Option<i64>,
+        description: Option<String>,
+    },
     FixedValue {
         name: Option<String>,
         binary_value: String,
@@ -3428,6 +3485,11 @@ fn command_entry_bit_positions_from_sizes(
                 EditableContainerEntry::ParameterRef { .. }
                 | EditableContainerEntry::ContainerRef { .. } => (None, None),
                 EditableContainerEntry::ParameterSegmentRef {
+                    offset,
+                    size_in_bits,
+                    ..
+                }
+                | EditableContainerEntry::ContainerSegmentRef {
                     offset,
                     size_in_bits,
                     ..
@@ -3556,6 +3618,20 @@ fn append_command_packet_entries(
                 continue;
             }
             EditableContainerEntry::ParameterSegmentRef {
+                reference,
+                offset,
+                size_in_bits,
+                ..
+            } => (
+                reference.clone(),
+                cursor.and_then(|cursor| {
+                    u64::try_from(offset.unwrap_or_default())
+                        .ok()
+                        .and_then(|offset| cursor.checked_add(offset))
+                }),
+                u64::try_from(*size_in_bits).ok().filter(|size| *size > 0),
+            ),
+            EditableContainerEntry::ContainerSegmentRef {
                 reference,
                 offset,
                 size_in_bits,
@@ -3803,6 +3879,19 @@ fn encode_container_entries(list: &xtce::CommandContainerEntryListType) -> Strin
                 fixed_entry_offset(entry.location_in_container_in_bits.as_ref()),
                 entry.short_description.as_deref().unwrap_or_default()
             )),
+            xtce::CommandContainerEntryListTypeContent::ContainerSegmentRefEntry(entry) => {
+                Some(format!(
+                    "ContainerSegmentRefEntry | {} | {} | {} | {} | {}",
+                    entry.container_ref,
+                    entry.size_in_bits,
+                    entry
+                        .order
+                        .map(|value| value.to_string())
+                        .unwrap_or_default(),
+                    fixed_entry_offset(entry.location_in_container_in_bits.as_ref()),
+                    entry.short_description.as_deref().unwrap_or_default()
+                ))
+            }
             xtce::CommandContainerEntryListTypeContent::FixedValueEntry(entry) => Some(format!(
                 "FixedValueEntry | {} | {} | {}",
                 entry.name.as_deref().unwrap_or_default(),
@@ -3852,6 +3941,13 @@ fn decode_container_entries(value: &str) -> Vec<EditableContainerEntry> {
                     offset: numeric_field(&fields, 2),
                     description: optional_field(&fields, 3),
                 }),
+                "ContainerSegmentRefEntry" => Some(EditableContainerEntry::ContainerSegmentRef {
+                    reference: nonempty_field(&fields, 1)?,
+                    size_in_bits: fields.get(2)?.parse().ok()?,
+                    order: numeric_field(&fields, 3),
+                    offset: numeric_field(&fields, 4),
+                    description: optional_field(&fields, 5),
+                }),
                 "FixedValueEntry" => Some(EditableContainerEntry::FixedValue {
                     name: optional_field(&fields, 1),
                     binary_value: nonempty_field(&fields, 2)?,
@@ -3883,6 +3979,7 @@ fn apply_container_entries(list: &mut xtce::CommandContainerEntryListType, value
     let mut parameter_entries = VecDeque::new();
     let mut parameter_segment_entries = VecDeque::new();
     let mut container_entries = VecDeque::new();
+    let mut container_segment_entries = VecDeque::new();
     let mut fixed_entries = VecDeque::new();
     let mut unsupported_entries = Vec::new();
 
@@ -3899,6 +3996,9 @@ fn apply_container_entries(list: &mut xtce::CommandContainerEntryListType, value
             }
             xtce::CommandContainerEntryListTypeContent::ContainerRefEntry(entry) => {
                 container_entries.push_back(entry);
+            }
+            xtce::CommandContainerEntryListTypeContent::ContainerSegmentRefEntry(entry) => {
+                container_segment_entries.push_back(entry);
             }
             xtce::CommandContainerEntryListTypeContent::FixedValueEntry(entry) => {
                 fixed_entries.push_back(entry);
@@ -3996,6 +4096,32 @@ fn apply_container_entries(list: &mut xtce::CommandContainerEntryListType, value
                     entry.short_description = description;
                     apply_fixed_entry_offset(&mut entry.location_in_container_in_bits, offset);
                     xtce::CommandContainerEntryListTypeContent::ContainerRefEntry(entry)
+                }
+                EditableContainerEntry::ContainerSegmentRef {
+                    reference,
+                    size_in_bits,
+                    order,
+                    offset,
+                    description,
+                } => {
+                    let mut entry = container_segment_entries.pop_front().unwrap_or(
+                        xtce::ArgumentContainerSegmentRefEntryType {
+                            short_description: None,
+                            container_ref: String::new(),
+                            order: None,
+                            size_in_bits: 0,
+                            location_in_container_in_bits: None,
+                            repeat_entry: None,
+                            include_condition: None,
+                            ancillary_data_set: None,
+                        },
+                    );
+                    entry.container_ref = reference;
+                    entry.size_in_bits = size_in_bits;
+                    entry.order = order;
+                    entry.short_description = description;
+                    apply_fixed_entry_offset(&mut entry.location_in_container_in_bits, offset);
+                    xtce::CommandContainerEntryListTypeContent::ContainerSegmentRefEntry(entry)
                 }
                 EditableContainerEntry::FixedValue {
                     name,
