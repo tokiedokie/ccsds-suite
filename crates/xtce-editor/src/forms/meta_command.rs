@@ -500,10 +500,7 @@ impl MetaCommandForm {
                 &self.container_long_description_input,
                 values.command_container.long_description,
             ),
-            (
-                &self.container_base_ref_input,
-                values.command_container.base_ref,
-            ),
+            (&self.container_base_ref_input, values.command_container.base_ref),
             (
                 &self.reason_for_warning_input,
                 values.default_significance.reason_for_warning,
@@ -6299,6 +6296,41 @@ mod tests {
             "NewBase"
         );
         assert!(container.alias_set.is_some());
+    }
+
+    #[test]
+    fn command_container_base_restriction_criteria_roundtrip() {
+        let mut container = default_command_container();
+        container.base_container = Some(xtce::BaseContainerType {
+            container_ref: "BaseCmdContainer".to_owned(),
+            restriction_criteria: Some(xtce::RestrictionCriteriaType {
+                content: Some(xtce::RestrictionCriteriaTypeContent::Comparison(
+                    xtce::ComparisonType {
+                        parameter_ref: "OpCode".to_owned(),
+                        comparison_operator: "==".to_owned(),
+                        value: "0x12".to_owned(),
+                        instance: 0,
+                        use_calibrated_value: true,
+                    },
+                )),
+            }),
+        });
+        let mut value = Some(container);
+
+        let container_values = CommandContainerValues::from_container(value.as_ref());
+        assert_eq!(container_values.base_ref, "BaseCmdContainer");
+
+        container_values.apply_to(&mut value);
+
+        let result = value.expect("command container");
+        let base = result.base_container.expect("base container");
+        assert_eq!(base.container_ref, "BaseCmdContainer");
+        let criteria = base.restriction_criteria.expect("restriction criteria");
+        let Some(xtce::RestrictionCriteriaTypeContent::Comparison(cmp)) = criteria.content else {
+            panic!("expected Comparison")
+        };
+        assert_eq!(cmp.parameter_ref, "OpCode");
+        assert_eq!(cmp.value, "0x12");
     }
 
     #[test]
