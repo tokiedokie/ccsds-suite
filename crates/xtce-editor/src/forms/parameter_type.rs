@@ -22,6 +22,7 @@ use super::{
     },
     enumeration_list::EnumerationListForm,
     field, impl_select_item, optional_value,
+    unit_set::UnitSetForm,
 };
 use crate::XtceEditor;
 
@@ -275,6 +276,101 @@ fn set_parameter_type_ancillary_data_set(
     }
 }
 
+fn parameter_type_unit_set(
+    parameter_type: &xtce::ParameterTypeSetTypeContent,
+) -> Option<&xtce::UnitSetType> {
+    macro_rules! content_units {
+        ($value:expr, $content:ident) => {
+            $value.content.iter().find_map(|item| match item {
+                xtce::$content::UnitSet(value) => Some(value),
+                _ => None,
+            })
+        };
+    }
+    match parameter_type {
+        xtce::ParameterTypeSetTypeContent::StringParameterType(value) => {
+            content_units!(value, StringParameterTypeContent)
+        }
+        xtce::ParameterTypeSetTypeContent::EnumeratedParameterType(value) => {
+            content_units!(value, EnumeratedParameterTypeContent)
+        }
+        xtce::ParameterTypeSetTypeContent::IntegerParameterType(value) => {
+            content_units!(value, IntegerParameterTypeContent)
+        }
+        xtce::ParameterTypeSetTypeContent::BinaryParameterType(value) => {
+            content_units!(value, BinaryParameterTypeContent)
+        }
+        xtce::ParameterTypeSetTypeContent::FloatParameterType(value) => {
+            content_units!(value, FloatParameterTypeContent)
+        }
+        xtce::ParameterTypeSetTypeContent::BooleanParameterType(value) => {
+            content_units!(value, BooleanParameterTypeContent)
+        }
+        _ => None,
+    }
+}
+
+fn set_parameter_type_unit_set(
+    parameter_type: &mut xtce::ParameterTypeSetTypeContent,
+    unit_set: Option<xtce::UnitSetType>,
+) {
+    macro_rules! set_content_units {
+        ($value:expr, $content:ident, $unit_set:expr) => {{
+            let existing = $value
+                .content
+                .iter()
+                .position(|item| matches!(item, xtce::$content::UnitSet(_)));
+            match ($unit_set, existing) {
+                (Some(unit_set), Some(index)) => {
+                    $value.content[index] = xtce::$content::UnitSet(unit_set);
+                }
+                (Some(unit_set), None) => {
+                    let index = $value
+                        .content
+                        .iter()
+                        .position(|item| {
+                            !matches!(
+                                item,
+                                xtce::$content::LongDescription(_)
+                                    | xtce::$content::AliasSet(_)
+                                    | xtce::$content::AncillaryDataSet(_)
+                            )
+                        })
+                        .unwrap_or($value.content.len());
+                    $value
+                        .content
+                        .insert(index, xtce::$content::UnitSet(unit_set));
+                }
+                (None, Some(index)) => {
+                    $value.content.remove(index);
+                }
+                (None, None) => {}
+            }
+        }};
+    }
+    match parameter_type {
+        xtce::ParameterTypeSetTypeContent::StringParameterType(value) => {
+            set_content_units!(value, StringParameterTypeContent, unit_set)
+        }
+        xtce::ParameterTypeSetTypeContent::EnumeratedParameterType(value) => {
+            set_content_units!(value, EnumeratedParameterTypeContent, unit_set)
+        }
+        xtce::ParameterTypeSetTypeContent::IntegerParameterType(value) => {
+            set_content_units!(value, IntegerParameterTypeContent, unit_set)
+        }
+        xtce::ParameterTypeSetTypeContent::BinaryParameterType(value) => {
+            set_content_units!(value, BinaryParameterTypeContent, unit_set)
+        }
+        xtce::ParameterTypeSetTypeContent::FloatParameterType(value) => {
+            set_content_units!(value, FloatParameterTypeContent, unit_set)
+        }
+        xtce::ParameterTypeSetTypeContent::BooleanParameterType(value) => {
+            set_content_units!(value, BooleanParameterTypeContent, unit_set)
+        }
+        _ => {}
+    }
+}
+
 #[derive(Clone, Copy, Debug, Display, EnumString, VariantArray, PartialEq, Eq)]
 enum CharacterWidthChoice {
     Default,
@@ -318,6 +414,7 @@ pub(super) struct ParameterTypeForm {
     long_description_input: Entity<InputState>,
     alias_set: AliasSetForm,
     ancillary_data_set: AncillaryDataSetForm,
+    unit_set: Entity<UnitSetForm>,
     extra_a_input: Entity<InputState>,
     extra_b_input: Entity<InputState>,
     character_width_select: Entity<SelectState<Vec<CharacterWidthChoice>>>,
@@ -366,6 +463,8 @@ impl ParameterTypeForm {
             window,
             cx,
         );
+        let unit_set =
+            UnitSetForm::new(parameter_type.and_then(parameter_type_unit_set), window, cx);
         let name_subscription = cx.subscribe(&name_input, |editor, _, _: &InputEvent, cx| {
             editor.refresh_tree(cx);
             cx.notify();
@@ -517,6 +616,7 @@ impl ParameterTypeForm {
                 long_description_input,
                 alias_set,
                 ancillary_data_set,
+                unit_set,
                 extra_a_input,
                 extra_b_input,
                 character_width_select,
@@ -617,6 +717,9 @@ impl ParameterTypeForm {
             window,
             cx,
         );
+        self.unit_set.update(cx, |form, cx| {
+            form.load(parameter_type.and_then(parameter_type_unit_set), window, cx);
+        });
         cx.notify();
     }
 
@@ -677,6 +780,7 @@ impl ParameterTypeForm {
             parameter_type,
             AncillaryDataSetForm::parse(&self.ancillary_data_set.text(cx)),
         );
+        set_parameter_type_unit_set(parameter_type, self.unit_set.read(cx).to_set(cx));
     }
 
     fn render_form(&self, cx: &mut Context<Self>) -> Div {
@@ -756,6 +860,7 @@ impl ParameterTypeForm {
         }
         if kind.supports_data_encoding() {
             form = form
+                .child(self.unit_set.clone())
                 .child(div().text_lg().font_semibold().child("Data encoding"))
                 .child(self.data_encoding.clone());
         }
@@ -1575,8 +1680,9 @@ fn value(input: &Entity<InputState>, cx: &App) -> String {
 mod tests {
     use super::{
         ParameterTypeKind, ParameterTypeValues, apply_nested_items, encode_nested_items,
-        parameter_type_alias_set, parameter_type_ancillary_data_set, replace_parameter_type_kind,
-        set_parameter_type_alias_set, set_parameter_type_ancillary_data_set,
+        parameter_type_alias_set, parameter_type_ancillary_data_set, parameter_type_unit_set,
+        replace_parameter_type_kind, set_parameter_type_alias_set,
+        set_parameter_type_ancillary_data_set, set_parameter_type_unit_set,
     };
 
     #[test]
@@ -1742,6 +1848,52 @@ mod tests {
 
         set_parameter_type_ancillary_data_set(&mut parameter_type, None);
         assert!(parameter_type_ancillary_data_set(&parameter_type).is_none());
+    }
+
+    #[test]
+    fn unit_set_is_editable_in_schema_order() {
+        let mut parameter_type =
+            xtce::ParameterTypeSetTypeContent::FloatParameterType(xtce::FloatParameterType {
+                short_description: None,
+                name: "VelocityType".to_owned(),
+                base_type: None,
+                initial_value: None,
+                size_in_bits: xtce::FloatParameterType::default_size_in_bits(),
+                content: vec![xtce::FloatParameterTypeContent::AncillaryDataSet(
+                    xtce::AncillaryDataSetType {
+                        ancillary_data: Vec::new(),
+                    },
+                )],
+            });
+        set_parameter_type_unit_set(
+            &mut parameter_type,
+            Some(xtce::UnitSetType {
+                unit: vec![xtce::UnitType {
+                    power: 1.0,
+                    factor: "1".to_owned(),
+                    description: None,
+                    form: xtce::UnitFormType::Calibrated,
+                    text: Some(xtce::XmlText("m/s".to_owned())),
+                }],
+            }),
+        );
+
+        let units = parameter_type_unit_set(&parameter_type).expect("unit set");
+        assert_eq!(
+            units.unit[0].text.as_ref().map(|text| text.0.as_str()),
+            Some("m/s")
+        );
+        let xtce::ParameterTypeSetTypeContent::FloatParameterType(value) = &parameter_type else {
+            panic!("expected a FloatParameterType");
+        };
+        assert!(matches!(
+            value.content[0],
+            xtce::FloatParameterTypeContent::AncillaryDataSet(_)
+        ));
+        assert!(matches!(
+            value.content[1],
+            xtce::FloatParameterTypeContent::UnitSet(_)
+        ));
     }
 
     #[test]

@@ -11,6 +11,7 @@ pub mod generated {
 }
 
 pub use generated::*;
+pub use xsd_parser_types::xml::Text as XmlText;
 
 pub const XTCE_NAMESPACE: &str = "http://www.omg.org/spec/XTCE/20250214";
 

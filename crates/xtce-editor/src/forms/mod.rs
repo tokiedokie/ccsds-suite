@@ -33,6 +33,7 @@ mod space_system;
 mod space_system_description;
 mod space_system_identity;
 mod telemetry_metadata;
+mod unit_set;
 pub(super) mod variable_frame_stream;
 mod variable_string;
 
