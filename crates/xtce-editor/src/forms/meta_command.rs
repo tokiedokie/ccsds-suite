@@ -135,6 +135,7 @@ pub(super) struct MetaCommandForm {
     short_description_input: Entity<InputState>,
     long_description_input: Entity<InputState>,
     alias_set: AliasSetForm,
+    ancillary_data_set: AncillaryDataSetForm,
     system_name_input: Entity<InputState>,
     base_meta_command_ref_input: Entity<InputState>,
     base_assignment_list: Entity<BaseAssignmentListView>,
@@ -193,6 +194,19 @@ impl MetaCommandForm {
                 xtce::MetaCommandSetTypeContent::MetaCommand(command) => command.alias_set.as_ref(),
                 xtce::MetaCommandSetTypeContent::BlockMetaCommand(command) => {
                     command.alias_set.as_ref()
+                }
+                xtce::MetaCommandSetTypeContent::MetaCommandRef(_) => None,
+            }),
+            window,
+            cx,
+        );
+        let ancillary_data_set = AncillaryDataSetForm::new(
+            command.and_then(|command| match command {
+                xtce::MetaCommandSetTypeContent::MetaCommand(command) => {
+                    command.ancillary_data_set.as_ref()
+                }
+                xtce::MetaCommandSetTypeContent::BlockMetaCommand(command) => {
+                    command.ancillary_data_set.as_ref()
                 }
                 xtce::MetaCommandSetTypeContent::MetaCommandRef(_) => None,
             }),
@@ -311,6 +325,7 @@ impl MetaCommandForm {
                 short_description_input: input(&values.short_description, false, window, cx),
                 long_description_input: input(&values.long_description, true, window, cx),
                 alias_set,
+                ancillary_data_set,
                 system_name_input: input(&values.system_name, false, window, cx),
                 base_meta_command_ref_input,
                 base_assignment_list,
@@ -457,6 +472,19 @@ impl MetaCommandForm {
                 xtce::MetaCommandSetTypeContent::MetaCommand(command) => command.alias_set.as_ref(),
                 xtce::MetaCommandSetTypeContent::BlockMetaCommand(command) => {
                     command.alias_set.as_ref()
+                }
+                xtce::MetaCommandSetTypeContent::MetaCommandRef(_) => None,
+            }),
+            window,
+            cx,
+        );
+        self.ancillary_data_set.load(
+            command.and_then(|command| match command {
+                xtce::MetaCommandSetTypeContent::MetaCommand(command) => {
+                    command.ancillary_data_set.as_ref()
+                }
+                xtce::MetaCommandSetTypeContent::BlockMetaCommand(command) => {
+                    command.ancillary_data_set.as_ref()
                 }
                 xtce::MetaCommandSetTypeContent::MetaCommandRef(_) => None,
             }),
@@ -719,9 +747,13 @@ impl MetaCommandForm {
         match command {
             xtce::MetaCommandSetTypeContent::MetaCommand(command) => {
                 self.alias_set.apply_to_option(&mut command.alias_set, cx);
+                self.ancillary_data_set
+                    .apply_to_option(&mut command.ancillary_data_set, cx);
             }
             xtce::MetaCommandSetTypeContent::BlockMetaCommand(command) => {
                 self.alias_set.apply_to_option(&mut command.alias_set, cx);
+                self.ancillary_data_set
+                    .apply_to_option(&mut command.ancillary_data_set, cx);
             }
             xtce::MetaCommandSetTypeContent::MetaCommandRef(_) => {}
         }
@@ -871,7 +903,13 @@ impl MetaCommandForm {
                         cx.notify();
                     })),
             )
-            .content(v_flex().pt_3().child(self.alias_set.render(cx)))
+            .content(
+                v_flex()
+                    .pt_3()
+                    .gap_4()
+                    .child(self.alias_set.render(cx))
+                    .child(self.ancillary_data_set.render(cx)),
+            )
     }
 
     fn render_inheritance(&self, cx: &mut Context<Self>) -> Collapsible {
