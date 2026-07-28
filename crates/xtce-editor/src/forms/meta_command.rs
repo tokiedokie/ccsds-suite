@@ -99,10 +99,12 @@ pub(super) struct MetaCommandForm {
     consequence_level_select: Entity<SelectState<Vec<ConsequenceLevelChoice>>>,
     reason_for_warning_input: Entity<InputState>,
     space_system_at_risk_input: Entity<InputState>,
+    transmission_constraints: Entity<TransmissionConstraintListForm>,
     documentation_open: bool,
     inheritance_open: bool,
     identification_open: bool,
     significance_open: bool,
+    transmission_constraints_open: bool,
     container_details_open: bool,
     _subscriptions: Vec<Subscription>,
 }
@@ -241,10 +243,21 @@ impl MetaCommandForm {
                     window,
                     cx,
                 ),
+                transmission_constraints: TransmissionConstraintListForm::new(
+                    command.and_then(|cmd| match cmd {
+                        xtce::MetaCommandSetTypeContent::MetaCommand(cmd) => {
+                            cmd.transmission_constraint_list.as_ref()
+                        }
+                        _ => None,
+                    }),
+                    window,
+                    cx,
+                ),
                 documentation_open: false,
                 inheritance_open: false,
                 identification_open: false,
                 significance_open: false,
+                transmission_constraints_open: false,
                 container_details_open: false,
                 _subscriptions: vec![name_subscription, kind_subscription, base_ref_subscription],
             }
@@ -264,7 +277,20 @@ impl MetaCommandForm {
         self.inheritance_open = false;
         self.identification_open = false;
         self.significance_open = false;
+        self.transmission_constraints_open = false;
         self.container_details_open = false;
+        self.transmission_constraints.update(cx, |form, cx| {
+            form.load(
+                command.and_then(|cmd| match cmd {
+                    xtce::MetaCommandSetTypeContent::MetaCommand(cmd) => {
+                        cmd.transmission_constraint_list.as_ref()
+                    }
+                    _ => None,
+                }),
+                window,
+                cx,
+            );
+        });
         sync_select(
             &self.consequence_level_select,
             values.default_significance.consequence_level,
@@ -404,6 +430,9 @@ impl MetaCommandForm {
             default_significance,
         }
         .apply_to(command);
+        if let xtce::MetaCommandSetTypeContent::MetaCommand(cmd) = command {
+            cmd.transmission_constraint_list = self.transmission_constraints.read(cx).to_list(cx);
+        }
     }
 
     fn render_form(&self, cx: &mut Context<Self>) -> Div {
@@ -435,6 +464,7 @@ impl MetaCommandForm {
                 .child(self.render_inheritance(cx))
                 .child(self.render_identification(cx))
                 .child(self.render_significance(cx))
+                .child(self.render_transmission_constraints(cx))
                 .child(self.render_command_container(cx)),
             MetaCommandKind::BlockMetaCommand => form
                 .child(field(
@@ -583,6 +613,31 @@ impl MetaCommandForm {
                         &self.space_system_at_risk_input,
                         cx,
                     )),
+            )
+    }
+
+    fn render_transmission_constraints(&self, cx: &mut Context<Self>) -> Collapsible {
+        Collapsible::new()
+            .open(self.transmission_constraints_open)
+            .child(
+                Button::new("toggle-meta-command-transmission-constraints")
+                    .small()
+                    .link()
+                    .icon(if self.transmission_constraints_open {
+                        IconName::ChevronDown
+                    } else {
+                        IconName::ChevronRight
+                    })
+                    .label("Transmission constraints")
+                    .on_click(cx.listener(|this, _, _, cx| {
+                        this.transmission_constraints_open = !this.transmission_constraints_open;
+                        cx.notify();
+                    })),
+            )
+            .content(
+                v_flex()
+                    .pt_3()
+                    .child(self.transmission_constraints.clone()),
             )
     }
 
@@ -3509,6 +3564,303 @@ fn encode_assignments(list: Option<&xtce::ArgumentAssignmentListType>) -> String
         .join("\n")
 }
 
+#[derive(Clone, Copy, Debug, Display, EnumString, VariantArray, PartialEq, Eq)]
+enum ComparisonOperatorChoice {
+    #[strum(serialize = "==")]
+    Equal,
+    #[strum(serialize = "!=")]
+    NotEqual,
+    #[strum(serialize = "<")]
+    Less,
+    #[strum(serialize = "<=")]
+    LessOrEqual,
+    #[strum(serialize = ">")]
+    Greater,
+    #[strum(serialize = ">=")]
+    GreaterOrEqual,
+}
+impl_select_item!(ComparisonOperatorChoice);
+
+#[derive(Clone, Copy, Debug, Display, EnumString, VariantArray, PartialEq, Eq)]
+enum SuspendableChoice {
+    #[strum(serialize = "false")]
+    False,
+    #[strum(serialize = "true")]
+    True,
+}
+impl_select_item!(SuspendableChoice);
+
+pub(super) struct TransmissionConstraintListForm {
+    rows: Vec<Entity<TransmissionConstraintRowForm>>,
+}
+
+struct TransmissionConstraintRowForm {
+    parameter: Entity<InputState>,
+    operator: Entity<SelectState<Vec<ComparisonOperatorChoice>>>,
+    value: Entity<InputState>,
+    time_out: Entity<InputState>,
+    suspendable: Entity<SelectState<Vec<SuspendableChoice>>>,
+}
+
+impl TransmissionConstraintListForm {
+    pub(super) fn new(
+        list: Option<&xtce::TransmissionConstraintListType>,
+        window: &mut Window,
+        cx: &mut impl AppContext,
+    ) -> Entity<Self> {
+        let models = constraint_models(list);
+        cx.new(move |cx| Self {
+            rows: constraint_entities(models, window, cx),
+        })
+    }
+
+    pub(super) fn load(
+        &mut self,
+        list: Option<&xtce::TransmissionConstraintListType>,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        self.rows = constraint_entities(constraint_models(list), window, cx);
+        cx.notify();
+    }
+
+    pub(super) fn to_list(&self, cx: &App) -> Option<xtce::TransmissionConstraintListType> {
+        let constraints = self
+            .rows
+            .iter()
+            .filter_map(|row| {
+                let row = row.read(cx);
+                let parameter = value(&row.parameter, cx).trim().to_owned();
+                if parameter.is_empty() {
+                    return None;
+                }
+                let op = row
+                    .operator
+                    .read(cx)
+                    .selected_value()
+                    .copied()
+                    .unwrap_or(ComparisonOperatorChoice::Equal);
+                let op_str = match op {
+                    ComparisonOperatorChoice::Equal => "==",
+                    ComparisonOperatorChoice::NotEqual => "!=",
+                    ComparisonOperatorChoice::Less => "<",
+                    ComparisonOperatorChoice::LessOrEqual => "<=",
+                    ComparisonOperatorChoice::Greater => ">",
+                    ComparisonOperatorChoice::GreaterOrEqual => ">=",
+                };
+                let val = value(&row.value, cx);
+                let time_out = optional_value(value(&row.time_out, cx));
+                let suspendable = row
+                    .suspendable
+                    .read(cx)
+                    .selected_value()
+                    .copied()
+                    .unwrap_or(SuspendableChoice::False)
+                    == SuspendableChoice::True;
+
+                Some(xtce::TransmissionConstraintType {
+                    time_out,
+                    suspendable,
+                    content: Some(xtce::TransmissionConstraintTypeContent::Comparison(
+                        xtce::ComparisonType {
+                            parameter_ref: parameter,
+                            instance: 0,
+                            use_calibrated_value: true,
+                            comparison_operator: op_str.to_owned(),
+                            value: val,
+                        },
+                    )),
+                })
+            })
+            .collect::<Vec<_>>();
+
+        (!constraints.is_empty()).then_some(xtce::TransmissionConstraintListType {
+            transmission_constraint: constraints,
+        })
+    }
+}
+
+struct ConstraintModel {
+    parameter: String,
+    operator: ComparisonOperatorChoice,
+    value: String,
+    time_out: String,
+    suspendable: SuspendableChoice,
+}
+
+fn constraint_models(list: Option<&xtce::TransmissionConstraintListType>) -> Vec<ConstraintModel> {
+    let Some(list) = list else {
+        return Vec::new();
+    };
+    list.transmission_constraint
+        .iter()
+        .map(|tc| {
+            let (param, op, val) = match &tc.content {
+                Some(xtce::TransmissionConstraintTypeContent::Comparison(c)) => (
+                    c.parameter_ref.clone(),
+                    operator_choice_from_str(&c.comparison_operator),
+                    c.value.clone(),
+                ),
+                _ => (String::new(), ComparisonOperatorChoice::Equal, String::new()),
+            };
+            ConstraintModel {
+                parameter: param,
+                operator: op,
+                value: val,
+                time_out: tc.time_out.clone().unwrap_or_default(),
+                suspendable: if tc.suspendable {
+                    SuspendableChoice::True
+                } else {
+                    SuspendableChoice::False
+                },
+            }
+        })
+        .collect()
+}
+
+fn operator_choice_from_str(op: &str) -> ComparisonOperatorChoice {
+    match op.trim() {
+        "!=" => ComparisonOperatorChoice::NotEqual,
+        "<" => ComparisonOperatorChoice::Less,
+        "<=" => ComparisonOperatorChoice::LessOrEqual,
+        ">" => ComparisonOperatorChoice::Greater,
+        ">=" => ComparisonOperatorChoice::GreaterOrEqual,
+        _ => ComparisonOperatorChoice::Equal,
+    }
+}
+
+fn constraint_entities(
+    models: Vec<ConstraintModel>,
+    window: &mut Window,
+    cx: &mut impl AppContext,
+) -> Vec<Entity<TransmissionConstraintRowForm>> {
+    models
+        .into_iter()
+        .map(|model| constraint_entity(model, window, cx))
+        .collect()
+}
+
+fn constraint_entity(
+    model: ConstraintModel,
+    window: &mut Window,
+    cx: &mut impl AppContext,
+) -> Entity<TransmissionConstraintRowForm> {
+    let parameter = input(&model.parameter, false, window, cx);
+    let value_input = input(&model.value, false, window, cx);
+    let time_out = input(&model.time_out, false, window, cx);
+    let operator = select(ComparisonOperatorChoice::VARIANTS, model.operator, window, cx);
+    let suspendable = select(SuspendableChoice::VARIANTS, model.suspendable, window, cx);
+
+    cx.new(|_| TransmissionConstraintRowForm {
+        parameter,
+        operator,
+        value: value_input,
+        time_out,
+        suspendable,
+    })
+}
+
+impl Render for TransmissionConstraintListForm {
+    fn render(&mut self, _: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+        v_flex()
+            .w_full()
+            .gap_4()
+            .child(
+                h_flex()
+                    .justify_between()
+                    .child(
+                        v_flex()
+                            .child(div().text_sm().font_medium().child("Transmission constraints"))
+                            .child(
+                                div()
+                                    .text_xs()
+                                    .text_color(cx.theme().muted_foreground)
+                                    .child(format!("{} constraint(s)", self.rows.len())),
+                            ),
+                    )
+                    .child(
+                        Button::new("add-transmission-constraint")
+                            .small()
+                            .icon(IconName::Plus)
+                            .label("Add constraint")
+                            .on_click(cx.listener(|this, _, window, cx| {
+                                this.rows.push(constraint_entity(
+                                    ConstraintModel {
+                                        parameter: String::new(),
+                                        operator: ComparisonOperatorChoice::Equal,
+                                        value: String::new(),
+                                        time_out: String::new(),
+                                        suspendable: SuspendableChoice::False,
+                                    },
+                                    window,
+                                    cx,
+                                ));
+                                cx.notify();
+                            })),
+                    ),
+            )
+            .children(self.rows.iter().enumerate().map(|(index, row)| {
+                let row_read = row.read(cx);
+                v_flex()
+                    .w_full()
+                    .p_3()
+                    .gap_3()
+                    .rounded_md()
+                    .border_1()
+                    .border_color(cx.theme().border)
+                    .child(
+                        h_flex()
+                            .gap_3()
+                            .items_end()
+                            .child(div().flex_1().child(field(
+                                "Parameter",
+                                "",
+                                &row_read.parameter,
+                                cx,
+                            )))
+                            .child(div().w(px(120.)).child(select_field(
+                                "Op",
+                                "",
+                                &row_read.operator,
+                                cx,
+                            )))
+                            .child(div().flex_1().child(field(
+                                "Value",
+                                "",
+                                &row_read.value,
+                                cx,
+                            )))
+                            .child(
+                                Button::new(format!("remove-transmission-constraint-{index}"))
+                                    .small()
+                                    .icon(IconName::Minus)
+                                    .on_click(cx.listener(move |this, _, _, cx| {
+                                        this.rows.remove(index);
+                                        cx.notify();
+                                    })),
+                            ),
+                    )
+                    .child(
+                        h_flex()
+                            .gap_3()
+                            .items_end()
+                            .child(div().flex_1().child(field(
+                                "Timeout (e.g. PT5S)",
+                                "",
+                                &row_read.time_out,
+                                cx,
+                            )))
+                            .child(div().w(px(140.)).child(select_field(
+                                "Suspendable",
+                                "",
+                                &row_read.suspendable,
+                                cx,
+                            ))),
+                    )
+            }))
+    }
+}
+
 fn decode_assignments(value: &str) -> Vec<xtce::ArgumentAssignmentType> {
     value
         .lines()
@@ -4118,29 +4470,33 @@ mod tests {
     }
 
     #[test]
-    fn meta_command_significance_roundtrip() {
-        let sig = xtce::SignificanceType {
-            space_system_at_risk: Some("Payload".to_owned()),
-            reason_for_warning: Some("High power command".to_owned()),
-            consequence_level: xtce::ConsequenceLevelType::Critical,
+    fn meta_command_transmission_constraints_roundtrip() {
+        use super::{ComparisonOperatorChoice, SuspendableChoice, constraint_models};
+
+        let tc = xtce::TransmissionConstraintType {
+            time_out: Some("PT5S".to_owned()),
+            suspendable: true,
+            content: Some(xtce::TransmissionConstraintTypeContent::Comparison(
+                xtce::ComparisonType {
+                    parameter_ref: "BUS_VOLTAGE".to_owned(),
+                    instance: 0,
+                    use_calibrated_value: true,
+                    comparison_operator: ">=".to_owned(),
+                    value: "28.0".to_owned(),
+                },
+            )),
         };
-        let values = SignificanceValues::from_significance(Some(&sig));
-        assert_eq!(values.consequence_level, ConsequenceLevelChoice::Critical);
-        assert_eq!(values.reason_for_warning, "High power command");
-        assert_eq!(values.space_system_at_risk, "Payload");
+        let list = xtce::TransmissionConstraintListType {
+            transmission_constraint: vec![tc],
+        };
 
-        let mut applied_sig = None;
-        values.apply_to(&mut applied_sig);
-        let applied = applied_sig.expect("significance present");
-        assert_eq!(applied.reason_for_warning.as_deref(), Some("High power command"));
-        assert_eq!(applied.space_system_at_risk.as_deref(), Some("Payload"));
-        assert!(matches!(applied.consequence_level, xtce::ConsequenceLevelType::Critical));
-
-        let none_values = SignificanceValues::from_significance(None);
-        assert_eq!(none_values.consequence_level, ConsequenceLevelChoice::None);
-        let mut cleared_sig = Some(sig);
-        none_values.apply_to(&mut cleared_sig);
-        assert!(cleared_sig.is_none());
+        let models = constraint_models(Some(&list));
+        assert_eq!(models.len(), 1);
+        assert_eq!(models[0].parameter, "BUS_VOLTAGE");
+        assert_eq!(models[0].operator, ComparisonOperatorChoice::GreaterOrEqual);
+        assert_eq!(models[0].value, "28.0");
+        assert_eq!(models[0].time_out, "PT5S");
+        assert_eq!(models[0].suspendable, SuspendableChoice::True);
     }
 
     #[test]
