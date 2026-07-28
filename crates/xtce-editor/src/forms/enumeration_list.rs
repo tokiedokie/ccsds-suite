@@ -26,9 +26,9 @@ pub(super) struct EnumerationRowData {
 impl EnumerationRowData {
     fn default_row() -> Self {
         Self {
-            value: "0".to_owned(),
+            value: String::new(),
             max_value: String::new(),
-            label: "VALUE".to_owned(),
+            label: String::new(),
             description: String::new(),
         }
     }
@@ -316,7 +316,7 @@ impl EnumerationListForm {
         self.rows.push(EnumerationRowData {
             value: next_value(&self.rows).to_string(),
             max_value: String::new(),
-            label: "VALUE".to_owned(),
+            label: String::new(),
             description: String::new(),
         });
         self.list_state.splice(index..index, 1);

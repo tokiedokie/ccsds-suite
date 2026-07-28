@@ -26,8 +26,8 @@ pub(super) struct MemberRowData {
 impl MemberRowData {
     fn default_row() -> Self {
         Self {
-            name: "member".to_owned(),
-            type_ref: "MemberType".to_owned(),
+            name: String::new(),
+            type_ref: String::new(),
             initial_value: String::new(),
             description: String::new(),
             source_index: None,
@@ -254,8 +254,7 @@ impl AggregateMemberListForm {
     fn add(&mut self, cx: &mut Context<Self>) {
         self.flush(cx);
         let index = self.rows.len();
-        let mut row = MemberRowData::default_row();
-        row.name = format!("member{}", index + 1);
+        let row = MemberRowData::default_row();
         self.rows.push(row);
         self.list_state.splice(index..index, 1);
         self.list_state.scroll_to_reveal_item(index);
@@ -496,8 +495,8 @@ fn row_data(row: &Entity<MemberRowForm>, original: &MemberRowData, cx: &App) -> 
 fn default_member() -> xtce::MemberType {
     xtce::MemberType {
         short_description: None,
-        name: "member".to_owned(),
-        type_ref: "MemberType".to_owned(),
+        name: String::new(),
+        type_ref: String::new(),
         initial_value: None,
         long_description: None,
         alias_set: None,
