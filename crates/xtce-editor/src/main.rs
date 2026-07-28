@@ -6,7 +6,8 @@ use std::collections::{HashMap, HashSet};
 use gpui::{prelude::FluentBuilder, *};
 use gpui_component::{
     ActiveTheme, GlobalState, Icon, IconName, Root, Sizable, StyledExt, TitleBar, WindowExt,
-    button::{Button, ButtonVariants},
+    button::{Button, ButtonVariant, ButtonVariants},
+    dialog::DialogButtonProps,
     h_flex,
     input::{Input, InputEvent as ComponentInputEvent, InputState},
     list::ListItem,
@@ -122,6 +123,58 @@ impl ElementKind {
                 | Self::MetaCommandSet
                 | Self::CommandContainerSet
         )
+    }
+
+    fn can_delete(self) -> bool {
+        matches!(
+            self,
+            Self::TelemetryParameterType(_)
+                | Self::CommandParameterType(_)
+                | Self::TelemetryParameter(_)
+                | Self::CommandParameter(_)
+                | Self::SequenceContainer(_)
+                | Self::Message(_)
+                | Self::TelemetryFixedFrameStream(_)
+                | Self::TelemetryVariableFrameStream(_)
+                | Self::TelemetryCustomStream(_)
+                | Self::CommandFixedFrameStream(_)
+                | Self::CommandVariableFrameStream(_)
+                | Self::CommandCustomStream(_)
+                | Self::TelemetryCustomAlgorithm(_)
+                | Self::TelemetryMathAlgorithm(_)
+                | Self::CommandCustomAlgorithm(_)
+                | Self::CommandMathAlgorithm(_)
+                | Self::ArgumentType(_)
+                | Self::MetaCommand(_)
+                | Self::CommandContainer(_)
+        )
+    }
+
+    fn parent_set(self) -> Option<Self> {
+        match self {
+            Self::TelemetryParameterType(_) => Some(Self::TelemetryParameterTypeSet),
+            Self::CommandParameterType(_) => Some(Self::CommandParameterTypeSet),
+            Self::TelemetryParameter(_) => Some(Self::TelemetryParameterSet),
+            Self::CommandParameter(_) => Some(Self::CommandParameterSet),
+            Self::SequenceContainer(_) => Some(Self::ContainerSet),
+            Self::Message(_) => Some(Self::MessageSet),
+            Self::TelemetryFixedFrameStream(_)
+            | Self::TelemetryVariableFrameStream(_)
+            | Self::TelemetryCustomStream(_) => Some(Self::TelemetryStreamSet),
+            Self::CommandFixedFrameStream(_)
+            | Self::CommandVariableFrameStream(_)
+            | Self::CommandCustomStream(_) => Some(Self::CommandStreamSet),
+            Self::TelemetryCustomAlgorithm(_) | Self::TelemetryMathAlgorithm(_) => {
+                Some(Self::TelemetryAlgorithmSet)
+            }
+            Self::CommandCustomAlgorithm(_) | Self::CommandMathAlgorithm(_) => {
+                Some(Self::CommandAlgorithmSet)
+            }
+            Self::ArgumentType(_) => Some(Self::ArgumentTypeSet),
+            Self::MetaCommand(_) => Some(Self::MetaCommandSet),
+            Self::CommandContainer(_) => Some(Self::CommandContainerSet),
+            _ => None,
+        }
     }
 
     fn is_directory_only(self) -> bool {
@@ -652,6 +705,92 @@ impl XtceEditor {
         };
         self.load_selected_element(window, cx);
     }
+
+    fn request_delete(
+        &mut self,
+        selection: &ElementSelection,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        if !selection.kind.can_delete() {
+            return;
+        }
+        self.save_selected_element(cx);
+        let Some(name) = self.document.element_name(selection) else {
+            window.push_notification("The selected element no longer exists.", cx);
+            return;
+        };
+        let references = self.document.references_to(selection, &name);
+        if !references.is_empty() {
+            let description = format!(
+                "{} “{}” is still referenced by:\n\n{}",
+                selection.kind.label(),
+                name,
+                references
+                    .iter()
+                    .map(|reference| format!("• {reference}"))
+                    .collect::<Vec<_>>()
+                    .join("\n")
+            );
+            window.open_alert_dialog(cx, move |alert, _, cx| {
+                alert
+                    .icon(Icon::new(IconName::TriangleAlert).text_color(cx.theme().danger))
+                    .title("Cannot delete referenced element")
+                    .description(description.clone())
+                    .button_props(DialogButtonProps::default().ok_text("Close"))
+            });
+            return;
+        }
+
+        let editor = cx.entity().downgrade();
+        let selection = selection.clone();
+        let title = format!("Delete {}?", selection.kind.label());
+        let description = format!(
+            "“{name}” will be removed from this SpaceSystem. This action cannot be undone."
+        );
+        window.open_alert_dialog(cx, move |alert, _, cx| {
+            let editor = editor.clone();
+            let selection = selection.clone();
+            alert
+                .icon(Icon::new(IconName::TriangleAlert).text_color(cx.theme().danger))
+                .title(title.clone())
+                .description(description.clone())
+                .button_props(
+                    DialogButtonProps::default()
+                        .ok_variant(ButtonVariant::Danger)
+                        .ok_text("Delete")
+                        .cancel_text("Cancel")
+                        .show_cancel(true),
+                )
+                .on_ok(move |_, window, cx| {
+                    _ = editor.update(cx, |editor, cx| {
+                        editor.delete_element(&selection, window, cx);
+                    });
+                    true
+                })
+        });
+    }
+
+    fn delete_element(
+        &mut self,
+        selection: &ElementSelection,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        if !XtceDocument::delete_element(&mut self.document.root, selection) {
+            window.push_notification("The selected element no longer exists.", cx);
+            return;
+        }
+        self.document.selection = ElementSelection {
+            system_path: selection.system_path.clone(),
+            kind: selection
+                .kind
+                .parent_set()
+                .expect("deletable elements have a parent set"),
+        };
+        self.load_selected_element(window, cx);
+        window.push_notification("Element deleted.", cx);
+    }
 }
 
 impl XtceDocument {
@@ -743,6 +882,414 @@ impl XtceDocument {
         Self::system_at_path(&self.root, &self.selection.system_path)
     }
 
+    fn element_name(&self, selection: &ElementSelection) -> Option<String> {
+        let system = Self::system_at_path(&self.root, &selection.system_path);
+        match selection.kind {
+            ElementKind::TelemetryParameterType(index) => system
+                .telemetry_meta_data
+                .as_ref()?
+                .parameter_type_set
+                .as_ref()?
+                .content
+                .get(index)
+                .map(Self::parameter_type_label),
+            ElementKind::CommandParameterType(index) => system
+                .command_meta_data
+                .as_ref()?
+                .parameter_type_set
+                .as_ref()?
+                .content
+                .get(index)
+                .map(Self::parameter_type_label),
+            ElementKind::TelemetryParameter(index) => system
+                .telemetry_meta_data
+                .as_ref()?
+                .parameter_set
+                .as_ref()?
+                .content
+                .get(index)
+                .map(Self::parameter_label),
+            ElementKind::CommandParameter(index) => system
+                .command_meta_data
+                .as_ref()?
+                .parameter_set
+                .as_ref()?
+                .content
+                .get(index)
+                .map(Self::parameter_label),
+            ElementKind::SequenceContainer(index) => system
+                .telemetry_meta_data
+                .as_ref()?
+                .container_set
+                .as_ref()?
+                .content
+                .get(index)
+                .map(Self::sequence_container_label),
+            ElementKind::Message(index) => system
+                .telemetry_meta_data
+                .as_ref()?
+                .message_set
+                .as_ref()?
+                .message
+                .get(index)
+                .map(|message| message.name.clone()),
+            ElementKind::TelemetryFixedFrameStream(index)
+            | ElementKind::TelemetryVariableFrameStream(index)
+            | ElementKind::TelemetryCustomStream(index) => system
+                .telemetry_meta_data
+                .as_ref()?
+                .stream_set
+                .as_ref()?
+                .content
+                .get(index)
+                .map(Self::stream_label),
+            ElementKind::CommandFixedFrameStream(index)
+            | ElementKind::CommandVariableFrameStream(index)
+            | ElementKind::CommandCustomStream(index) => system
+                .command_meta_data
+                .as_ref()?
+                .stream_set
+                .as_ref()?
+                .content
+                .get(index)
+                .map(Self::stream_label),
+            ElementKind::TelemetryCustomAlgorithm(index)
+            | ElementKind::TelemetryMathAlgorithm(index) => system
+                .telemetry_meta_data
+                .as_ref()?
+                .algorithm_set
+                .as_ref()?
+                .content
+                .get(index)
+                .map(Self::algorithm_label),
+            ElementKind::CommandCustomAlgorithm(index)
+            | ElementKind::CommandMathAlgorithm(index) => system
+                .command_meta_data
+                .as_ref()?
+                .algorithm_set
+                .as_ref()?
+                .content
+                .get(index)
+                .map(Self::algorithm_label),
+            ElementKind::ArgumentType(index) => system
+                .command_meta_data
+                .as_ref()?
+                .argument_type_set
+                .as_ref()?
+                .content
+                .get(index)
+                .map(Self::argument_type_label),
+            ElementKind::MetaCommand(index) => system
+                .command_meta_data
+                .as_ref()?
+                .meta_command_set
+                .as_ref()?
+                .content
+                .get(index)
+                .map(Self::meta_command_label),
+            ElementKind::CommandContainer(index) => system
+                .command_meta_data
+                .as_ref()?
+                .command_container_set
+                .as_ref()?
+                .command_container
+                .get(index)
+                .map(|container| container.name.clone()),
+            _ => None,
+        }
+    }
+
+    fn references_to(&self, selection: &ElementSelection, name: &str) -> Vec<String> {
+        let attribute_names: &[&str] = match selection.kind {
+            ElementKind::TelemetryParameterType(_) | ElementKind::CommandParameterType(_) => {
+                &["parametertyperef", "arraytyperef", "typeref"]
+            }
+            ElementKind::TelemetryParameter(_) | ElementKind::CommandParameter(_) => {
+                &["parameterref", "outputparameterref"]
+            }
+            ElementKind::SequenceContainer(_) | ElementKind::CommandContainer(_) => {
+                &["containerref"]
+            }
+            ElementKind::Message(_) => &["messageref"],
+            ElementKind::TelemetryFixedFrameStream(_)
+            | ElementKind::TelemetryVariableFrameStream(_)
+            | ElementKind::TelemetryCustomStream(_)
+            | ElementKind::CommandFixedFrameStream(_)
+            | ElementKind::CommandVariableFrameStream(_)
+            | ElementKind::CommandCustomStream(_) => {
+                &["streamref", "encodedstreamref", "decodedstreamref"]
+            }
+            ElementKind::ArgumentType(_) => &["argumenttyperef", "arraytyperef", "typeref"],
+            ElementKind::MetaCommand(_) => &["metacommandref"],
+            _ => &[],
+        };
+        if attribute_names.is_empty() {
+            return Vec::new();
+        }
+        let Ok(xml) = Self::serialize(&self.root) else {
+            return Vec::new();
+        };
+        let Ok(document) = roxmltree::Document::parse(&xml) else {
+            return Vec::new();
+        };
+        let mut references = Vec::new();
+        for node in document.descendants().filter(|node| node.is_element()) {
+            for attribute in node.attributes() {
+                let attribute_name = attribute.name().to_ascii_lowercase();
+                if !attribute_names.contains(&attribute_name.as_str())
+                    || !Self::reference_matches(attribute.value(), name)
+                {
+                    continue;
+                }
+                let source = node
+                    .ancestors()
+                    .filter(|ancestor| ancestor.is_element())
+                    .find_map(|ancestor| {
+                        ancestor
+                            .attribute("name")
+                            .map(|source_name| (ancestor.tag_name().name(), source_name))
+                    });
+                if matches!(source, Some((_, source_name)) if source_name == name) {
+                    continue;
+                }
+                let label = match source {
+                    Some((tag, source_name)) => {
+                        format!("{tag} “{source_name}” ({})", attribute.name())
+                    }
+                    None => format!("{} ({})", node.tag_name().name(), attribute.name()),
+                };
+                if !references.contains(&label) {
+                    references.push(label);
+                }
+            }
+        }
+        references
+    }
+
+    fn reference_matches(reference: &str, name: &str) -> bool {
+        reference == name
+            || reference
+                .trim_end_matches('/')
+                .rsplit('/')
+                .next()
+                .is_some_and(|segment| segment == name)
+    }
+
+    fn delete_element(root: &mut xtce::SpaceSystem, selection: &ElementSelection) -> bool {
+        let system = Self::system_at_path_mut(root, &selection.system_path);
+        match selection.kind {
+            ElementKind::TelemetryParameterType(index) => {
+                let Some(metadata) = system.telemetry_meta_data.as_mut() else {
+                    return false;
+                };
+                let Some(set) = metadata.parameter_type_set.as_mut() else {
+                    return false;
+                };
+                if index >= set.content.len() {
+                    return false;
+                }
+                set.content.remove(index);
+                if set.content.is_empty() {
+                    metadata.parameter_type_set = None;
+                }
+            }
+            ElementKind::CommandParameterType(index) => {
+                let Some(metadata) = system.command_meta_data.as_mut() else {
+                    return false;
+                };
+                let Some(set) = metadata.parameter_type_set.as_mut() else {
+                    return false;
+                };
+                if index >= set.content.len() {
+                    return false;
+                }
+                set.content.remove(index);
+                if set.content.is_empty() {
+                    metadata.parameter_type_set = None;
+                }
+            }
+            ElementKind::TelemetryParameter(index) => {
+                let Some(metadata) = system.telemetry_meta_data.as_mut() else {
+                    return false;
+                };
+                let Some(set) = metadata.parameter_set.as_mut() else {
+                    return false;
+                };
+                if index >= set.content.len() {
+                    return false;
+                }
+                set.content.remove(index);
+                if set.content.is_empty() {
+                    metadata.parameter_set = None;
+                }
+            }
+            ElementKind::CommandParameter(index) => {
+                let Some(metadata) = system.command_meta_data.as_mut() else {
+                    return false;
+                };
+                let Some(set) = metadata.parameter_set.as_mut() else {
+                    return false;
+                };
+                if index >= set.content.len() {
+                    return false;
+                }
+                set.content.remove(index);
+                if set.content.is_empty() {
+                    metadata.parameter_set = None;
+                }
+            }
+            ElementKind::SequenceContainer(index) => {
+                let Some(metadata) = system.telemetry_meta_data.as_mut() else {
+                    return false;
+                };
+                let Some(set) = metadata.container_set.as_mut() else {
+                    return false;
+                };
+                if index >= set.content.len() {
+                    return false;
+                }
+                set.content.remove(index);
+                if set.content.is_empty() {
+                    metadata.container_set = None;
+                }
+            }
+            ElementKind::Message(index) => {
+                let Some(metadata) = system.telemetry_meta_data.as_mut() else {
+                    return false;
+                };
+                let Some(set) = metadata.message_set.as_mut() else {
+                    return false;
+                };
+                if index >= set.message.len() {
+                    return false;
+                }
+                set.message.remove(index);
+                if set.message.is_empty()
+                    && set.name.is_none()
+                    && set.short_description.is_none()
+                    && set.long_description.is_none()
+                    && set.alias_set.is_none()
+                    && set.ancillary_data_set.is_none()
+                {
+                    metadata.message_set = None;
+                }
+            }
+            ElementKind::TelemetryFixedFrameStream(index)
+            | ElementKind::TelemetryVariableFrameStream(index)
+            | ElementKind::TelemetryCustomStream(index) => {
+                let Some(metadata) = system.telemetry_meta_data.as_mut() else {
+                    return false;
+                };
+                let Some(set) = metadata.stream_set.as_mut() else {
+                    return false;
+                };
+                if index >= set.content.len() {
+                    return false;
+                }
+                set.content.remove(index);
+                if set.content.is_empty() {
+                    metadata.stream_set = None;
+                }
+            }
+            ElementKind::CommandFixedFrameStream(index)
+            | ElementKind::CommandVariableFrameStream(index)
+            | ElementKind::CommandCustomStream(index) => {
+                let Some(metadata) = system.command_meta_data.as_mut() else {
+                    return false;
+                };
+                let Some(set) = metadata.stream_set.as_mut() else {
+                    return false;
+                };
+                if index >= set.content.len() {
+                    return false;
+                }
+                set.content.remove(index);
+                if set.content.is_empty() {
+                    metadata.stream_set = None;
+                }
+            }
+            ElementKind::TelemetryCustomAlgorithm(index)
+            | ElementKind::TelemetryMathAlgorithm(index) => {
+                let Some(metadata) = system.telemetry_meta_data.as_mut() else {
+                    return false;
+                };
+                let Some(set) = metadata.algorithm_set.as_mut() else {
+                    return false;
+                };
+                if index >= set.content.len() {
+                    return false;
+                }
+                set.content.remove(index);
+                if set.content.is_empty() {
+                    metadata.algorithm_set = None;
+                }
+            }
+            ElementKind::CommandCustomAlgorithm(index)
+            | ElementKind::CommandMathAlgorithm(index) => {
+                let Some(metadata) = system.command_meta_data.as_mut() else {
+                    return false;
+                };
+                let Some(set) = metadata.algorithm_set.as_mut() else {
+                    return false;
+                };
+                if index >= set.content.len() {
+                    return false;
+                }
+                set.content.remove(index);
+                if set.content.is_empty() {
+                    metadata.algorithm_set = None;
+                }
+            }
+            ElementKind::ArgumentType(index) => {
+                let Some(metadata) = system.command_meta_data.as_mut() else {
+                    return false;
+                };
+                let Some(set) = metadata.argument_type_set.as_mut() else {
+                    return false;
+                };
+                if index >= set.content.len() {
+                    return false;
+                }
+                set.content.remove(index);
+                if set.content.is_empty() {
+                    metadata.argument_type_set = None;
+                }
+            }
+            ElementKind::MetaCommand(index) => {
+                let Some(metadata) = system.command_meta_data.as_mut() else {
+                    return false;
+                };
+                let Some(set) = metadata.meta_command_set.as_mut() else {
+                    return false;
+                };
+                if index >= set.content.len() {
+                    return false;
+                }
+                set.content.remove(index);
+                if set.content.is_empty() {
+                    metadata.meta_command_set = None;
+                }
+            }
+            ElementKind::CommandContainer(index) => {
+                let Some(metadata) = system.command_meta_data.as_mut() else {
+                    return false;
+                };
+                let Some(set) = metadata.command_container_set.as_mut() else {
+                    return false;
+                };
+                if index >= set.command_container.len() {
+                    return false;
+                }
+                set.command_container.remove(index);
+                if set.command_container.is_empty() {
+                    metadata.command_container_set = None;
+                }
+            }
+            _ => return false,
+        }
+        true
+    }
+
     fn add_collection_item(
         system: &mut xtce::SpaceSystem,
         collection: ElementKind,
@@ -766,7 +1313,9 @@ impl XtceDocument {
                     .command_meta_data
                     .as_mut()?
                     .parameter_type_set
-                    .as_mut()?;
+                    .get_or_insert_with(|| xtce::ParameterTypeSetType {
+                        content: Vec::new(),
+                    });
                 let index = set.content.len();
                 let name = Self::next_parameter_type_name(&set.content);
                 set.content.push(Self::new_parameter_type(name));
@@ -853,7 +1402,13 @@ impl XtceDocument {
                     .and_then(|set| set.content.first())
                     .map(Self::parameter_type_label)
                     .unwrap_or_else(|| "ParameterType1".to_owned());
-                let set = system.command_meta_data.as_mut()?.parameter_set.as_mut()?;
+                let set = system
+                    .command_meta_data
+                    .as_mut()?
+                    .parameter_set
+                    .get_or_insert_with(|| xtce::ParameterSetType {
+                        content: Vec::new(),
+                    });
                 let index = set.content.len();
                 let name = Self::next_parameter_name(&set.content);
                 set.content.push(Self::new_parameter(name, type_ref));
@@ -1415,41 +1970,47 @@ impl XtceDocument {
         }
         if let Some(metadata) = &system.command_meta_data {
             Self::push_tree_node(nodes, path, ElementKind::CommandMetaData, child_level, true);
-            if let Some(parameter_type_set) = &metadata.parameter_type_set {
-                Self::push_tree_node(
+            let parameter_types = metadata
+                .parameter_type_set
+                .as_ref()
+                .map(|set| set.content.as_slice())
+                .unwrap_or_default();
+            Self::push_tree_node(
+                nodes,
+                path,
+                ElementKind::CommandParameterTypeSet,
+                child_level + 1,
+                !parameter_types.is_empty(),
+            );
+            for (index, parameter_type) in parameter_types.iter().enumerate() {
+                Self::push_named_tree_node(
                     nodes,
                     path,
-                    ElementKind::CommandParameterTypeSet,
-                    child_level + 1,
-                    !parameter_type_set.content.is_empty(),
+                    ElementKind::CommandParameterType(index),
+                    Self::parameter_type_label(parameter_type),
+                    child_level + 2,
                 );
-                for (index, parameter_type) in parameter_type_set.content.iter().enumerate() {
-                    Self::push_named_tree_node(
-                        nodes,
-                        path,
-                        ElementKind::CommandParameterType(index),
-                        Self::parameter_type_label(parameter_type),
-                        child_level + 2,
-                    );
-                }
             }
-            if let Some(parameter_set) = &metadata.parameter_set {
-                Self::push_tree_node(
+            let parameters = metadata
+                .parameter_set
+                .as_ref()
+                .map(|set| set.content.as_slice())
+                .unwrap_or_default();
+            Self::push_tree_node(
+                nodes,
+                path,
+                ElementKind::CommandParameterSet,
+                child_level + 1,
+                !parameters.is_empty(),
+            );
+            for (index, parameter) in parameters.iter().enumerate() {
+                Self::push_named_tree_node(
                     nodes,
                     path,
-                    ElementKind::CommandParameterSet,
-                    child_level + 1,
-                    !parameter_set.content.is_empty(),
+                    ElementKind::CommandParameter(index),
+                    Self::parameter_label(parameter),
+                    child_level + 2,
                 );
-                for (index, parameter) in parameter_set.content.iter().enumerate() {
-                    Self::push_named_tree_node(
-                        nodes,
-                        path,
-                        ElementKind::CommandParameter(index),
-                        Self::parameter_label(parameter),
-                        child_level + 2,
-                    );
-                }
             }
             let argument_types = metadata
                 .argument_type_set
@@ -1722,6 +2283,14 @@ impl XtceDocument {
         }
     }
 
+    fn stream_label(stream: &xtce::StreamSetTypeContent) -> String {
+        match stream {
+            xtce::StreamSetTypeContent::FixedFrameStream(value) => value.name.clone(),
+            xtce::StreamSetTypeContent::VariableFrameStream(value) => value.name.clone(),
+            xtce::StreamSetTypeContent::CustomStream(value) => value.name.clone(),
+        }
+    }
+
     fn system_type_label(system_type: &xtce::SystemTypeType) -> &'static str {
         match system_type {
             xtce::SystemTypeType::Asset => "asset",
@@ -1924,7 +2493,10 @@ impl ElementTree {
         let stream_parent = node.selection.clone();
         let algorithm_parent = node.selection.clone();
         let metadata_parent = node.selection.clone();
+        let delete_selection = node.selection.clone();
+        let delete_editor = editor.clone();
         let can_add_child = node.selection.kind.can_add_child();
+        let can_delete = node.selection.kind.can_delete();
         let can_add_stream = matches!(
             node.selection.kind,
             ElementKind::TelemetryStreamSet | ElementKind::CommandStreamSet
@@ -1940,6 +2512,7 @@ impl ElementTree {
             .clone()
             .map(|reference| DraggedTelemetryParameter { reference });
         let icon = node.selection.kind.tree_icon(entry.is_expanded());
+        let row_group: SharedString = format!("tree-row-{index}").into();
         ListItem::new(index)
             .w_full()
             .rounded_md()
@@ -1949,6 +2522,7 @@ impl ElementTree {
             .child(
                 h_flex()
                     .id(format!("tree-node-drag-{index}"))
+                    .group(row_group.clone())
                     .w_full()
                     .gap_2()
                     .when_some(dragged_parameter, |row, dragged| {
@@ -2148,6 +2722,30 @@ impl ElementTree {
                                                 });
                                             }),
                                     )
+                                }),
+                        )
+                    })
+                    .when(can_delete, |row| {
+                        row.child(
+                            Button::new(format!("{}-actions", item.id))
+                                .ghost()
+                                .xsmall()
+                                .icon(IconName::Ellipsis)
+                                .when(!selected, |button| {
+                                    button
+                                        .invisible()
+                                        .group_hover(row_group.clone(), |button| button.visible())
+                                })
+                                .dropdown_menu(move |menu, _, _| {
+                                    let editor = delete_editor.clone();
+                                    let selection = delete_selection.clone();
+                                    menu.item(PopupMenuItem::new("Delete…").on_click(
+                                        move |_, window, cx| {
+                                            _ = editor.update(cx, |editor, cx| {
+                                                editor.request_delete(&selection, window, cx);
+                                            });
+                                        },
+                                    ))
                                 }),
                         )
                     }),
@@ -3593,7 +4191,7 @@ mod tests {
     }
 
     #[test]
-    fn empty_command_metadata_has_its_required_editor_tree_nodes() {
+    fn empty_command_metadata_keeps_addable_set_directories_visible() {
         let document = sample_document();
         let mut nodes = Vec::new();
         XtceDocument::collect_tree_nodes(&document, &mut Vec::new(), 0, &mut nodes);
@@ -3618,11 +4216,11 @@ mod tests {
             node.selection.system_path.is_empty()
                 && node.selection.kind == ElementKind::MetaCommandSet
         }));
-        assert!(!nodes.iter().any(|node| {
+        assert!(nodes.iter().any(|node| {
             node.selection.system_path.is_empty()
                 && node.selection.kind == ElementKind::CommandParameterTypeSet
         }));
-        assert!(!nodes.iter().any(|node| {
+        assert!(nodes.iter().any(|node| {
             node.selection.system_path.is_empty()
                 && node.selection.kind == ElementKind::CommandParameterSet
         }));
@@ -3798,5 +4396,67 @@ mod tests {
         };
         assert_eq!(parameter.name, "Parameter1");
         assert_eq!(parameter.parameter_type_ref, "OperationalFlagType");
+    }
+
+    #[test]
+    fn deleting_the_last_collection_item_omits_its_empty_set() {
+        let mut root = xtce::SpaceSystem::new("Root");
+        assert!(XtceDocument::add_metadata(
+            &mut root,
+            ElementKind::TelemetryMetaData
+        ));
+        assert_eq!(
+            XtceDocument::add_collection_item(&mut root, ElementKind::TelemetryParameterTypeSet),
+            Some(ElementKind::TelemetryParameterType(0))
+        );
+
+        assert!(XtceDocument::delete_element(
+            &mut root,
+            &ElementSelection {
+                system_path: Vec::new(),
+                kind: ElementKind::TelemetryParameterType(0),
+            }
+        ));
+
+        assert!(
+            root.telemetry_meta_data
+                .as_ref()
+                .expect("telemetry metadata")
+                .parameter_type_set
+                .is_none()
+        );
+    }
+
+    #[test]
+    fn reference_check_reports_the_named_element_using_a_parameter_type() {
+        let mut root = xtce::SpaceSystem::new("Root");
+        assert!(XtceDocument::add_metadata(
+            &mut root,
+            ElementKind::TelemetryMetaData
+        ));
+        XtceDocument::add_collection_item(&mut root, ElementKind::TelemetryParameterTypeSet);
+        XtceDocument::add_collection_item(&mut root, ElementKind::TelemetryParameterSet);
+        let document = XtceDocument {
+            root,
+            selection: ElementSelection {
+                system_path: Vec::new(),
+                kind: ElementKind::SpaceSystem,
+            },
+            file_name: "test.xml".to_owned(),
+        };
+
+        let references = document.references_to(
+            &ElementSelection {
+                system_path: Vec::new(),
+                kind: ElementKind::TelemetryParameterType(0),
+            },
+            "ParameterType1",
+        );
+
+        assert!(
+            references
+                .iter()
+                .any(|reference| reference.contains("Parameter1"))
+        );
     }
 }

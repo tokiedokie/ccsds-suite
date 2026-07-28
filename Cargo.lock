@@ -8648,6 +8648,7 @@ dependencies = [
  "gpui-component-assets",
  "gpui_platform",
  "lsp-types",
+ "roxmltree 0.20.0",
  "strum",
  "xtce",
 ]
