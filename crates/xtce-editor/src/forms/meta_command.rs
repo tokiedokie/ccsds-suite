@@ -64,6 +64,8 @@ enum CommandContainerEntryKind {
     ArrayParameterRef,
     #[strum(serialize = "IndirectParameterRefEntry")]
     IndirectParameterRef,
+    #[strum(serialize = "ArrayArgumentRefEntry")]
+    ArrayArgumentRef,
     #[strum(serialize = "FixedValueEntry")]
     FixedValue,
 }
@@ -87,7 +89,9 @@ impl_select_item!(LastArrayEntryChoice);
 
 fn command_entry_placeholder(kind: CommandContainerEntryKind) -> &'static str {
     match kind {
-        CommandContainerEntryKind::ArgumentRef => "Select an argument...",
+        CommandContainerEntryKind::ArgumentRef | CommandContainerEntryKind::ArrayArgumentRef => {
+            "Select an argument..."
+        }
         CommandContainerEntryKind::ParameterRef
         | CommandContainerEntryKind::ParameterSegmentRef => "Select a parameter...",
         CommandContainerEntryKind::ArrayParameterRef => "Select an array parameter...",
@@ -1266,6 +1270,13 @@ fn container_entry_data(
                 description: optional_value(description),
             }
         }
+        CommandContainerEntryKind::ArrayArgumentRef => EditableContainerEntry::ArrayArgumentRef {
+            reference: primary,
+            dimensions,
+            last_array_entry,
+            offset: secondary.trim().parse().ok(),
+            description: optional_value(description),
+        },
         CommandContainerEntryKind::FixedValue => EditableContainerEntry::FixedValue {
             name: optional_value(primary),
             binary_value: secondary,
@@ -2104,7 +2115,11 @@ fn open_command_entry_details(
                 let description = row.description_input.clone();
                 let fixed = kind == CommandContainerEntryKind::FixedValue;
                 let indirect = kind == CommandContainerEntryKind::IndirectParameterRef;
-                let array = kind == CommandContainerEntryKind::ArrayParameterRef;
+                let array = matches!(
+                    kind,
+                    CommandContainerEntryKind::ArrayParameterRef
+                        | CommandContainerEntryKind::ArrayArgumentRef
+                );
                 let segment = matches!(
                     kind,
                     CommandContainerEntryKind::ParameterSegmentRef
@@ -2783,12 +2798,14 @@ impl CompletionProvider for EntryArgumentCompletionProvider {
         _: &mut Window,
         cx: &mut Context<InputState>,
     ) -> Task<Result<CompletionResponse>> {
-        if selected_value(
-            &self.kind_select,
-            CommandContainerEntryKind::ArgumentRef,
-            cx,
-        ) != CommandContainerEntryKind::ArgumentRef
-        {
+        if !matches!(
+            selected_value(
+                &self.kind_select,
+                CommandContainerEntryKind::ArgumentRef,
+                cx,
+            ),
+            CommandContainerEntryKind::ArgumentRef | CommandContainerEntryKind::ArrayArgumentRef
+        ) {
             return Task::ready(Ok(CompletionResponse::Array(Vec::new())));
         }
 
@@ -2987,6 +3004,11 @@ fn new_command_container_entry_row(
             dimensions,
             last_array_entry,
             ..
+        }
+        | EditableContainerEntry::ArrayArgumentRef {
+            dimensions,
+            last_array_entry,
+            ..
         } => (dimensions.clone(), *last_array_entry),
         _ => (String::new(), false),
     };
@@ -3095,6 +3117,19 @@ fn new_command_container_entry_row(
             String::new(),
             description.unwrap_or_default(),
         ),
+        EditableContainerEntry::ArrayArgumentRef {
+            reference,
+            offset,
+            description,
+            ..
+        } => (
+            CommandContainerEntryKind::ArrayArgumentRef,
+            reference,
+            offset.map(|value| value.to_string()).unwrap_or_default(),
+            String::new(),
+            String::new(),
+            description.unwrap_or_default(),
+        ),
         EditableContainerEntry::FixedValue {
             name,
             binary_value,
@@ -3188,6 +3223,25 @@ fn command_container_entry_rows_value(rows: &Entity<EntryListView>, cx: &App) ->
 }
 
 fn encode_editable_entry(entry: &EditableContainerEntry) -> Option<String> {
+    if let EditableContainerEntry::ArrayArgumentRef {
+        reference,
+        dimensions,
+        last_array_entry,
+        offset,
+        description,
+    } = entry
+    {
+        return (!reference.trim().is_empty()).then(|| {
+            format!(
+                "ArrayArgumentRefEntry | {} | {} | {} | {} | {}",
+                reference.trim(),
+                dimensions.trim(),
+                last_array_entry,
+                offset.map(|value| value.to_string()).unwrap_or_default(),
+                description.as_deref().unwrap_or_default()
+            )
+        });
+    }
     if let EditableContainerEntry::ArrayParameterRef {
         reference,
         dimensions,
@@ -3336,6 +3390,7 @@ fn encode_editable_entry(entry: &EditableContainerEntry) -> Option<String> {
         EditableContainerEntry::StreamSegment { .. } => unreachable!(),
         EditableContainerEntry::ArrayParameterRef { .. } => unreachable!(),
         EditableContainerEntry::IndirectParameterRef { .. } => unreachable!(),
+        EditableContainerEntry::ArrayArgumentRef { .. } => unreachable!(),
     };
     if primary.trim().is_empty() && kind != CommandContainerEntryKind::FixedValue {
         return None;
@@ -3684,6 +3739,13 @@ enum EditableContainerEntry {
         offset: Option<i64>,
         description: Option<String>,
     },
+    ArrayArgumentRef {
+        reference: String,
+        dimensions: String,
+        last_array_entry: bool,
+        offset: Option<i64>,
+        description: Option<String>,
+    },
     FixedValue {
         name: Option<String>,
         binary_value: String,
@@ -3778,6 +3840,7 @@ fn command_entry_bit_positions_from_sizes(
                 EditableContainerEntry::ParameterRef { .. }
                 | EditableContainerEntry::ContainerRef { .. }
                 | EditableContainerEntry::ArrayParameterRef { .. }
+                | EditableContainerEntry::ArrayArgumentRef { .. }
                 | EditableContainerEntry::IndirectParameterRef { .. } => (None, None),
                 EditableContainerEntry::ParameterSegmentRef {
                     offset,
@@ -3928,6 +3991,13 @@ fn append_command_packet_entries(
                 layout
                     .unresolved
                     .push(format!("{reference}: array parameter size is unknown"));
+                *cursor = None;
+                continue;
+            }
+            EditableContainerEntry::ArrayArgumentRef { reference, .. } => {
+                layout
+                    .unresolved
+                    .push(format!("{reference}: array argument size is unknown"));
                 *cursor = None;
                 continue;
             }
@@ -4261,13 +4331,33 @@ fn encode_container_entries(list: &xtce::CommandContainerEntryListType) -> Strin
                     entry.short_description.as_deref().unwrap_or_default()
                 ))
             }
+            xtce::CommandContainerEntryListTypeContent::ArrayArgumentRefEntry(entry) => {
+                Some(format!(
+                    "ArrayArgumentRefEntry | {} | {} | {} | {} | {}",
+                    entry.argument_ref,
+                    entry
+                        .content
+                        .as_ref()
+                        .map(|content| {
+                            encode_command_argument_dimensions(&content.dimension_list)
+                        })
+                        .unwrap_or_default(),
+                    entry.last_entry_for_this_array_instance,
+                    fixed_entry_offset(
+                        entry
+                            .content
+                            .as_ref()
+                            .and_then(|content| { content.location_in_container_in_bits.as_ref() })
+                    ),
+                    entry.short_description.as_deref().unwrap_or_default()
+                ))
+            }
             xtce::CommandContainerEntryListTypeContent::FixedValueEntry(entry) => Some(format!(
                 "FixedValueEntry | {} | {} | {}",
                 entry.name.as_deref().unwrap_or_default(),
                 entry.binary_value,
                 entry.size_in_bits
             )),
-            _ => None,
         })
         .collect::<Vec<_>>()
         .join("\n")
@@ -4352,6 +4442,18 @@ fn decode_container_entries(value: &str) -> Vec<EditableContainerEntry> {
                     offset: numeric_field(&fields, 5),
                     description: optional_field(&fields, 6),
                 }),
+                "ArrayArgumentRefEntry" => Some(EditableContainerEntry::ArrayArgumentRef {
+                    reference: nonempty_field(&fields, 1)?,
+                    dimensions: fields.get(2)?.trim().to_owned(),
+                    last_array_entry: fields
+                        .get(3)
+                        .and_then(|value| value.parse().ok())
+                        .unwrap_or_else(
+                            xtce::ArgumentArrayArgumentRefEntryType::default_last_entry_for_this_array_instance,
+                        ),
+                    offset: numeric_field(&fields, 4),
+                    description: optional_field(&fields, 5),
+                }),
                 "FixedValueEntry" => Some(EditableContainerEntry::FixedValue {
                     name: optional_field(&fields, 1),
                     binary_value: nonempty_field(&fields, 2)?,
@@ -4397,6 +4499,28 @@ fn command_dimension_value_text(value: &xtce::IntegerValueType) -> String {
         xtce::IntegerValueType::FixedValue(value) => value.to_string(),
         xtce::IntegerValueType::DynamicValue(_) => "<dynamic>".to_owned(),
         xtce::IntegerValueType::DiscreteLookupList(_) => "<lookup>".to_owned(),
+    }
+}
+
+fn encode_command_argument_dimensions(list: &xtce::ArgumentDimensionListType) -> String {
+    list.dimension
+        .iter()
+        .map(|dimension| {
+            format!(
+                "{}..{}",
+                command_argument_dimension_value_text(&dimension.starting_index),
+                command_argument_dimension_value_text(&dimension.ending_index)
+            )
+        })
+        .collect::<Vec<_>>()
+        .join(", ")
+}
+
+fn command_argument_dimension_value_text(value: &xtce::ArgumentIntegerValueType) -> String {
+    match value {
+        xtce::ArgumentIntegerValueType::FixedValue(value) => value.to_string(),
+        xtce::ArgumentIntegerValueType::DynamicValue(_) => "<dynamic>".to_owned(),
+        xtce::ArgumentIntegerValueType::DiscreteLookupList(_) => "<lookup>".to_owned(),
     }
 }
 
@@ -4452,6 +4576,44 @@ fn apply_command_array_dimensions(
         .collect();
 }
 
+fn apply_command_array_argument_dimensions(
+    entry: &mut xtce::ArgumentArrayArgumentRefEntryType,
+    value: &str,
+) {
+    let Some(dimensions) = decode_command_dimensions(value) else {
+        return;
+    };
+    if dimensions.is_empty() {
+        entry.content = None;
+        return;
+    }
+    let content =
+        entry
+            .content
+            .get_or_insert_with(|| xtce::ArgumentArrayArgumentRefEntryTypeContent {
+                location_in_container_in_bits: None,
+                repeat_entry: None,
+                include_condition: None,
+                ancillary_data_set: None,
+                dimension_list: xtce::ArgumentDimensionListType {
+                    dimension: Vec::new(),
+                },
+            });
+    let mut existing = std::mem::take(&mut content.dimension_list.dimension).into_iter();
+    content.dimension_list.dimension = dimensions
+        .into_iter()
+        .map(|(start, end)| {
+            let mut dimension = existing.next().unwrap_or(xtce::ArgumentDimensionType {
+                starting_index: xtce::ArgumentIntegerValueType::FixedValue(0),
+                ending_index: xtce::ArgumentIntegerValueType::FixedValue(0),
+            });
+            dimension.starting_index = xtce::ArgumentIntegerValueType::FixedValue(start);
+            dimension.ending_index = xtce::ArgumentIntegerValueType::FixedValue(end);
+            dimension
+        })
+        .collect();
+}
+
 fn apply_container_entries(list: &mut xtce::CommandContainerEntryListType, value: &str) {
     let mut argument_entries = VecDeque::new();
     let mut parameter_entries = VecDeque::new();
@@ -4461,8 +4623,8 @@ fn apply_container_entries(list: &mut xtce::CommandContainerEntryListType, value
     let mut stream_segment_entries = VecDeque::new();
     let mut array_parameter_entries = VecDeque::new();
     let mut indirect_parameter_entries = VecDeque::new();
+    let mut array_argument_entries = VecDeque::new();
     let mut fixed_entries = VecDeque::new();
-    let mut unsupported_entries = Vec::new();
 
     for entry in std::mem::take(&mut list.content) {
         match entry {
@@ -4490,10 +4652,12 @@ fn apply_container_entries(list: &mut xtce::CommandContainerEntryListType, value
             xtce::CommandContainerEntryListTypeContent::IndirectParameterRefEntry(entry) => {
                 indirect_parameter_entries.push_back(entry);
             }
+            xtce::CommandContainerEntryListTypeContent::ArrayArgumentRefEntry(entry) => {
+                array_argument_entries.push_back(entry);
+            }
             xtce::CommandContainerEntryListTypeContent::FixedValueEntry(entry) => {
                 fixed_entries.push_back(entry);
             }
-            entry => unsupported_entries.push(entry),
         }
     }
 
@@ -4699,6 +4863,34 @@ fn apply_container_entries(list: &mut xtce::CommandContainerEntryListType, value
                     apply_fixed_entry_offset(&mut entry.location_in_container_in_bits, offset);
                     xtce::CommandContainerEntryListTypeContent::IndirectParameterRefEntry(entry)
                 }
+                EditableContainerEntry::ArrayArgumentRef {
+                    reference,
+                    dimensions,
+                    last_array_entry,
+                    offset,
+                    description,
+                } => {
+                    let mut entry = array_argument_entries.pop_front().unwrap_or(
+                        xtce::ArgumentArrayArgumentRefEntryType {
+                            short_description: None,
+                            argument_ref: String::new(),
+                            last_entry_for_this_array_instance:
+                                xtce::ArgumentArrayArgumentRefEntryType::default_last_entry_for_this_array_instance(),
+                            content: None,
+                        },
+                    );
+                    entry.argument_ref = reference;
+                    entry.last_entry_for_this_array_instance = last_array_entry;
+                    entry.short_description = description;
+                    apply_command_array_argument_dimensions(&mut entry, &dimensions);
+                    if let Some(content) = &mut entry.content {
+                        apply_fixed_entry_offset(
+                            &mut content.location_in_container_in_bits,
+                            offset,
+                        );
+                    }
+                    xtce::CommandContainerEntryListTypeContent::ArrayArgumentRefEntry(entry)
+                }
                 EditableContainerEntry::FixedValue {
                     name,
                     binary_value,
@@ -4723,7 +4915,6 @@ fn apply_container_entries(list: &mut xtce::CommandContainerEntryListType, value
                     xtce::CommandContainerEntryListTypeContent::FixedValueEntry(entry)
                 }
             })
-            .chain(unsupported_entries)
             .collect();
 }
 
@@ -7249,6 +7440,50 @@ mod tests {
             "0..3, 1..2"
         );
         assert_eq!(entry.short_description.as_deref(), Some("array slice"));
+    }
+
+    #[test]
+    fn array_argument_entry_round_trips_through_the_form() {
+        let mut container = default_command_container();
+        container.entry_list.content.push(
+            xtce::CommandContainerEntryListTypeContent::ArrayArgumentRefEntry(
+                xtce::ArgumentArrayArgumentRefEntryType {
+                    short_description: Some("argument slice".to_owned()),
+                    argument_ref: "samples".to_owned(),
+                    last_entry_for_this_array_instance: true,
+                    content: Some(xtce::ArgumentArrayArgumentRefEntryTypeContent {
+                        location_in_container_in_bits: None,
+                        repeat_entry: None,
+                        include_condition: None,
+                        ancillary_data_set: None,
+                        dimension_list: xtce::ArgumentDimensionListType {
+                            dimension: vec![xtce::ArgumentDimensionType {
+                                starting_index: xtce::ArgumentIntegerValueType::FixedValue(2),
+                                ending_index: xtce::ArgumentIntegerValueType::FixedValue(5),
+                            }],
+                        },
+                    }),
+                },
+            ),
+        );
+
+        let encoded = super::encode_container_entries(&container.entry_list);
+        apply_container_entries(&mut container.entry_list, &encoded);
+
+        let xtce::CommandContainerEntryListTypeContent::ArrayArgumentRefEntry(entry) =
+            &container.entry_list.content[0]
+        else {
+            panic!("expected ArrayArgumentRefEntry")
+        };
+        assert_eq!(entry.argument_ref, "samples");
+        assert!(entry.last_entry_for_this_array_instance);
+        assert_eq!(
+            super::encode_command_argument_dimensions(
+                &entry.content.as_ref().expect("dimensions").dimension_list
+            ),
+            "2..5"
+        );
+        assert_eq!(entry.short_description.as_deref(), Some("argument slice"));
     }
 
     #[test]
