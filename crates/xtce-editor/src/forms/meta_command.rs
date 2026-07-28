@@ -29,7 +29,7 @@ use strum::{Display, EnumString, VariantArray};
 use super::{
     alias_set::AliasSetForm, ancillary_data_set::AncillaryDataSetForm,
     container_binary_encoding::ContainerBinaryEncodingForm, container_rate::ContainerRateForm,
-    field, impl_select_item, optional_value,
+    context_significance::ContextSignificanceListForm, field, impl_select_item, optional_value,
 };
 use crate::XtceEditor;
 
@@ -155,6 +155,7 @@ pub(super) struct MetaCommandForm {
     consequence_level_select: Entity<SelectState<Vec<ConsequenceLevelChoice>>>,
     reason_for_warning_input: Entity<InputState>,
     space_system_at_risk_input: Entity<InputState>,
+    context_significance_list: Entity<ContextSignificanceListForm>,
     transmission_constraints: Entity<TransmissionConstraintListForm>,
     verifiers: Entity<VerifierListForm>,
     interlock_verification_select: Entity<SelectState<Vec<VerificationToWaitForChoice>>>,
@@ -237,6 +238,16 @@ impl MetaCommandForm {
         );
         let container_binary_encoding = ContainerBinaryEncodingForm::new(
             command_container.and_then(|container| container.binary_encoding.as_ref()),
+            window,
+            cx,
+        );
+        let context_significance_list = ContextSignificanceListForm::new(
+            command.and_then(|command| match command {
+                xtce::MetaCommandSetTypeContent::MetaCommand(command) => {
+                    command.context_significance_list.as_ref()
+                }
+                _ => None,
+            }),
             window,
             cx,
         );
@@ -375,6 +386,7 @@ impl MetaCommandForm {
                     window,
                     cx,
                 ),
+                context_significance_list,
                 transmission_constraints: TransmissionConstraintListForm::new(
                     command.and_then(|cmd| match cmd {
                         xtce::MetaCommandSetTypeContent::MetaCommand(cmd) => {
@@ -536,6 +548,18 @@ impl MetaCommandForm {
         self.container_binary_encoding.update(cx, |form, cx| {
             form.load(
                 command_container.and_then(|container| container.binary_encoding.as_ref()),
+                window,
+                cx,
+            );
+        });
+        self.context_significance_list.update(cx, |form, cx| {
+            form.load(
+                command.and_then(|command| match command {
+                    xtce::MetaCommandSetTypeContent::MetaCommand(command) => {
+                        command.context_significance_list.as_ref()
+                    }
+                    _ => None,
+                }),
                 window,
                 cx,
             );
@@ -758,6 +782,9 @@ impl MetaCommandForm {
             xtce::MetaCommandSetTypeContent::MetaCommandRef(_) => {}
         }
         if let xtce::MetaCommandSetTypeContent::MetaCommand(cmd) = command {
+            self.context_significance_list
+                .read(cx)
+                .apply_to(&mut cmd.context_significance_list, cx);
             if let Some(container) = cmd.command_container.as_mut() {
                 self.container_alias_set
                     .apply_to_option(&mut container.alias_set, cx);
@@ -1009,7 +1036,8 @@ impl MetaCommandForm {
                         "Optional",
                         &self.space_system_at_risk_input,
                         cx,
-                    )),
+                    ))
+                    .child(self.context_significance_list.clone()),
             )
     }
 

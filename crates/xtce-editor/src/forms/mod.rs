@@ -7,6 +7,7 @@ mod command_metadata;
 mod container_binary_encoding;
 mod container_rate;
 mod context_calibrator;
+mod context_significance;
 pub(super) mod custom_algorithm;
 pub(super) mod custom_stream;
 mod data_encoding;
