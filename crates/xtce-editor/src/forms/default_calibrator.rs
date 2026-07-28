@@ -399,8 +399,8 @@ impl Render for DefaultCalibratorForm {
                         .child(if present {
                             Button::new("remove-default-calibrator")
                                 .small()
-                                .danger()
-                                .label("Remove default calibrator")
+                                .icon(IconName::Minus)
+                                .label("Remove")
                                 .on_click(cx.listener(|this, _, _, cx| {
                                     this.present = false;
                                     cx.notify();
@@ -409,7 +409,7 @@ impl Render for DefaultCalibratorForm {
                             Button::new("add-default-calibrator")
                                 .small()
                                 .icon(IconName::Plus)
-                                .label("Add default calibrator")
+                                .label("Add")
                                 .on_click(cx.listener(|this, _, _, cx| {
                                     this.present = true;
                                     cx.notify();

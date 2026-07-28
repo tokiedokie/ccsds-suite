@@ -24,6 +24,7 @@ use super::{
     field, impl_select_item, optional_value,
     to_string::ToStringForm,
     unit_set::UnitSetForm,
+    valid_range::{ValidRangeForm, ValidRangeKind, ValidRangeValue},
 };
 use crate::XtceEditor;
 
@@ -495,6 +496,102 @@ fn set_parameter_type_to_string(
     }
 }
 
+fn integer_valid_range(
+    parameter_type: &xtce::ParameterTypeSetTypeContent,
+) -> Option<&xtce::IntegerDataTypeValidRangeElementType> {
+    let xtce::ParameterTypeSetTypeContent::IntegerParameterType(value) = parameter_type else {
+        return None;
+    };
+    value.content.iter().find_map(|item| match item {
+        xtce::IntegerParameterTypeContent::ValidRange(value) => Some(value),
+        _ => None,
+    })
+}
+
+fn float_valid_range(
+    parameter_type: &xtce::ParameterTypeSetTypeContent,
+) -> Option<&xtce::FloatDataTypeValidRangeElementType> {
+    let xtce::ParameterTypeSetTypeContent::FloatParameterType(value) = parameter_type else {
+        return None;
+    };
+    value.content.iter().find_map(|item| match item {
+        xtce::FloatParameterTypeContent::ValidRange(value) => Some(value),
+        _ => None,
+    })
+}
+
+fn set_parameter_type_valid_range(
+    parameter_type: &mut xtce::ParameterTypeSetTypeContent,
+    valid_range: Option<ValidRangeValue>,
+) {
+    macro_rules! set_valid_range {
+        ($value:expr, $content:ident, $range:expr) => {{
+            let existing = $value
+                .content
+                .iter()
+                .position(|item| matches!(item, xtce::$content::ValidRange(_)));
+            match ($range, existing) {
+                (Some(range), Some(index)) => {
+                    $value.content[index] = xtce::$content::ValidRange(range);
+                }
+                (Some(range), None) => {
+                    let index = $value
+                        .content
+                        .iter()
+                        .position(|item| {
+                            matches!(
+                                item,
+                                xtce::$content::DefaultAlarm(_)
+                                    | xtce::$content::ContextAlarmList(_)
+                            )
+                        })
+                        .unwrap_or($value.content.len());
+                    $value
+                        .content
+                        .insert(index, xtce::$content::ValidRange(range));
+                }
+                (None, Some(index)) => {
+                    $value.content.remove(index);
+                }
+                (None, None) => {}
+            }
+        }};
+    }
+    match (parameter_type, valid_range) {
+        (
+            xtce::ParameterTypeSetTypeContent::IntegerParameterType(value),
+            Some(ValidRangeValue::Integer(range)),
+        ) => set_valid_range!(value, IntegerParameterTypeContent, Some(range)),
+        (
+            xtce::ParameterTypeSetTypeContent::FloatParameterType(value),
+            Some(ValidRangeValue::Float(range)),
+        ) => set_valid_range!(value, FloatParameterTypeContent, Some(range)),
+        (xtce::ParameterTypeSetTypeContent::IntegerParameterType(value), None) => {
+            set_valid_range!(
+                value,
+                IntegerParameterTypeContent,
+                None::<xtce::IntegerDataTypeValidRangeElementType>
+            )
+        }
+        (xtce::ParameterTypeSetTypeContent::FloatParameterType(value), None) => {
+            set_valid_range!(
+                value,
+                FloatParameterTypeContent,
+                None::<xtce::FloatDataTypeValidRangeElementType>
+            )
+        }
+        _ => {}
+    }
+}
+
+fn valid_range_kind(kind: ParameterTypeKind) -> ValidRangeKind {
+    match kind {
+        ParameterTypeKind::Integer => ValidRangeKind::Integer,
+        ParameterTypeKind::Float => ValidRangeKind::Float,
+        _ => ValidRangeKind::Unsupported,
+    }
+}
+
 #[derive(Clone, Copy, Debug, Display, EnumString, VariantArray, PartialEq, Eq)]
 enum CharacterWidthChoice {
     Default,
@@ -540,6 +637,7 @@ pub(super) struct ParameterTypeForm {
     ancillary_data_set: AncillaryDataSetForm,
     unit_set: Entity<UnitSetForm>,
     to_string: Entity<ToStringForm>,
+    valid_range: Entity<ValidRangeForm>,
     size_range_min_input: Entity<InputState>,
     size_range_max_input: Entity<InputState>,
     extra_a_input: Entity<InputState>,
@@ -594,6 +692,13 @@ impl ParameterTypeForm {
             UnitSetForm::new(parameter_type.and_then(parameter_type_unit_set), window, cx);
         let to_string = ToStringForm::new(
             parameter_type.and_then(parameter_type_to_string),
+            window,
+            cx,
+        );
+        let valid_range = ValidRangeForm::new(
+            valid_range_kind(kind),
+            parameter_type.and_then(integer_valid_range),
+            parameter_type.and_then(float_valid_range),
             window,
             cx,
         );
@@ -674,6 +779,7 @@ impl ParameterTypeForm {
             let kind_enumeration_list = enumeration_list.clone();
             let kind_aggregate_members = aggregate_members.clone();
             let kind_to_string = to_string.clone();
+            let kind_valid_range = valid_range.clone();
             let kind_size_range_min = size_range_min_input.clone();
             let kind_size_range_max = size_range_max_input.clone();
             subscriptions.push(cx.subscribe_in(
@@ -753,6 +859,9 @@ impl ParameterTypeForm {
                     kind_to_string.update(cx, |form, cx| {
                         form.load(None, window, cx);
                     });
+                    kind_valid_range.update(cx, |form, cx| {
+                        form.reset(valid_range_kind(selected_kind), window, cx);
+                    });
                     if selected_kind == ParameterTypeKind::Enumerated {
                         kind_enumeration_list.update(cx, |form, cx| {
                             form.reset_to_default(cx);
@@ -780,6 +889,7 @@ impl ParameterTypeForm {
                 ancillary_data_set,
                 unit_set,
                 to_string,
+                valid_range,
                 size_range_min_input,
                 size_range_max_input,
                 extra_a_input,
@@ -892,6 +1002,15 @@ impl ParameterTypeForm {
                 cx,
             );
         });
+        self.valid_range.update(cx, |form, cx| {
+            form.load(
+                valid_range_kind(selected_kind),
+                parameter_type.and_then(integer_valid_range),
+                parameter_type.and_then(float_valid_range),
+                window,
+                cx,
+            );
+        });
         let size_range = parameter_type.and_then(string_size_range);
         for (input, value) in [
             (
@@ -973,6 +1092,7 @@ impl ParameterTypeForm {
         );
         set_parameter_type_unit_set(parameter_type, self.unit_set.read(cx).to_set(cx));
         set_parameter_type_to_string(parameter_type, self.to_string.read(cx).to_value(cx));
+        set_parameter_type_valid_range(parameter_type, self.valid_range.read(cx).to_value(cx));
         set_string_size_range(
             parameter_type,
             integer_range(
@@ -1064,7 +1184,9 @@ impl ParameterTypeForm {
                 .child(self.data_encoding.clone());
         }
         if matches!(kind, ParameterTypeKind::Integer | ParameterTypeKind::Float) {
-            form = form.child(self.to_string.clone());
+            form = form
+                .child(self.to_string.clone())
+                .child(self.valid_range.clone());
         }
         if kind == ParameterTypeKind::String {
             form = form.child(
@@ -1923,11 +2045,13 @@ fn value(input: &Entity<InputState>, cx: &App) -> String {
 #[cfg(test)]
 mod tests {
     use super::{
-        ParameterTypeKind, ParameterTypeValues, apply_nested_items, encode_nested_items,
-        parameter_type_alias_set, parameter_type_ancillary_data_set, parameter_type_to_string,
-        parameter_type_unit_set, replace_parameter_type_kind, set_parameter_type_alias_set,
+        ParameterTypeKind, ParameterTypeValues, ValidRangeValue, apply_nested_items,
+        encode_nested_items, float_valid_range, integer_valid_range, parameter_type_alias_set,
+        parameter_type_ancillary_data_set, parameter_type_to_string, parameter_type_unit_set,
+        replace_parameter_type_kind, set_parameter_type_alias_set,
         set_parameter_type_ancillary_data_set, set_parameter_type_to_string,
-        set_parameter_type_unit_set, set_string_size_range, string_size_range,
+        set_parameter_type_unit_set, set_parameter_type_valid_range, set_string_size_range,
+        string_size_range,
     };
 
     #[test]
@@ -2243,6 +2367,46 @@ mod tests {
 
         set_parameter_type_to_string(&mut parameter_type, None);
         assert!(parameter_type_to_string(&parameter_type).is_none());
+    }
+
+    #[test]
+    fn valid_range_is_editable_for_numeric_parameter_types() {
+        let mut parameter_type =
+            xtce::ParameterTypeSetTypeContent::FloatParameterType(xtce::FloatParameterType {
+                short_description: None,
+                name: "TemperatureType".to_owned(),
+                base_type: None,
+                initial_value: None,
+                size_in_bits: xtce::FloatSizeInBitsType::_64,
+                content: Vec::new(),
+            });
+        set_parameter_type_valid_range(
+            &mut parameter_type,
+            Some(ValidRangeValue::Float(
+                xtce::FloatDataTypeValidRangeElementType {
+                    min_inclusive: Some(-40.0),
+                    min_exclusive: None,
+                    max_inclusive: None,
+                    max_exclusive: Some(125.0),
+                    valid_range_applies_to_calibrated: true,
+                },
+            )),
+        );
+
+        let range = float_valid_range(&parameter_type).expect("valid range");
+        assert_eq!(range.min_inclusive, Some(-40.0));
+        assert_eq!(range.max_exclusive, Some(125.0));
+        let xtce::ParameterTypeSetTypeContent::FloatParameterType(value) = &parameter_type else {
+            panic!("expected a FloatParameterType");
+        };
+        assert!(matches!(
+            value.content[0],
+            xtce::FloatParameterTypeContent::ValidRange(_)
+        ));
+
+        set_parameter_type_valid_range(&mut parameter_type, None);
+        assert!(float_valid_range(&parameter_type).is_none());
+        assert!(integer_valid_range(&parameter_type).is_none());
     }
 
     #[test]
