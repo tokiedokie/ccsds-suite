@@ -1417,6 +1417,8 @@ struct CommandArgumentData {
     initial_value: String,
     short_description: String,
     long_description: String,
+    aliases: String,
+    ancillary_data: String,
 }
 
 struct CommandArgumentRow {
@@ -1425,6 +1427,8 @@ struct CommandArgumentRow {
     initial_value_input: Entity<InputState>,
     short_description_input: Entity<InputState>,
     long_description_input: Entity<InputState>,
+    alias_set: AliasSetForm,
+    ancillary_data_set: AncillaryDataSetForm,
     optional_fields_open: bool,
 }
 
@@ -1480,6 +1484,8 @@ fn command_argument_data(row: &Entity<CommandArgumentRow>, cx: &App) -> CommandA
         initial_value: value(&row.initial_value_input, cx),
         short_description: value(&row.short_description_input, cx),
         long_description: value(&row.long_description_input, cx),
+        aliases: row.alias_set.text(cx),
+        ancillary_data: row.ancillary_data_set.text(cx),
     }
 }
 
@@ -1983,13 +1989,16 @@ fn open_command_argument_options(
             .title("Argument options")
             .w(px(680.))
             .content(move |content, _, cx| {
-                let long_description = editor.read(cx).long_description_input.clone();
-                content.child(v_flex().p_4().child(field(
-                    "Long description",
-                    "Optional",
-                    &long_description,
-                    cx,
-                )))
+                let row = editor.read(cx);
+                let long_description = row.long_description_input.clone();
+                content.child(
+                    v_flex()
+                        .p_4()
+                        .gap_4()
+                        .child(field("Long description", "Optional", &long_description, cx))
+                        .child(row.alias_set.render(cx))
+                        .child(row.ancillary_data_set.render(cx)),
+                )
             })
     });
 }
@@ -3229,6 +3238,8 @@ fn command_argument_models(list: Option<&xtce::ArgumentListType>) -> Vec<Command
             initial_value: argument.initial_value.clone().unwrap_or_default(),
             short_description: argument.short_description.clone().unwrap_or_default(),
             long_description: argument.long_description.clone().unwrap_or_default(),
+            aliases: AliasSetForm::encode(argument.alias_set.as_ref()),
+            ancillary_data: AncillaryDataSetForm::encode(argument.ancillary_data_set.as_ref()),
         })
         .collect()
 }
@@ -3275,6 +3286,8 @@ fn new_command_argument_row(
             initial_value_input,
             short_description_input: input_with_context(&data.short_description, window, cx),
             long_description_input: input(&data.long_description, true, window, cx),
+            alias_set: AliasSetForm::new_text(&data.aliases, window, cx),
+            ancillary_data_set: AncillaryDataSetForm::new_text(&data.ancillary_data, window, cx),
             optional_fields_open,
         }
     })
@@ -3310,6 +3323,8 @@ fn command_argument_rows_value(
                     initial_value: initial_value.trim().to_owned(),
                     short_description: data.short_description.trim().to_owned(),
                     long_description: data.long_description,
+                    aliases: data.aliases,
+                    ancillary_data: data.ancillary_data,
                 }
             })
         })
@@ -8202,6 +8217,8 @@ fn apply_arguments(list: &mut Option<xtce::ArgumentListType>, rows: &[CommandArg
             argument.initial_value = optional_value(row.initial_value.clone());
             argument.short_description = optional_value(row.short_description.clone());
             argument.long_description = optional_value(row.long_description.clone());
+            argument.alias_set = AliasSetForm::parse(&row.aliases);
+            argument.ancillary_data_set = AncillaryDataSetForm::parse(&row.ancillary_data);
             argument
         })
         .collect();
@@ -8366,7 +8383,7 @@ mod tests {
     use super::{
         ArgumentSpec, AssignmentContext, CommandArgumentData, CommandArguments,
         CommandContainerValues, EditableContainerEntry, MetaCommandValues, SignificanceValues,
-        ValueRule, apply_arguments, apply_container_entries, apply_steps,
+        ValueRule, apply_arguments, apply_container_entries, apply_steps, command_argument_models,
         command_entry_bit_positions_from_sizes, command_packet_layout_from_sizes,
         decode_assignments, default_command_container, default_meta_command,
         matching_argument_names, swap_rows,
@@ -8521,7 +8538,7 @@ mod tests {
     }
 
     #[test]
-    fn argument_long_description_is_editable_without_losing_other_metadata() {
+    fn all_argument_metadata_is_editable() {
         let mut list = Some(xtce::ArgumentListType {
             argument: vec![xtce::ArgumentType {
                 short_description: None,
@@ -8529,10 +8546,30 @@ mod tests {
                 argument_type_ref: "OldType".to_owned(),
                 initial_value: None,
                 long_description: Some("preserved".to_owned()),
-                alias_set: Some(xtce::AliasSetType { alias: Vec::new() }),
-                ancillary_data_set: None,
+                alias_set: Some(xtce::AliasSetType {
+                    alias: vec![xtce::AliasType {
+                        name_space: "legacy".to_owned(),
+                        alias: "OLD".to_owned(),
+                    }],
+                }),
+                ancillary_data_set: Some(xtce::AncillaryDataSetType {
+                    ancillary_data: vec![xtce::AncillaryDataType {
+                        name: "legacy-guide".to_owned(),
+                        mime_type: "text/plain".to_owned(),
+                        href: None,
+                        content: "Legacy guide".to_owned(),
+                    }],
+                }),
             }],
         });
+
+        let loaded = command_argument_models(list.as_ref());
+        assert_eq!(loaded[0].long_description, "preserved");
+        assert_eq!(loaded[0].aliases, "legacy = OLD");
+        assert_eq!(
+            loaded[0].ancillary_data,
+            "legacy-guide | text/plain |  | Legacy guide"
+        );
 
         apply_arguments(
             &mut list,
@@ -8542,6 +8579,9 @@ mod tests {
                 initial_value: "SAFE".to_owned(),
                 short_description: "Operating mode".to_owned(),
                 long_description: "First line\nSecond line".to_owned(),
+                aliases: "ops = MODE".to_owned(),
+                ancillary_data: "guide | text/plain | https://example.invalid/mode | Mode guide"
+                    .to_owned(),
             }],
         );
 
@@ -8551,7 +8591,18 @@ mod tests {
             argument.long_description.as_deref(),
             Some("First line\nSecond line")
         );
-        assert!(argument.alias_set.is_some());
+        let aliases = argument.alias_set.as_ref().expect("argument aliases");
+        assert_eq!(aliases.alias[0].name_space, "ops");
+        assert_eq!(aliases.alias[0].alias, "MODE");
+        let ancillary = argument
+            .ancillary_data_set
+            .as_ref()
+            .expect("argument ancillary data");
+        assert_eq!(ancillary.ancillary_data[0].name, "guide");
+        assert_eq!(
+            ancillary.ancillary_data[0].href.as_deref(),
+            Some("https://example.invalid/mode")
+        );
     }
 
     #[test]

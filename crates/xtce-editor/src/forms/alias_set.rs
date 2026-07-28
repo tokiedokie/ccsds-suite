@@ -12,11 +12,15 @@ impl AliasSetForm {
         window: &mut Window,
         cx: &mut impl AppContext,
     ) -> Self {
+        Self::new_text(&Self::encode(alias_set), window, cx)
+    }
+
+    pub(super) fn new_text(value: &str, window: &mut Window, cx: &mut impl AppContext) -> Self {
         Self {
             aliases_input: cx.new(|cx| {
                 InputState::new(window, cx)
                     .auto_grow(4, 20)
-                    .default_value(Self::encode(alias_set))
+                    .default_value(value.to_owned())
             }),
         }
     }
@@ -33,8 +37,16 @@ impl AliasSetForm {
     }
 
     pub(super) fn apply_to_option(&self, alias_set: &mut Option<xtce::AliasSetType>, cx: &App) {
-        let alias = decode(&self.aliases_input.read(cx).value());
-        *alias_set = (!alias.is_empty()).then_some(xtce::AliasSetType { alias });
+        *alias_set = Self::parse(&self.text(cx));
+    }
+
+    pub(super) fn text(&self, cx: &App) -> String {
+        self.aliases_input.read(cx).value().to_string()
+    }
+
+    pub(super) fn parse(value: &str) -> Option<xtce::AliasSetType> {
+        let alias = decode(value);
+        (!alias.is_empty()).then_some(xtce::AliasSetType { alias })
     }
 
     pub(super) fn render(&self, cx: &App) -> Div {
@@ -46,7 +58,7 @@ impl AliasSetForm {
         )
     }
 
-    fn encode(alias_set: Option<&xtce::AliasSetType>) -> String {
+    pub(super) fn encode(alias_set: Option<&xtce::AliasSetType>) -> String {
         alias_set
             .into_iter()
             .flat_map(|set| &set.alias)

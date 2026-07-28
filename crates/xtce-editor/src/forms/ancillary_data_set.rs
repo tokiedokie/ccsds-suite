@@ -12,11 +12,15 @@ impl AncillaryDataSetForm {
         window: &mut Window,
         cx: &mut impl AppContext,
     ) -> Self {
+        Self::new_text(&Self::encode(data_set), window, cx)
+    }
+
+    pub(super) fn new_text(value: &str, window: &mut Window, cx: &mut impl AppContext) -> Self {
         Self {
             entries_input: cx.new(|cx| {
                 InputState::new(window, cx)
                     .auto_grow(4, 20)
-                    .default_value(Self::encode(data_set))
+                    .default_value(value.to_owned())
             }),
         }
     }
@@ -37,9 +41,16 @@ impl AncillaryDataSetForm {
         data_set: &mut Option<xtce::AncillaryDataSetType>,
         cx: &App,
     ) {
-        let ancillary_data = decode(&self.entries_input.read(cx).value());
-        *data_set =
-            (!ancillary_data.is_empty()).then_some(xtce::AncillaryDataSetType { ancillary_data });
+        *data_set = Self::parse(&self.text(cx));
+    }
+
+    pub(super) fn text(&self, cx: &App) -> String {
+        self.entries_input.read(cx).value().to_string()
+    }
+
+    pub(super) fn parse(value: &str) -> Option<xtce::AncillaryDataSetType> {
+        let ancillary_data = decode(value);
+        (!ancillary_data.is_empty()).then_some(xtce::AncillaryDataSetType { ancillary_data })
     }
 
     pub(super) fn render(&self, cx: &App) -> Div {
@@ -51,7 +62,7 @@ impl AncillaryDataSetForm {
         )
     }
 
-    fn encode(data_set: Option<&xtce::AncillaryDataSetType>) -> String {
+    pub(super) fn encode(data_set: Option<&xtce::AncillaryDataSetType>) -> String {
         data_set
             .into_iter()
             .flat_map(|set| &set.ancillary_data)
