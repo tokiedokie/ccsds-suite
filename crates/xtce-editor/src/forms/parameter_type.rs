@@ -15,6 +15,7 @@ use strum::{Display, EnumString, VariantArray};
 
 use super::{
     aggregate_member_list::AggregateMemberListForm,
+    alias_set::AliasSetForm,
     data_encoding::{
         DataEncodingForm, find_data_encoding, find_data_encoding_mut, set_data_encoding_kind,
     },
@@ -50,6 +51,112 @@ macro_rules! set_long_description {
             $content.retain(|item| !matches!(item, xtce::$type::LongDescription(_)));
         }
     }};
+}
+
+fn parameter_type_alias_set(
+    parameter_type: &xtce::ParameterTypeSetTypeContent,
+) -> Option<&xtce::AliasSetType> {
+    macro_rules! content_alias {
+        ($value:expr, $content:ident) => {
+            $value.content.iter().find_map(|item| match item {
+                xtce::$content::AliasSet(value) => Some(value),
+                _ => None,
+            })
+        };
+    }
+    match parameter_type {
+        xtce::ParameterTypeSetTypeContent::StringParameterType(value) => {
+            content_alias!(value, StringParameterTypeContent)
+        }
+        xtce::ParameterTypeSetTypeContent::EnumeratedParameterType(value) => {
+            content_alias!(value, EnumeratedParameterTypeContent)
+        }
+        xtce::ParameterTypeSetTypeContent::IntegerParameterType(value) => {
+            content_alias!(value, IntegerParameterTypeContent)
+        }
+        xtce::ParameterTypeSetTypeContent::BinaryParameterType(value) => {
+            content_alias!(value, BinaryParameterTypeContent)
+        }
+        xtce::ParameterTypeSetTypeContent::FloatParameterType(value) => {
+            content_alias!(value, FloatParameterTypeContent)
+        }
+        xtce::ParameterTypeSetTypeContent::BooleanParameterType(value) => {
+            content_alias!(value, BooleanParameterTypeContent)
+        }
+        xtce::ParameterTypeSetTypeContent::RelativeTimeParameterType(value) => {
+            value.alias_set.as_ref()
+        }
+        xtce::ParameterTypeSetTypeContent::AbsoluteTimeParameterType(value) => {
+            value.alias_set.as_ref()
+        }
+        xtce::ParameterTypeSetTypeContent::ArrayParameterType(value) => value.alias_set.as_ref(),
+        xtce::ParameterTypeSetTypeContent::AggregateParameterType(value) => {
+            value.alias_set.as_ref()
+        }
+    }
+}
+
+fn set_parameter_type_alias_set(
+    parameter_type: &mut xtce::ParameterTypeSetTypeContent,
+    alias_set: Option<xtce::AliasSetType>,
+) {
+    macro_rules! set_content_alias {
+        ($value:expr, $content:ident, $alias_set:expr) => {{
+            let existing = $value
+                .content
+                .iter()
+                .position(|item| matches!(item, xtce::$content::AliasSet(_)));
+            match ($alias_set, existing) {
+                (Some(alias_set), Some(index)) => {
+                    $value.content[index] = xtce::$content::AliasSet(alias_set);
+                }
+                (Some(alias_set), None) => {
+                    let index = $value
+                        .content
+                        .iter()
+                        .position(|item| !matches!(item, xtce::$content::LongDescription(_)))
+                        .unwrap_or($value.content.len());
+                    $value
+                        .content
+                        .insert(index, xtce::$content::AliasSet(alias_set));
+                }
+                (None, Some(index)) => {
+                    $value.content.remove(index);
+                }
+                (None, None) => {}
+            }
+        }};
+    }
+    match parameter_type {
+        xtce::ParameterTypeSetTypeContent::StringParameterType(value) => {
+            set_content_alias!(value, StringParameterTypeContent, alias_set)
+        }
+        xtce::ParameterTypeSetTypeContent::EnumeratedParameterType(value) => {
+            set_content_alias!(value, EnumeratedParameterTypeContent, alias_set)
+        }
+        xtce::ParameterTypeSetTypeContent::IntegerParameterType(value) => {
+            set_content_alias!(value, IntegerParameterTypeContent, alias_set)
+        }
+        xtce::ParameterTypeSetTypeContent::BinaryParameterType(value) => {
+            set_content_alias!(value, BinaryParameterTypeContent, alias_set)
+        }
+        xtce::ParameterTypeSetTypeContent::FloatParameterType(value) => {
+            set_content_alias!(value, FloatParameterTypeContent, alias_set)
+        }
+        xtce::ParameterTypeSetTypeContent::BooleanParameterType(value) => {
+            set_content_alias!(value, BooleanParameterTypeContent, alias_set)
+        }
+        xtce::ParameterTypeSetTypeContent::RelativeTimeParameterType(value) => {
+            value.alias_set = alias_set
+        }
+        xtce::ParameterTypeSetTypeContent::AbsoluteTimeParameterType(value) => {
+            value.alias_set = alias_set
+        }
+        xtce::ParameterTypeSetTypeContent::ArrayParameterType(value) => value.alias_set = alias_set,
+        xtce::ParameterTypeSetTypeContent::AggregateParameterType(value) => {
+            value.alias_set = alias_set
+        }
+    }
 }
 
 #[derive(Clone, Copy, Debug, Display, EnumString, VariantArray, PartialEq, Eq)]
@@ -93,6 +200,7 @@ pub(super) struct ParameterTypeForm {
     initial_value_input: Entity<InputState>,
     short_description_input: Entity<InputState>,
     long_description_input: Entity<InputState>,
+    alias_set: AliasSetForm,
     extra_a_input: Entity<InputState>,
     extra_b_input: Entity<InputState>,
     character_width_select: Entity<SelectState<Vec<CharacterWidthChoice>>>,
@@ -104,6 +212,7 @@ pub(super) struct ParameterTypeForm {
     data_encoding: Entity<DataEncodingForm>,
     base_defaults_open: bool,
     documentation_open: bool,
+    metadata_open: bool,
     type_options_open: bool,
     _subscriptions: Vec<Subscription>,
 }
@@ -130,6 +239,11 @@ impl ParameterTypeForm {
             .map(kind)
             .unwrap_or(ParameterTypeKind::String);
         let name_input = input(&values.name, false, window, cx);
+        let alias_set = AliasSetForm::new(
+            parameter_type.and_then(parameter_type_alias_set),
+            window,
+            cx,
+        );
         let name_subscription = cx.subscribe(&name_input, |editor, _, _: &InputEvent, cx| {
             editor.refresh_tree(cx);
             cx.notify();
@@ -279,6 +393,7 @@ impl ParameterTypeForm {
                 initial_value_input,
                 short_description_input,
                 long_description_input,
+                alias_set,
                 extra_a_input,
                 extra_b_input,
                 character_width_select,
@@ -294,6 +409,7 @@ impl ParameterTypeForm {
                 ),
                 base_defaults_open: false,
                 documentation_open: false,
+                metadata_open: false,
                 type_options_open: false,
                 _subscriptions: subscriptions,
             }
@@ -309,6 +425,7 @@ impl ParameterTypeForm {
         let values = ParameterTypeValues::from_type(parameter_type);
         self.base_defaults_open = false;
         self.documentation_open = false;
+        self.metadata_open = false;
         self.type_options_open = false;
         self.present = parameter_type.is_some();
         let selected_kind = parameter_type
@@ -367,6 +484,11 @@ impl ParameterTypeForm {
         self.aggregate_members.update(cx, |form, cx| {
             form.load(parameter_type, cx);
         });
+        self.alias_set.load(
+            parameter_type.and_then(parameter_type_alias_set),
+            window,
+            cx,
+        );
         cx.notify();
     }
 
@@ -419,6 +541,10 @@ impl ParameterTypeForm {
         if let Some(encoding) = find_data_encoding_mut(parameter_type) {
             self.data_encoding.read(cx).apply_to(encoding, cx);
         }
+        set_parameter_type_alias_set(
+            parameter_type,
+            AliasSetForm::parse(&self.alias_set.text(cx)),
+        );
     }
 
     fn render_form(&self, cx: &mut Context<Self>) -> Div {
@@ -503,6 +629,7 @@ impl ParameterTypeForm {
         }
         form.child(self.base_defaults(cx))
             .child(self.documentation(cx))
+            .child(self.metadata(cx))
     }
 
     fn type_options(&self, cx: &mut Context<Self>) -> Collapsible {
@@ -614,6 +741,27 @@ impl ParameterTypeForm {
                         cx,
                     )),
             )
+    }
+
+    fn metadata(&self, cx: &mut Context<Self>) -> Collapsible {
+        Collapsible::new()
+            .open(self.metadata_open)
+            .child(
+                Button::new("toggle-parameter-type-metadata")
+                    .small()
+                    .link()
+                    .icon(if self.metadata_open {
+                        IconName::ChevronDown
+                    } else {
+                        IconName::ChevronRight
+                    })
+                    .label("Metadata")
+                    .on_click(cx.listener(|this, _, _, cx| {
+                        this.metadata_open = !this.metadata_open;
+                        cx.notify();
+                    })),
+            )
+            .content(v_flex().pt_3().child(self.alias_set.render(cx)))
     }
 }
 
@@ -1289,7 +1437,7 @@ fn value(input: &Entity<InputState>, cx: &App) -> String {
 mod tests {
     use super::{
         ParameterTypeKind, ParameterTypeValues, apply_nested_items, encode_nested_items,
-        replace_parameter_type_kind,
+        parameter_type_alias_set, replace_parameter_type_kind, set_parameter_type_alias_set,
     };
 
     #[test]
@@ -1368,6 +1516,49 @@ mod tests {
                 .iter()
                 .any(|item| matches!(item, xtce::StringParameterTypeContent::AncillaryDataSet(_)))
         );
+    }
+
+    #[test]
+    fn alias_set_is_editable_for_scalar_parameter_types() {
+        let mut parameter_type =
+            xtce::ParameterTypeSetTypeContent::IntegerParameterType(xtce::IntegerParameterType {
+                short_description: None,
+                name: "CounterType".to_owned(),
+                base_type: None,
+                initial_value: None,
+                size_in_bits: 32,
+                signed: true,
+                content: vec![xtce::IntegerParameterTypeContent::LongDescription(
+                    "Counter".to_owned(),
+                )],
+            });
+        set_parameter_type_alias_set(
+            &mut parameter_type,
+            Some(xtce::AliasSetType {
+                alias: vec![xtce::AliasType {
+                    name_space: "ops".to_owned(),
+                    alias: "COUNT".to_owned(),
+                }],
+            }),
+        );
+
+        let aliases = parameter_type_alias_set(&parameter_type).expect("alias set");
+        assert_eq!(aliases.alias[0].name_space, "ops");
+        assert_eq!(aliases.alias[0].alias, "COUNT");
+        let xtce::ParameterTypeSetTypeContent::IntegerParameterType(value) = &parameter_type else {
+            panic!("expected an IntegerParameterType");
+        };
+        assert!(matches!(
+            value.content[0],
+            xtce::IntegerParameterTypeContent::LongDescription(_)
+        ));
+        assert!(matches!(
+            value.content[1],
+            xtce::IntegerParameterTypeContent::AliasSet(_)
+        ));
+
+        set_parameter_type_alias_set(&mut parameter_type, None);
+        assert!(parameter_type_alias_set(&parameter_type).is_none());
     }
 
     #[test]

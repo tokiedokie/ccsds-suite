@@ -5293,6 +5293,7 @@ fn encode_assignments(list: Option<&xtce::ArgumentAssignmentListType>) -> String
         .join("\n")
 }
 
+#[cfg(test)]
 #[derive(Clone, Copy, Debug, Display, EnumString, VariantArray, PartialEq, Eq)]
 enum ComparisonOperatorChoice {
     #[strum(serialize = "==")]
@@ -5308,6 +5309,7 @@ enum ComparisonOperatorChoice {
     #[strum(serialize = ">=")]
     GreaterOrEqual,
 }
+#[cfg(test)]
 impl_select_item!(ComparisonOperatorChoice);
 
 #[cfg(test)]
