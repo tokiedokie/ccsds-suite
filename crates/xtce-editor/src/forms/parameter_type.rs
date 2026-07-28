@@ -22,6 +22,7 @@ use super::{
     },
     enumeration_list::EnumerationListForm,
     field, impl_select_item, optional_value,
+    to_string::ToStringForm,
     unit_set::UnitSetForm,
 };
 use crate::XtceEditor;
@@ -425,6 +426,75 @@ fn set_string_size_range(
     }
 }
 
+fn parameter_type_to_string(
+    parameter_type: &xtce::ParameterTypeSetTypeContent,
+) -> Option<&xtce::ToStringType> {
+    match parameter_type {
+        xtce::ParameterTypeSetTypeContent::IntegerParameterType(value) => {
+            value.content.iter().find_map(|item| match item {
+                xtce::IntegerParameterTypeContent::ToString(value) => Some(value),
+                _ => None,
+            })
+        }
+        xtce::ParameterTypeSetTypeContent::FloatParameterType(value) => {
+            value.content.iter().find_map(|item| match item {
+                xtce::FloatParameterTypeContent::ToString(value) => Some(value),
+                _ => None,
+            })
+        }
+        _ => None,
+    }
+}
+
+fn set_parameter_type_to_string(
+    parameter_type: &mut xtce::ParameterTypeSetTypeContent,
+    to_string: Option<xtce::ToStringType>,
+) {
+    macro_rules! set_to_string {
+        ($value:expr, $content:ident, $to_string:expr) => {{
+            let existing = $value
+                .content
+                .iter()
+                .position(|item| matches!(item, xtce::$content::ToString(_)));
+            match ($to_string, existing) {
+                (Some(to_string), Some(index)) => {
+                    $value.content[index] = xtce::$content::ToString(to_string);
+                }
+                (Some(to_string), None) => {
+                    let index = $value
+                        .content
+                        .iter()
+                        .position(|item| {
+                            matches!(
+                                item,
+                                xtce::$content::ValidRange(_)
+                                    | xtce::$content::DefaultAlarm(_)
+                                    | xtce::$content::ContextAlarmList(_)
+                            )
+                        })
+                        .unwrap_or($value.content.len());
+                    $value
+                        .content
+                        .insert(index, xtce::$content::ToString(to_string));
+                }
+                (None, Some(index)) => {
+                    $value.content.remove(index);
+                }
+                (None, None) => {}
+            }
+        }};
+    }
+    match parameter_type {
+        xtce::ParameterTypeSetTypeContent::IntegerParameterType(value) => {
+            set_to_string!(value, IntegerParameterTypeContent, to_string)
+        }
+        xtce::ParameterTypeSetTypeContent::FloatParameterType(value) => {
+            set_to_string!(value, FloatParameterTypeContent, to_string)
+        }
+        _ => {}
+    }
+}
+
 #[derive(Clone, Copy, Debug, Display, EnumString, VariantArray, PartialEq, Eq)]
 enum CharacterWidthChoice {
     Default,
@@ -469,6 +539,7 @@ pub(super) struct ParameterTypeForm {
     alias_set: AliasSetForm,
     ancillary_data_set: AncillaryDataSetForm,
     unit_set: Entity<UnitSetForm>,
+    to_string: Entity<ToStringForm>,
     size_range_min_input: Entity<InputState>,
     size_range_max_input: Entity<InputState>,
     extra_a_input: Entity<InputState>,
@@ -521,6 +592,11 @@ impl ParameterTypeForm {
         );
         let unit_set =
             UnitSetForm::new(parameter_type.and_then(parameter_type_unit_set), window, cx);
+        let to_string = ToStringForm::new(
+            parameter_type.and_then(parameter_type_to_string),
+            window,
+            cx,
+        );
         let size_range = parameter_type.and_then(string_size_range);
         let name_subscription = cx.subscribe(&name_input, |editor, _, _: &InputEvent, cx| {
             editor.refresh_tree(cx);
@@ -597,6 +673,7 @@ impl ParameterTypeForm {
             let kind_nested_items = nested_items_input.clone();
             let kind_enumeration_list = enumeration_list.clone();
             let kind_aggregate_members = aggregate_members.clone();
+            let kind_to_string = to_string.clone();
             let kind_size_range_min = size_range_min_input.clone();
             let kind_size_range_max = size_range_max_input.clone();
             subscriptions.push(cx.subscribe_in(
@@ -673,6 +750,9 @@ impl ParameterTypeForm {
                             input.set_value(String::new(), window, cx);
                         });
                     }
+                    kind_to_string.update(cx, |form, cx| {
+                        form.load(None, window, cx);
+                    });
                     if selected_kind == ParameterTypeKind::Enumerated {
                         kind_enumeration_list.update(cx, |form, cx| {
                             form.reset_to_default(cx);
@@ -699,6 +779,7 @@ impl ParameterTypeForm {
                 alias_set,
                 ancillary_data_set,
                 unit_set,
+                to_string,
                 size_range_min_input,
                 size_range_max_input,
                 extra_a_input,
@@ -804,6 +885,13 @@ impl ParameterTypeForm {
         self.unit_set.update(cx, |form, cx| {
             form.load(parameter_type.and_then(parameter_type_unit_set), window, cx);
         });
+        self.to_string.update(cx, |form, cx| {
+            form.load(
+                parameter_type.and_then(parameter_type_to_string),
+                window,
+                cx,
+            );
+        });
         let size_range = parameter_type.and_then(string_size_range);
         for (input, value) in [
             (
@@ -884,6 +972,7 @@ impl ParameterTypeForm {
             AncillaryDataSetForm::parse(&self.ancillary_data_set.text(cx)),
         );
         set_parameter_type_unit_set(parameter_type, self.unit_set.read(cx).to_set(cx));
+        set_parameter_type_to_string(parameter_type, self.to_string.read(cx).to_value(cx));
         set_string_size_range(
             parameter_type,
             integer_range(
@@ -973,6 +1062,9 @@ impl ParameterTypeForm {
                 .child(self.unit_set.clone())
                 .child(div().text_lg().font_semibold().child("Data encoding"))
                 .child(self.data_encoding.clone());
+        }
+        if matches!(kind, ParameterTypeKind::Integer | ParameterTypeKind::Float) {
+            form = form.child(self.to_string.clone());
         }
         if kind == ParameterTypeKind::String {
             form = form.child(
@@ -1832,10 +1924,10 @@ fn value(input: &Entity<InputState>, cx: &App) -> String {
 mod tests {
     use super::{
         ParameterTypeKind, ParameterTypeValues, apply_nested_items, encode_nested_items,
-        parameter_type_alias_set, parameter_type_ancillary_data_set, parameter_type_unit_set,
-        replace_parameter_type_kind, set_parameter_type_alias_set,
-        set_parameter_type_ancillary_data_set, set_parameter_type_unit_set, set_string_size_range,
-        string_size_range,
+        parameter_type_alias_set, parameter_type_ancillary_data_set, parameter_type_to_string,
+        parameter_type_unit_set, replace_parameter_type_kind, set_parameter_type_alias_set,
+        set_parameter_type_ancillary_data_set, set_parameter_type_to_string,
+        set_parameter_type_unit_set, set_string_size_range, string_size_range,
     };
 
     #[test]
@@ -2096,6 +2188,61 @@ mod tests {
 
         set_string_size_range(&mut parameter_type, None);
         assert!(string_size_range(&parameter_type).is_none());
+    }
+
+    #[test]
+    fn to_string_is_editable_for_numeric_parameter_types() {
+        let mut parameter_type =
+            xtce::ParameterTypeSetTypeContent::IntegerParameterType(xtce::IntegerParameterType {
+                short_description: None,
+                name: "CounterType".to_owned(),
+                base_type: None,
+                initial_value: None,
+                size_in_bits: 32,
+                signed: true,
+                content: vec![xtce::IntegerParameterTypeContent::ValidRange(
+                    xtce::IntegerDataTypeValidRangeElementType {
+                        min_inclusive: Some(0),
+                        max_inclusive: Some(100),
+                        valid_range_applies_to_calibrated: true,
+                    },
+                )],
+            });
+        set_parameter_type_to_string(
+            &mut parameter_type,
+            Some(xtce::ToStringType {
+                number_format: xtce::NumberFormatType {
+                    number_base: xtce::RadixType::Decimal,
+                    minimum_fraction_digits: 0,
+                    maximum_fraction_digits: None,
+                    minimum_integer_digits: 1,
+                    maximum_integer_digits: None,
+                    negative_suffix: String::new(),
+                    positive_suffix: String::new(),
+                    negative_prefix: "-".to_owned(),
+                    positive_prefix: String::new(),
+                    show_thousands_grouping: false,
+                    notation: xtce::FloatingPointNotationType::Normal,
+                },
+            }),
+        );
+
+        let format = parameter_type_to_string(&parameter_type).expect("to string");
+        assert_eq!(format.number_format.minimum_integer_digits, 1);
+        let xtce::ParameterTypeSetTypeContent::IntegerParameterType(value) = &parameter_type else {
+            panic!("expected an IntegerParameterType");
+        };
+        assert!(matches!(
+            value.content[0],
+            xtce::IntegerParameterTypeContent::ToString(_)
+        ));
+        assert!(matches!(
+            value.content[1],
+            xtce::IntegerParameterTypeContent::ValidRange(_)
+        ));
+
+        set_parameter_type_to_string(&mut parameter_type, None);
+        assert!(parameter_type_to_string(&parameter_type).is_none());
     }
 
     #[test]

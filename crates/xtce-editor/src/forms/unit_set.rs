@@ -112,7 +112,7 @@ impl Render for UnitSetForm {
                     .w_full()
                     .p_3()
                     .gap_3()
-                    .items_end()
+                    .items_start()
                     .rounded_md()
                     .border_1()
                     .border_color(cx.theme().border)
@@ -128,7 +128,7 @@ impl Render for UnitSetForm {
                     )
                     .child(
                         h_flex()
-                            .mb(px(6.))
+                            .mt(px(26.))
                             .gap_1()
                             .child(
                                 Button::new(format!("parameter-type-unit-options-{index}"))
