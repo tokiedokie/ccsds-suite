@@ -17,11 +17,21 @@ use super::{
     aggregate_member_list::AggregateMemberListForm,
     alias_set::AliasSetForm,
     ancillary_data_set::AncillaryDataSetForm,
+    array_dimension::DimensionListForm,
     data_encoding::{
         DataEncodingForm, find_data_encoding, find_data_encoding_mut, set_data_encoding_kind,
     },
     enumeration_list::EnumerationListForm,
     field, impl_select_item, optional_value,
+    parameter_alarm::{
+        AlarmKind, AlarmRef, ContextAlarmEdit, ContextAlarmListForm, ContextAlarmListRef,
+        DefaultAlarmForm, apply_binary_alarm, apply_binary_context_alarm, apply_boolean_alarm,
+        apply_boolean_context_alarm, apply_enumeration_alarm, apply_enumeration_context_alarm,
+        apply_numeric_alarm, apply_numeric_context_alarm, apply_string_alarm,
+        apply_string_context_alarm, apply_time_alarm, apply_time_context_alarm,
+        default_binary_alarm, default_boolean_alarm, default_enumeration_alarm,
+        default_numeric_alarm, default_string_alarm, default_time_alarm,
+    },
     reference_time::ReferenceTimeForm,
     time_encoding::TimeEncodingForm,
     to_string::ToStringForm,
@@ -652,6 +662,347 @@ fn set_parameter_type_reference_time(
     }
 }
 
+fn parameter_alarm_kind(kind: ParameterTypeKind) -> AlarmKind {
+    match kind {
+        ParameterTypeKind::String => AlarmKind::String,
+        ParameterTypeKind::Enumerated => AlarmKind::Enumerated,
+        ParameterTypeKind::Integer | ParameterTypeKind::Float => AlarmKind::Numeric,
+        ParameterTypeKind::Binary => AlarmKind::Binary,
+        ParameterTypeKind::Boolean => AlarmKind::Boolean,
+        ParameterTypeKind::RelativeTime => AlarmKind::Time,
+        ParameterTypeKind::AbsoluteTime
+        | ParameterTypeKind::Array
+        | ParameterTypeKind::Aggregate => AlarmKind::Unsupported,
+    }
+}
+
+fn parameter_default_alarm(
+    parameter_type: &xtce::ParameterTypeSetTypeContent,
+) -> Option<AlarmRef<'_>> {
+    macro_rules! find {
+        ($value:expr, $content:ident, $variant:ident) => {
+            $value.content.iter().find_map(|item| match item {
+                xtce::$content::DefaultAlarm(value) => Some(AlarmRef::$variant(value)),
+                _ => None,
+            })
+        };
+    }
+    match parameter_type {
+        xtce::ParameterTypeSetTypeContent::StringParameterType(value) => {
+            find!(value, StringParameterTypeContent, String)
+        }
+        xtce::ParameterTypeSetTypeContent::EnumeratedParameterType(value) => {
+            find!(value, EnumeratedParameterTypeContent, Enumerated)
+        }
+        xtce::ParameterTypeSetTypeContent::IntegerParameterType(value) => {
+            find!(value, IntegerParameterTypeContent, Numeric)
+        }
+        xtce::ParameterTypeSetTypeContent::BinaryParameterType(value) => {
+            find!(value, BinaryParameterTypeContent, Binary)
+        }
+        xtce::ParameterTypeSetTypeContent::FloatParameterType(value) => {
+            find!(value, FloatParameterTypeContent, Numeric)
+        }
+        xtce::ParameterTypeSetTypeContent::BooleanParameterType(value) => {
+            find!(value, BooleanParameterTypeContent, Boolean)
+        }
+        xtce::ParameterTypeSetTypeContent::RelativeTimeParameterType(value) => {
+            value.default_alarm.as_ref().map(AlarmRef::Time)
+        }
+        _ => None,
+    }
+}
+
+fn parameter_context_alarm_list(
+    parameter_type: &xtce::ParameterTypeSetTypeContent,
+) -> Option<ContextAlarmListRef<'_>> {
+    macro_rules! find {
+        ($value:expr, $content:ident, $variant:ident) => {
+            $value.content.iter().find_map(|item| match item {
+                xtce::$content::ContextAlarmList(value) => {
+                    Some(ContextAlarmListRef::$variant(value))
+                }
+                _ => None,
+            })
+        };
+    }
+    match parameter_type {
+        xtce::ParameterTypeSetTypeContent::StringParameterType(value) => {
+            find!(value, StringParameterTypeContent, String)
+        }
+        xtce::ParameterTypeSetTypeContent::EnumeratedParameterType(value) => {
+            find!(value, EnumeratedParameterTypeContent, Enumerated)
+        }
+        xtce::ParameterTypeSetTypeContent::IntegerParameterType(value) => {
+            find!(value, IntegerParameterTypeContent, Numeric)
+        }
+        xtce::ParameterTypeSetTypeContent::BinaryParameterType(value) => {
+            find!(value, BinaryParameterTypeContent, Binary)
+        }
+        xtce::ParameterTypeSetTypeContent::FloatParameterType(value) => {
+            find!(value, FloatParameterTypeContent, Numeric)
+        }
+        xtce::ParameterTypeSetTypeContent::BooleanParameterType(value) => {
+            find!(value, BooleanParameterTypeContent, Boolean)
+        }
+        xtce::ParameterTypeSetTypeContent::RelativeTimeParameterType(value) => value
+            .context_alarm_list
+            .as_ref()
+            .map(ContextAlarmListRef::Time),
+        _ => None,
+    }
+}
+
+fn set_parameter_default_alarm(
+    parameter_type: &mut xtce::ParameterTypeSetTypeContent,
+    edit: Option<super::parameter_alarm::AlarmEdit>,
+) {
+    macro_rules! set_alarm {
+        ($value:expr, $content:ident, $edit:expr, $default:path, $apply:path) => {{
+            let current = $value
+                .content
+                .iter()
+                .position(|item| matches!(item, xtce::$content::DefaultAlarm(_)));
+            match (current, $edit) {
+                (Some(index), Some(edit)) => {
+                    let xtce::$content::DefaultAlarm(alarm) = &mut $value.content[index] else {
+                        unreachable!()
+                    };
+                    $apply(alarm, edit);
+                }
+                (None, Some(edit)) => {
+                    let mut alarm = $default();
+                    $apply(&mut alarm, edit);
+                    let index = $value
+                        .content
+                        .iter()
+                        .position(|item| matches!(item, xtce::$content::ContextAlarmList(_)))
+                        .unwrap_or($value.content.len());
+                    $value
+                        .content
+                        .insert(index, xtce::$content::DefaultAlarm(alarm));
+                }
+                (Some(index), None) => {
+                    $value.content.remove(index);
+                }
+                (None, None) => {}
+            }
+        }};
+    }
+    match parameter_type {
+        xtce::ParameterTypeSetTypeContent::StringParameterType(value) => set_alarm!(
+            value,
+            StringParameterTypeContent,
+            edit,
+            default_string_alarm,
+            apply_string_alarm
+        ),
+        xtce::ParameterTypeSetTypeContent::EnumeratedParameterType(value) => set_alarm!(
+            value,
+            EnumeratedParameterTypeContent,
+            edit,
+            default_enumeration_alarm,
+            apply_enumeration_alarm
+        ),
+        xtce::ParameterTypeSetTypeContent::IntegerParameterType(value) => set_alarm!(
+            value,
+            IntegerParameterTypeContent,
+            edit,
+            default_numeric_alarm,
+            apply_numeric_alarm
+        ),
+        xtce::ParameterTypeSetTypeContent::BinaryParameterType(value) => set_alarm!(
+            value,
+            BinaryParameterTypeContent,
+            edit,
+            default_binary_alarm,
+            apply_binary_alarm
+        ),
+        xtce::ParameterTypeSetTypeContent::FloatParameterType(value) => set_alarm!(
+            value,
+            FloatParameterTypeContent,
+            edit,
+            default_numeric_alarm,
+            apply_numeric_alarm
+        ),
+        xtce::ParameterTypeSetTypeContent::BooleanParameterType(value) => set_alarm!(
+            value,
+            BooleanParameterTypeContent,
+            edit,
+            default_boolean_alarm,
+            apply_boolean_alarm
+        ),
+        xtce::ParameterTypeSetTypeContent::RelativeTimeParameterType(value) => match edit {
+            Some(edit) => {
+                let alarm = value.default_alarm.get_or_insert_with(default_time_alarm);
+                apply_time_alarm(alarm, edit);
+            }
+            None => value.default_alarm = None,
+        },
+        _ => {}
+    }
+}
+
+fn set_parameter_context_alarm_list(
+    parameter_type: &mut xtce::ParameterTypeSetTypeContent,
+    edits: Vec<ContextAlarmEdit>,
+) {
+    macro_rules! set_list {
+        (
+            $value:expr,
+            $content:ident,
+            $list_type:ident,
+            $alarm_type:ident,
+            $default:expr,
+            $apply:path
+        ) => {{
+            let current = $value
+                .content
+                .iter()
+                .position(|item| matches!(item, xtce::$content::ContextAlarmList(_)));
+            let mut existing = current
+                .map(|index| $value.content.remove(index))
+                .and_then(|item| match item {
+                    xtce::$content::ContextAlarmList(value) => {
+                        Some(value.context_alarm.into_iter())
+                    }
+                    _ => None,
+                })
+                .into_iter()
+                .flatten();
+            let rows = edits
+                .into_iter()
+                .map(|edit| {
+                    let mut alarm = existing.next().unwrap_or_else(|| $default);
+                    $apply(&mut alarm, edit);
+                    alarm
+                })
+                .collect::<Vec<xtce::$alarm_type>>();
+            if !rows.is_empty() {
+                $value
+                    .content
+                    .push(xtce::$content::ContextAlarmList(xtce::$list_type {
+                        context_alarm: rows,
+                    }));
+            }
+        }};
+    }
+    match parameter_type {
+        xtce::ParameterTypeSetTypeContent::StringParameterType(value) => set_list!(
+            value,
+            StringParameterTypeContent,
+            StringContextAlarmListType,
+            StringContextAlarmType,
+            default_string_context_alarm(),
+            apply_string_context_alarm
+        ),
+        xtce::ParameterTypeSetTypeContent::EnumeratedParameterType(value) => set_list!(
+            value,
+            EnumeratedParameterTypeContent,
+            EnumerationContextAlarmListType,
+            EnumerationContextAlarmType,
+            default_enumeration_context_alarm(),
+            apply_enumeration_context_alarm
+        ),
+        xtce::ParameterTypeSetTypeContent::IntegerParameterType(value) => set_list!(
+            value,
+            IntegerParameterTypeContent,
+            NumericContextAlarmListType,
+            NumericContextAlarmType,
+            default_numeric_context_alarm(),
+            apply_numeric_context_alarm
+        ),
+        xtce::ParameterTypeSetTypeContent::BinaryParameterType(value) => set_list!(
+            value,
+            BinaryParameterTypeContent,
+            BinaryContextAlarmListType,
+            BinaryContextAlarmType,
+            default_binary_context_alarm(),
+            apply_binary_context_alarm
+        ),
+        xtce::ParameterTypeSetTypeContent::FloatParameterType(value) => set_list!(
+            value,
+            FloatParameterTypeContent,
+            NumericContextAlarmListType,
+            NumericContextAlarmType,
+            default_numeric_context_alarm(),
+            apply_numeric_context_alarm
+        ),
+        xtce::ParameterTypeSetTypeContent::BooleanParameterType(value) => set_list!(
+            value,
+            BooleanParameterTypeContent,
+            BooleanContextAlarmListType,
+            BooleanContextAlarmType,
+            default_boolean_context_alarm(),
+            apply_boolean_context_alarm
+        ),
+        xtce::ParameterTypeSetTypeContent::RelativeTimeParameterType(value) => {
+            let mut existing = value
+                .context_alarm_list
+                .take()
+                .into_iter()
+                .flat_map(|list| list.context_alarm)
+                .into_iter();
+            let rows = edits
+                .into_iter()
+                .map(|edit| {
+                    let mut alarm = existing.next().unwrap_or_else(default_time_context_alarm);
+                    apply_time_context_alarm(&mut alarm, edit);
+                    alarm
+                })
+                .collect::<Vec<_>>();
+            value.context_alarm_list =
+                (!rows.is_empty()).then_some(xtce::TimeContextAlarmListType {
+                    context_alarm: rows,
+                });
+        }
+        _ => {}
+    }
+}
+
+macro_rules! default_context_alarm {
+    ($name:ident, $type:ident, $level:expr) => {
+        fn $name() -> xtce::$type {
+            xtce::$type {
+                name: None,
+                short_description: None,
+                min_violations: xtce::$type::default_min_violations(),
+                min_conformance: xtce::$type::default_min_conformance(),
+                disabled: xtce::$type::default_disabled(),
+                default_alarm_level: $level,
+                content: Vec::new(),
+            }
+        }
+    };
+    ($name:ident, $type:ident) => {
+        fn $name() -> xtce::$type {
+            xtce::$type {
+                name: None,
+                short_description: None,
+                min_violations: xtce::$type::default_min_violations(),
+                min_conformance: xtce::$type::default_min_conformance(),
+                disabled: xtce::$type::default_disabled(),
+                content: Vec::new(),
+            }
+        }
+    };
+}
+
+default_context_alarm!(
+    default_string_context_alarm,
+    StringContextAlarmType,
+    xtce::StringContextAlarmType::default_default_alarm_level()
+);
+default_context_alarm!(
+    default_enumeration_context_alarm,
+    EnumerationContextAlarmType,
+    xtce::EnumerationContextAlarmType::default_default_alarm_level()
+);
+default_context_alarm!(default_numeric_context_alarm, NumericContextAlarmType);
+default_context_alarm!(default_binary_context_alarm, BinaryContextAlarmType);
+default_context_alarm!(default_boolean_context_alarm, BooleanContextAlarmType);
+default_context_alarm!(default_time_context_alarm, TimeContextAlarmType);
+
 #[derive(Clone, Copy, Debug, Display, EnumString, VariantArray, PartialEq, Eq)]
 enum CharacterWidthChoice {
     Default,
@@ -698,6 +1049,8 @@ pub(super) struct ParameterTypeForm {
     unit_set: Entity<UnitSetForm>,
     time_encoding: Entity<TimeEncodingForm>,
     reference_time: Entity<ReferenceTimeForm>,
+    default_alarm: Entity<DefaultAlarmForm>,
+    context_alarms: Entity<ContextAlarmListForm>,
     to_string: Entity<ToStringForm>,
     valid_range: Entity<ValidRangeForm>,
     size_range_min_input: Entity<InputState>,
@@ -707,9 +1060,9 @@ pub(super) struct ParameterTypeForm {
     character_width_select: Entity<SelectState<Vec<CharacterWidthChoice>>>,
     signed_select: Entity<SelectState<Vec<SignedChoice>>>,
     float_size_select: Entity<SelectState<Vec<FloatSizeChoice>>>,
-    nested_items_input: Entity<InputState>,
     enumeration_list: Entity<EnumerationListForm>,
     aggregate_members: Entity<AggregateMemberListForm>,
+    dimensions: Entity<DimensionListForm>,
     data_encoding: Entity<DataEncodingForm>,
     base_defaults_open: bool,
     documentation_open: bool,
@@ -759,6 +1112,18 @@ impl ParameterTypeForm {
         );
         let reference_time = ReferenceTimeForm::new(
             parameter_type.and_then(parameter_type_reference_time),
+            window,
+            cx,
+        );
+        let default_alarm = DefaultAlarmForm::new(
+            parameter_alarm_kind(kind),
+            parameter_type.and_then(parameter_default_alarm),
+            window,
+            cx,
+        );
+        let context_alarms = ContextAlarmListForm::new(
+            parameter_alarm_kind(kind),
+            parameter_type.and_then(parameter_context_alarm_list),
             window,
             cx,
         );
@@ -838,20 +1203,22 @@ impl ParameterTypeForm {
                 cx,
             );
             let mut subscriptions = vec![name_subscription];
-            let nested_items_input = input(&encode_nested_items(parameter_type), true, window, cx);
             let enumeration_list = EnumerationListForm::new(parameter_type, window, cx);
             let aggregate_members = AggregateMemberListForm::new(parameter_type, window, cx);
+            let dimensions = DimensionListForm::new(parameter_type, window, cx);
 
             let kind_extra_a = extra_a_input.clone();
             let kind_extra_b = extra_b_input.clone();
             let kind_character_width = character_width_select.clone();
             let kind_signed = signed_select.clone();
             let kind_float_size = float_size_select.clone();
-            let kind_nested_items = nested_items_input.clone();
             let kind_enumeration_list = enumeration_list.clone();
             let kind_aggregate_members = aggregate_members.clone();
+            let kind_dimensions = dimensions.clone();
             let kind_time_encoding = time_encoding.clone();
             let kind_reference_time = reference_time.clone();
+            let kind_default_alarm = default_alarm.clone();
+            let kind_context_alarms = context_alarms.clone();
             let kind_to_string = to_string.clone();
             let kind_valid_range = valid_range.clone();
             let kind_size_range_min = size_range_min_input.clone();
@@ -922,9 +1289,6 @@ impl ParameterTypeForm {
                         window,
                         cx,
                     );
-                    kind_nested_items.update(cx, |input, cx| {
-                        input.set_value(default_nested_items(selected_kind).to_owned(), window, cx);
-                    });
                     for input in [&kind_size_range_min, &kind_size_range_max] {
                         input.update(cx, |input, cx| {
                             input.set_value(String::new(), window, cx);
@@ -939,6 +1303,12 @@ impl ParameterTypeForm {
                     kind_reference_time.update(cx, |form, cx| {
                         form.load(None, window, cx);
                     });
+                    kind_default_alarm.update(cx, |form, cx| {
+                        form.load(parameter_alarm_kind(selected_kind), None, window, cx);
+                    });
+                    kind_context_alarms.update(cx, |form, cx| {
+                        form.load(parameter_alarm_kind(selected_kind), None, window, cx);
+                    });
                     kind_valid_range.update(cx, |form, cx| {
                         form.reset(valid_range_kind(selected_kind), window, cx);
                     });
@@ -952,6 +1322,9 @@ impl ParameterTypeForm {
                             form.reset_to_default(cx);
                         });
                     }
+                    kind_dimensions.update(cx, |form, cx| {
+                        form.reset(selected_kind == ParameterTypeKind::Array, window, cx);
+                    });
                     cx.notify();
                 },
             ));
@@ -970,6 +1343,8 @@ impl ParameterTypeForm {
                 unit_set,
                 time_encoding,
                 reference_time,
+                default_alarm,
+                context_alarms,
                 to_string,
                 valid_range,
                 size_range_min_input,
@@ -979,9 +1354,9 @@ impl ParameterTypeForm {
                 character_width_select,
                 signed_select,
                 float_size_select,
-                nested_items_input,
                 enumeration_list,
                 aggregate_members,
+                dimensions,
                 data_encoding: DataEncodingForm::new(
                     parameter_type.and_then(find_data_encoding),
                     window,
@@ -1023,10 +1398,6 @@ impl ParameterTypeForm {
             (&self.long_description_input, values.long_description),
             (&self.extra_a_input, values.extra_a),
             (&self.extra_b_input, values.extra_b),
-            (
-                &self.nested_items_input,
-                encode_nested_items(parameter_type),
-            ),
         ] {
             input.update(cx, |input, cx| input.set_value(value, window, cx));
         }
@@ -1064,6 +1435,9 @@ impl ParameterTypeForm {
         self.aggregate_members.update(cx, |form, cx| {
             form.load(parameter_type, cx);
         });
+        self.dimensions.update(cx, |form, cx| {
+            form.load(parameter_type, window, cx);
+        });
         self.alias_set.load(
             parameter_type.and_then(parameter_type_alias_set),
             window,
@@ -1087,6 +1461,22 @@ impl ParameterTypeForm {
         self.reference_time.update(cx, |form, cx| {
             form.load(
                 parameter_type.and_then(parameter_type_reference_time),
+                window,
+                cx,
+            );
+        });
+        self.default_alarm.update(cx, |form, cx| {
+            form.load(
+                parameter_alarm_kind(selected_kind),
+                parameter_type.and_then(parameter_default_alarm),
+                window,
+                cx,
+            );
+        });
+        self.context_alarms.update(cx, |form, cx| {
+            form.load(
+                parameter_alarm_kind(selected_kind),
+                parameter_type.and_then(parameter_context_alarm_list),
                 window,
                 cx,
             );
@@ -1168,9 +1558,9 @@ impl ParameterTypeForm {
             extra_b,
         }
         .apply_to(parameter_type);
-        apply_nested_items(parameter_type, &self.nested_items_input.read(cx).value());
         self.enumeration_list.read(cx).apply_to(parameter_type, cx);
         self.aggregate_members.read(cx).apply_to(parameter_type, cx);
+        self.dimensions.read(cx).apply_to(parameter_type, cx);
         set_data_encoding_kind(
             parameter_type,
             self.data_encoding.read(cx).selected_kind(cx),
@@ -1192,6 +1582,8 @@ impl ParameterTypeForm {
             parameter_type,
             self.reference_time.read(cx).to_value(cx),
         );
+        set_parameter_default_alarm(parameter_type, self.default_alarm.read(cx).edit(cx));
+        set_parameter_context_alarm_list(parameter_type, self.context_alarms.read(cx).edits(cx));
         set_parameter_type_to_string(parameter_type, self.to_string.read(cx).to_value(cx));
         set_parameter_type_valid_range(parameter_type, self.valid_range.read(cx).to_value(cx));
         set_string_size_range(
@@ -1268,12 +1660,7 @@ impl ParameterTypeForm {
         match kind {
             ParameterTypeKind::Enumerated => form = form.child(self.enumeration_list.clone()),
             ParameterTypeKind::Array => {
-                form = form.child(field(
-                    "Dimensions",
-                    "One dimension per line: starting index | ending index",
-                    &self.nested_items_input,
-                    cx,
-                ));
+                form = form.child(self.dimensions.clone());
             }
             ParameterTypeKind::Aggregate => form = form.child(self.aggregate_members.clone()),
             _ => {}
@@ -1296,6 +1683,11 @@ impl ParameterTypeForm {
             form = form
                 .child(self.time_encoding.clone())
                 .child(self.reference_time.clone());
+        }
+        if parameter_alarm_kind(kind) != AlarmKind::Unsupported {
+            form = form
+                .child(self.default_alarm.clone())
+                .child(self.context_alarms.clone());
         }
         if kind == ParameterTypeKind::String {
             form = form.child(
@@ -1758,71 +2150,6 @@ impl ParameterTypeValues {
     }
 }
 
-fn default_nested_items(kind: ParameterTypeKind) -> &'static str {
-    match kind {
-        ParameterTypeKind::Array => "0 | 0",
-        _ => "",
-    }
-}
-
-fn encode_nested_items(parameter_type: Option<&xtce::ParameterTypeSetTypeContent>) -> String {
-    match parameter_type {
-        Some(xtce::ParameterTypeSetTypeContent::ArrayParameterType(value)) => value
-            .dimension_list
-            .dimension
-            .iter()
-            .map(|dimension| {
-                format!(
-                    "{} | {}",
-                    integer_value_text(&dimension.starting_index),
-                    integer_value_text(&dimension.ending_index)
-                )
-            })
-            .collect::<Vec<_>>()
-            .join("\n"),
-        _ => String::new(),
-    }
-}
-
-fn integer_value_text(value: &xtce::IntegerValueType) -> String {
-    match value {
-        xtce::IntegerValueType::FixedValue(value) => value.to_string(),
-        xtce::IntegerValueType::DynamicValue(_) => "<dynamic>".to_owned(),
-        xtce::IntegerValueType::DiscreteLookupList(_) => "<lookup>".to_owned(),
-    }
-}
-
-fn apply_nested_items(parameter_type: &mut xtce::ParameterTypeSetTypeContent, input: &str) {
-    if let xtce::ParameterTypeSetTypeContent::ArrayParameterType(value) = parameter_type {
-        let rows = input
-            .lines()
-            .filter_map(|line| {
-                let (starting_index, ending_index) = line.split_once(" | ")?;
-                Some((
-                    starting_index.trim().parse::<i64>().ok()?,
-                    ending_index.trim().parse::<i64>().ok()?,
-                ))
-            })
-            .collect::<Vec<_>>();
-        if rows.is_empty() {
-            return;
-        }
-        let mut existing = std::mem::take(&mut value.dimension_list.dimension).into_iter();
-        value.dimension_list.dimension = rows
-            .into_iter()
-            .map(|(starting_index, ending_index)| {
-                let mut dimension = existing.next().unwrap_or(xtce::DimensionType {
-                    starting_index: xtce::IntegerValueType::FixedValue(0),
-                    ending_index: xtce::IntegerValueType::FixedValue(0),
-                });
-                dimension.starting_index = xtce::IntegerValueType::FixedValue(starting_index);
-                dimension.ending_index = xtce::IntegerValueType::FixedValue(ending_index);
-                dimension
-            })
-            .collect();
-    }
-}
-
 fn replace_parameter_type_kind(
     parameter_type: &mut xtce::ParameterTypeSetTypeContent,
     selected_kind: ParameterTypeKind,
@@ -2153,11 +2480,14 @@ fn value(input: &Entity<InputState>, cx: &App) -> String {
 
 #[cfg(test)]
 mod tests {
+    use crate::forms::parameter_alarm::AlarmEdit;
+
     use super::{
-        ParameterTypeKind, ParameterTypeValues, ValidRangeValue, apply_nested_items,
-        encode_nested_items, float_valid_range, integer_valid_range, parameter_type_alias_set,
+        ContextAlarmEdit, ParameterTypeKind, ParameterTypeValues, ValidRangeValue,
+        float_valid_range, integer_valid_range, parameter_type_alias_set,
         parameter_type_ancillary_data_set, parameter_type_time_encoding, parameter_type_to_string,
-        parameter_type_unit_set, replace_parameter_type_kind, set_parameter_type_alias_set,
+        parameter_type_unit_set, replace_parameter_type_kind, set_parameter_context_alarm_list,
+        set_parameter_default_alarm, set_parameter_type_alias_set,
         set_parameter_type_ancillary_data_set, set_parameter_type_time_encoding,
         set_parameter_type_to_string, set_parameter_type_unit_set, set_parameter_type_valid_range,
         set_string_size_range, string_size_range,
@@ -2564,6 +2894,109 @@ mod tests {
     }
 
     #[test]
+    fn parameter_alarms_preserve_advanced_content_and_add_context_rows() {
+        let mut parameter_type =
+            xtce::ParameterTypeSetTypeContent::IntegerParameterType(xtce::IntegerParameterType {
+                short_description: None,
+                name: "TemperatureType".to_owned(),
+                base_type: None,
+                initial_value: None,
+                size_in_bits: 32,
+                signed: true,
+                content: vec![xtce::IntegerParameterTypeContent::DefaultAlarm(
+                    xtce::NumericAlarmType {
+                        name: None,
+                        short_description: None,
+                        min_violations: 1,
+                        min_conformance: 1,
+                        disabled: false,
+                        content: vec![xtce::NumericAlarmTypeContent::AlarmConditions(
+                            xtce::AlarmConditionsType {
+                                watch_alarm: None,
+                                warning_alarm: None,
+                                distress_alarm: None,
+                                critical_alarm: None,
+                                severe_alarm: None,
+                            },
+                        )],
+                    },
+                )],
+            });
+        let mut default_edit = test_alarm_edit("warning | 0 | inclusive | 100 | exclusive");
+        default_edit.alarm_conditions = Some(xtce::AlarmConditionsType {
+            watch_alarm: None,
+            warning_alarm: None,
+            distress_alarm: None,
+            critical_alarm: None,
+            severe_alarm: None,
+        });
+        set_parameter_default_alarm(&mut parameter_type, Some(default_edit));
+        set_parameter_context_alarm_list(
+            &mut parameter_type,
+            vec![ContextAlarmEdit {
+                context_match: xtce::ContextMatchType::Comparison(xtce::ComparisonType {
+                    parameter_ref: "Mode".to_owned(),
+                    instance: 0,
+                    use_calibrated_value: true,
+                    comparison_operator: "==".to_owned(),
+                    value: "SAFE".to_owned(),
+                }),
+                alarm: test_alarm_edit("critical | 100 | inclusive |  | inclusive"),
+            }],
+        );
+
+        let xtce::ParameterTypeSetTypeContent::IntegerParameterType(value) = parameter_type else {
+            panic!("expected IntegerParameterType");
+        };
+        let default_alarm = value.content.iter().find_map(|item| match item {
+            xtce::IntegerParameterTypeContent::DefaultAlarm(value) => Some(value),
+            _ => None,
+        });
+        let default_alarm = default_alarm.expect("default alarm");
+        assert!(
+            default_alarm
+                .content
+                .iter()
+                .any(|item| matches!(item, xtce::NumericAlarmTypeContent::AlarmConditions(_)))
+        );
+        assert!(
+            default_alarm
+                .content
+                .iter()
+                .any(|item| matches!(item, xtce::NumericAlarmTypeContent::StaticAlarmRanges(_)))
+        );
+        let contexts = value.content.iter().find_map(|item| match item {
+            xtce::IntegerParameterTypeContent::ContextAlarmList(value) => Some(value),
+            _ => None,
+        });
+        assert_eq!(contexts.expect("context alarms").context_alarm.len(), 1);
+    }
+
+    fn test_alarm_edit(details: &str) -> AlarmEdit {
+        AlarmEdit {
+            name: String::new(),
+            short_description: String::new(),
+            min_violations: 1,
+            min_conformance: 1,
+            disabled: false,
+            default_alarm_level: xtce::ConcernLevelsType::Normal,
+            range_form: xtce::RangeFormType::Outside,
+            time_units: xtce::TimeUnitsType::Seconds,
+            details: details.to_owned(),
+            static_ranges_active: !details.is_empty(),
+            ancillary_data_set: None,
+            alarm_conditions: None,
+            custom_alarm: None,
+            static_range_name: String::new(),
+            static_range_short_description: String::new(),
+            static_range_ancillary_data_set: None,
+            change_alarm_ranges: None,
+            alarm_multi_ranges: None,
+            change_per_second_alarm_ranges: None,
+        }
+    }
+
+    #[test]
     fn applying_integer_type_values_updates_size_and_signedness() {
         let mut parameter_type =
             xtce::ParameterTypeSetTypeContent::IntegerParameterType(xtce::IntegerParameterType {
@@ -2685,29 +3118,5 @@ mod tests {
             Some(("Array type reference", "Required"))
         );
         assert_eq!(ParameterTypeKind::Aggregate.base_field(), None);
-    }
-
-    #[test]
-    fn array_dimensions_can_be_edited_from_form_rows() {
-        let mut parameter_type =
-            xtce::ParameterTypeSetTypeContent::ArrayParameterType(xtce::ArrayParameterType {
-                short_description: None,
-                name: "SamplesType".to_owned(),
-                array_type_ref: "SampleType".to_owned(),
-                initial_value: None,
-                long_description: None,
-                alias_set: None,
-                ancillary_data_set: None,
-                dimension_list: xtce::DimensionListType {
-                    dimension: vec![xtce::DimensionType {
-                        starting_index: xtce::IntegerValueType::FixedValue(0),
-                        ending_index: xtce::IntegerValueType::FixedValue(0),
-                    }],
-                },
-            });
-
-        apply_nested_items(&mut parameter_type, "1 | 8\n0 | 3");
-
-        assert_eq!(encode_nested_items(Some(&parameter_type)), "1 | 8\n0 | 3");
     }
 }
