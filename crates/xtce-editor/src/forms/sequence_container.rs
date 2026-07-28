@@ -94,12 +94,15 @@ enum EntryKind {
     ContainerSegment,
     #[strum(serialize = "StreamSegmentEntry")]
     StreamSegment,
+    #[strum(serialize = "IndirectParameterRefEntry")]
+    IndirectParameter,
 }
 impl_select_item!(EntryKind);
 
 fn entry_reference_placeholder(kind: EntryKind) -> &'static str {
     match kind {
         EntryKind::Parameter | EntryKind::ParameterSegment => "Select a parameter...",
+        EntryKind::IndirectParameter => "Select the parameter that names the target...",
         EntryKind::Container | EntryKind::ContainerSegment => "Select a container...",
         EntryKind::StreamSegment => "Select a stream...",
     }
@@ -722,6 +725,9 @@ enum EntryRowContent {
         reference: String,
         segment_size: String,
         segment_order: String,
+        instance: String,
+        use_calibrated_value: bool,
+        alias_namespace: String,
         offset: String,
         description: String,
     },
@@ -749,6 +755,9 @@ struct TelemetryEntryRow {
     reference_kind: EntryKind,
     segment_size_input: Entity<InputState>,
     segment_order_input: Entity<InputState>,
+    instance_input: Entity<InputState>,
+    calibrated_select: Entity<SelectState<Vec<CalibratedChoice>>>,
+    alias_namespace_input: Entity<InputState>,
     offset_input: Entity<InputState>,
     description_input: Entity<InputState>,
     source_index: Rc<Cell<Option<usize>>>,
@@ -1282,7 +1291,7 @@ impl Render for TelemetryEntryListView {
                             .child(
                                 v_flex()
                                     .min_w(if optional_columns_visible {
-                                        px(1_078.)
+                                        px(1_458.)
                                     } else {
                                         px(638.)
                                     })
@@ -1305,6 +1314,13 @@ impl Render for TelemetryEntryListView {
                                                 header
                                                     .child(div().w(px(100.)).child("Segment size"))
                                                     .child(div().w(px(80.)).child("Order"))
+                                                    .child(div().w(px(90.)).child("Instance"))
+                                                    .child(
+                                                        div().w(px(140.)).child("Parameter value"),
+                                                    )
+                                                    .child(
+                                                        div().w(px(130.)).child("Alias namespace"),
+                                                    )
                                                     .child(div().w(px(100.)).child("Offset"))
                                                     .child(div().flex_1().child("Description"))
                                             }),
@@ -1471,6 +1487,7 @@ fn entry_bit_positions(
                 EntryKind::Container => None,
                 EntryKind::ContainerSegment => segment_size.trim().parse().ok(),
                 EntryKind::StreamSegment => segment_size.trim().parse().ok(),
+                EntryKind::IndirectParameter => None,
             };
             cursor = start.and_then(|start| size.and_then(|size| start.checked_add(size)));
             start.filter(|_| size.is_some())
@@ -1566,6 +1583,7 @@ fn append_packet_rows(
             EntryKind::Container => None,
             EntryKind::ContainerSegment => segment_size.trim().parse().ok(),
             EntryKind::StreamSegment => segment_size.trim().parse().ok(),
+            EntryKind::IndirectParameter => None,
         };
         let Some(size) = size else {
             layout
@@ -1791,6 +1809,7 @@ impl Render for TelemetryEntryRow {
             kind,
             EntryKind::ParameterSegment | EntryKind::ContainerSegment | EntryKind::StreamSegment
         );
+        let indirect = kind == EntryKind::IndirectParameter;
         h_flex()
             .flex_1()
             .min_w_0()
@@ -1813,6 +1832,15 @@ impl Render for TelemetryEntryRow {
                 }))
                 .child(div().w(px(80.)).flex_none().when(segment, |cell| {
                     cell.child(Input::new(&self.segment_order_input))
+                }))
+                .child(div().w(px(90.)).flex_none().when(indirect, |cell| {
+                    cell.child(Input::new(&self.instance_input))
+                }))
+                .child(div().w(px(140.)).flex_none().when(indirect, |cell| {
+                    cell.child(Select::new(&self.calibrated_select).w_full())
+                }))
+                .child(div().w(px(130.)).flex_none().when(indirect, |cell| {
+                    cell.child(Input::new(&self.alias_namespace_input))
                 }))
                 .child(
                     div()
@@ -1840,6 +1868,9 @@ impl EntryRowData {
                 reference: String::new(),
                 segment_size: String::new(),
                 segment_order: String::new(),
+                instance: String::new(),
+                use_calibrated_value: true,
+                alias_namespace: String::new(),
                 offset: String::new(),
                 description: String::new(),
             },
@@ -1872,6 +1903,9 @@ fn new_entry_row(
         reference,
         segment_size,
         segment_order,
+        instance,
+        use_calibrated_value,
+        alias_namespace,
         offset,
         description,
     } = row.content
@@ -1900,6 +1934,18 @@ fn new_entry_row(
             reference_kind: kind,
             segment_size_input: input(&segment_size, false, window, cx),
             segment_order_input: input(&segment_order, false, window, cx),
+            instance_input: input(&instance, false, window, cx),
+            calibrated_select: select(
+                CalibratedChoice::VARIANTS,
+                if use_calibrated_value {
+                    CalibratedChoice::CalibratedValue
+                } else {
+                    CalibratedChoice::RawValue
+                },
+                window,
+                cx,
+            ),
+            alias_namespace_input: input(&alias_namespace, false, window, cx),
             offset_input: input(&offset, false, window, cx),
             description_input: input(&description, false, window, cx),
             source_index: row.source_index,
@@ -1920,6 +1966,13 @@ fn entry_row_data(row: &Entity<TelemetryEntryRow>, cx: &App) -> EntryRowData {
             reference: value(&row.reference_input, cx),
             segment_size: value(&row.segment_size_input, cx),
             segment_order: value(&row.segment_order_input, cx),
+            instance: value(&row.instance_input, cx),
+            use_calibrated_value: selected_value(
+                &row.calibrated_select,
+                CalibratedChoice::CalibratedValue,
+                cx,
+            ) == CalibratedChoice::CalibratedValue,
+            alias_namespace: value(&row.alias_namespace_input, cx),
             offset: value(&row.offset_input, cx),
             description: value(&row.description_input, cx),
         },
@@ -1938,6 +1991,9 @@ fn rows_from_entry_list(list: Option<&xtce::EntryListType>) -> Vec<EntryRowData>
                         reference: entry.parameter_ref.clone(),
                         segment_size: String::new(),
                         segment_order: String::new(),
+                        instance: String::new(),
+                        use_calibrated_value: true,
+                        alias_namespace: String::new(),
                         offset: fixed_offset(entry.location_in_container_in_bits.as_ref()),
                         description: entry.short_description.clone().unwrap_or_default(),
                     },
@@ -1952,6 +2008,9 @@ fn rows_from_entry_list(list: Option<&xtce::EntryListType>) -> Vec<EntryRowData>
                             .order
                             .map(|value| value.to_string())
                             .unwrap_or_default(),
+                        instance: String::new(),
+                        use_calibrated_value: true,
+                        alias_namespace: String::new(),
                         offset: fixed_offset(entry.location_in_container_in_bits.as_ref()),
                         description: entry.short_description.clone().unwrap_or_default(),
                     },
@@ -1963,6 +2022,9 @@ fn rows_from_entry_list(list: Option<&xtce::EntryListType>) -> Vec<EntryRowData>
                         reference: entry.container_ref.clone(),
                         segment_size: String::new(),
                         segment_order: String::new(),
+                        instance: String::new(),
+                        use_calibrated_value: true,
+                        alias_namespace: String::new(),
                         offset: fixed_offset(entry.location_in_container_in_bits.as_ref()),
                         description: entry.short_description.clone().unwrap_or_default(),
                     },
@@ -1977,6 +2039,9 @@ fn rows_from_entry_list(list: Option<&xtce::EntryListType>) -> Vec<EntryRowData>
                             .order
                             .map(|value| value.to_string())
                             .unwrap_or_default(),
+                        instance: String::new(),
+                        use_calibrated_value: true,
+                        alias_namespace: String::new(),
                         offset: fixed_offset(entry.location_in_container_in_bits.as_ref()),
                         description: entry.short_description.clone().unwrap_or_default(),
                     },
@@ -1991,6 +2056,23 @@ fn rows_from_entry_list(list: Option<&xtce::EntryListType>) -> Vec<EntryRowData>
                             .order
                             .map(|value| value.to_string())
                             .unwrap_or_default(),
+                        instance: String::new(),
+                        use_calibrated_value: true,
+                        alias_namespace: String::new(),
+                        offset: fixed_offset(entry.location_in_container_in_bits.as_ref()),
+                        description: entry.short_description.clone().unwrap_or_default(),
+                    },
+                    has_complex_location(entry.location_in_container_in_bits.as_ref()),
+                ),
+                xtce::EntryListTypeContent::IndirectParameterRefEntry(entry) => (
+                    EntryRowContent::Editable {
+                        kind: EntryKind::IndirectParameter,
+                        reference: entry.parameter_instance.parameter_ref.clone(),
+                        segment_size: String::new(),
+                        segment_order: String::new(),
+                        instance: entry.parameter_instance.instance.to_string(),
+                        use_calibrated_value: entry.parameter_instance.use_calibrated_value,
+                        alias_namespace: entry.alias_name_space.clone().unwrap_or_default(),
                         offset: fixed_offset(entry.location_in_container_in_bits.as_ref()),
                         description: entry.short_description.clone().unwrap_or_default(),
                     },
@@ -2035,6 +2117,9 @@ fn apply_entry_rows(list: &mut xtce::EntryListType, rows: Vec<EntryRowData>) {
                 reference,
                 segment_size,
                 segment_order,
+                instance,
+                use_calibrated_value,
+                alias_namespace,
                 offset,
                 description,
             } => match kind {
@@ -2113,6 +2198,26 @@ fn apply_entry_rows(list: &mut xtce::EntryListType, rows: Vec<EntryRowData>) {
                         &row.preserve_complex_location,
                     );
                     xtce::EntryListTypeContent::StreamSegmentEntry(entry)
+                }
+                EntryKind::IndirectParameter => {
+                    let mut entry = match source {
+                        Some(xtce::EntryListTypeContent::IndirectParameterRefEntry(entry)) => entry,
+                        _ => default_indirect_parameter_ref_entry(),
+                    };
+                    entry.parameter_instance.parameter_ref = reference;
+                    entry.parameter_instance.instance = instance
+                        .trim()
+                        .parse()
+                        .unwrap_or_else(|_| xtce::ParameterInstanceRefType::default_instance());
+                    entry.parameter_instance.use_calibrated_value = use_calibrated_value;
+                    entry.alias_name_space = optional_value(alias_namespace);
+                    entry.short_description = optional_value(description);
+                    apply_location(
+                        &mut entry.location_in_container_in_bits,
+                        &offset,
+                        &row.preserve_complex_location,
+                    );
+                    xtce::EntryListTypeContent::IndirectParameterRefEntry(entry)
                 }
             },
         };
@@ -2200,6 +2305,23 @@ fn default_stream_segment_entry() -> xtce::StreamSegmentEntryType {
         include_condition: None,
         time_association: None,
         ancillary_data_set: None,
+    }
+}
+
+fn default_indirect_parameter_ref_entry() -> xtce::IndirectParameterRefEntryType {
+    xtce::IndirectParameterRefEntryType {
+        short_description: None,
+        alias_name_space: None,
+        location_in_container_in_bits: None,
+        repeat_entry: None,
+        include_condition: None,
+        time_association: None,
+        ancillary_data_set: None,
+        parameter_instance: xtce::ParameterInstanceRefType {
+            parameter_ref: String::new(),
+            instance: xtce::ParameterInstanceRefType::default_instance(),
+            use_calibrated_value: xtce::ParameterInstanceRefType::default_use_calibrated_value(),
+        },
     }
 }
 
@@ -2534,7 +2656,9 @@ impl CompletionProvider for ReferenceCompletionProvider {
             CompletionTarget::Container => &context.container_names,
             CompletionTarget::Parameter => &context.parameter_names,
             CompletionTarget::Entry(kind) => match selected_value(kind, EntryKind::Parameter, cx) {
-                EntryKind::Parameter | EntryKind::ParameterSegment => &context.parameter_names,
+                EntryKind::Parameter
+                | EntryKind::ParameterSegment
+                | EntryKind::IndirectParameter => &context.parameter_names,
                 EntryKind::Container | EntryKind::ContainerSegment => &context.container_names,
                 EntryKind::StreamSegment => &context.stream_names,
             },
@@ -3272,6 +3396,51 @@ mod tests {
                 if entry.container_ref == "Payload"
                     && entry.size_in_bits == 64
                     && entry.order == Some(1)
+        ));
+    }
+
+    #[test]
+    fn indirect_parameter_entry_round_trips_as_an_editable_row() {
+        let mut list = xtce::EntryListType {
+            content: vec![xtce::EntryListTypeContent::IndirectParameterRefEntry(
+                xtce::IndirectParameterRefEntryType {
+                    short_description: Some("dwell target".to_owned()),
+                    alias_name_space: Some("OPS".to_owned()),
+                    location_in_container_in_bits: None,
+                    repeat_entry: None,
+                    include_condition: None,
+                    time_association: None,
+                    ancillary_data_set: None,
+                    parameter_instance: xtce::ParameterInstanceRefType {
+                        parameter_ref: "target_name".to_owned(),
+                        instance: -1,
+                        use_calibrated_value: false,
+                    },
+                },
+            )],
+        };
+
+        let rows = rows_from_entry_list(Some(&list));
+        assert!(matches!(
+            &rows[0].content,
+            EntryRowContent::Editable {
+                kind: EntryKind::IndirectParameter,
+                reference,
+                instance,
+                use_calibrated_value: false,
+                alias_namespace,
+                ..
+            } if reference == "target_name" && instance == "-1" && alias_namespace == "OPS"
+        ));
+
+        apply_entry_rows(&mut list, rows);
+        assert!(matches!(
+            &list.content[0],
+            xtce::EntryListTypeContent::IndirectParameterRefEntry(entry)
+                if entry.parameter_instance.parameter_ref == "target_name"
+                    && entry.parameter_instance.instance == -1
+                    && !entry.parameter_instance.use_calibrated_value
+                    && entry.alias_name_space.as_deref() == Some("OPS")
         ));
     }
 
