@@ -1953,6 +1953,14 @@ impl Render for CommandContainerEntryRow {
                 input.set_value("", window, cx);
                 input.set_placeholder(command_entry_placeholder(kind), window, cx);
             });
+            for input in [
+                &self.secondary_input,
+                &self.tertiary_input,
+                &self.order_input,
+                &self.description_input,
+            ] {
+                input.update(cx, |input, cx| input.set_value("", window, cx));
+            }
         }
         h_flex()
             .flex_1()
