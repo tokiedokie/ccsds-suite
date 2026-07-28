@@ -11,7 +11,7 @@ use gpui::{
     Subscription, Task, Window, div, list, prelude::FluentBuilder, px,
 };
 use gpui_component::{
-    ActiveTheme, Disableable, IconName, IndexPath, Sizable, StyledExt,
+    ActiveTheme, Disableable, IconName, IndexPath, Sizable, StyledExt, WindowExt,
     button::{Button, ButtonVariants},
     collapsible::Collapsible,
     h_flex,
@@ -52,12 +52,24 @@ enum CommandContainerEntryKind {
     ArgumentRef,
     #[strum(serialize = "ParameterRefEntry")]
     ParameterRef,
+    #[strum(serialize = "ParameterSegmentRefEntry")]
+    ParameterSegmentRef,
     #[strum(serialize = "ContainerRefEntry")]
     ContainerRef,
     #[strum(serialize = "FixedValueEntry")]
     FixedValue,
 }
 impl_select_item!(CommandContainerEntryKind);
+
+fn command_entry_placeholder(kind: CommandContainerEntryKind) -> &'static str {
+    match kind {
+        CommandContainerEntryKind::ArgumentRef => "Select an argument...",
+        CommandContainerEntryKind::ParameterRef
+        | CommandContainerEntryKind::ParameterSegmentRef => "Select a parameter...",
+        CommandContainerEntryKind::ContainerRef => "Select a container...",
+        CommandContainerEntryKind::FixedValue => "Optional entry name",
+    }
+}
 
 #[derive(Clone, Copy, Debug, Display, EnumString, VariantArray, PartialEq, Eq)]
 enum ConsequenceLevelChoice {
@@ -129,12 +141,10 @@ impl MetaCommandForm {
         cx: &mut Context<XtceEditor>,
     ) -> Entity<Self> {
         let values = MetaCommandValues::from_command(command);
-        let interlock_values = InterlockValues::from_interlock(
-            command.and_then(|cmd| match cmd {
-                xtce::MetaCommandSetTypeContent::MetaCommand(cmd) => cmd.interlock.as_ref(),
-                _ => None,
-            }),
-        );
+        let interlock_values = InterlockValues::from_interlock(command.and_then(|cmd| match cmd {
+            xtce::MetaCommandSetTypeContent::MetaCommand(cmd) => cmd.interlock.as_ref(),
+            _ => None,
+        }));
         let name_or_ref_input = input(&values.name_or_ref, false, window, cx);
         // Name changes intentionally continue to invalidate XtceEditor directly so
         // the title and tree labels are updated by the existing mechanism.
@@ -348,12 +358,10 @@ impl MetaCommandForm {
         cx: &mut Context<Self>,
     ) {
         let values = MetaCommandValues::from_command(command);
-        let interlock_values = InterlockValues::from_interlock(
-            command.and_then(|cmd| match cmd {
-                xtce::MetaCommandSetTypeContent::MetaCommand(cmd) => cmd.interlock.as_ref(),
-                _ => None,
-            }),
-        );
+        let interlock_values = InterlockValues::from_interlock(command.and_then(|cmd| match cmd {
+            xtce::MetaCommandSetTypeContent::MetaCommand(cmd) => cmd.interlock.as_ref(),
+            _ => None,
+        }));
         self.documentation_open = false;
         self.inheritance_open = false;
         self.identification_open = false;
@@ -500,7 +508,10 @@ impl MetaCommandForm {
                 &self.container_long_description_input,
                 values.command_container.long_description,
             ),
-            (&self.container_base_ref_input, values.command_container.base_ref),
+            (
+                &self.container_base_ref_input,
+                values.command_container.base_ref,
+            ),
             (
                 &self.reason_for_warning_input,
                 values.default_significance.reason_for_warning,
@@ -567,7 +578,9 @@ impl MetaCommandForm {
         .apply_to(command);
         if let xtce::MetaCommandSetTypeContent::MetaCommand(cmd) = command {
             cmd.transmission_constraint_list = self.transmission_constraints.read(cx).to_list(cx);
-            self.verifiers.read(cx).apply_to_verifier_set(&mut cmd.verifier_set, cx);
+            self.verifiers
+                .read(cx)
+                .apply_to_verifier_set(&mut cmd.verifier_set, cx);
 
             let interlock_values = InterlockValues {
                 scope_to_space_system: value(&self.interlock_scope_input, cx),
@@ -794,11 +807,7 @@ impl MetaCommandForm {
                         cx.notify();
                     })),
             )
-            .content(
-                v_flex()
-                    .pt_3()
-                    .child(self.transmission_constraints.clone()),
-            )
+            .content(v_flex().pt_3().child(self.transmission_constraints.clone()))
     }
 
     fn render_verifiers(&self, cx: &mut Context<Self>) -> Collapsible {
@@ -819,11 +828,7 @@ impl MetaCommandForm {
                         cx.notify();
                     })),
             )
-            .content(
-                v_flex()
-                    .pt_3()
-                    .child(self.verifiers.clone()),
-            )
+            .content(v_flex().pt_3().child(self.verifiers.clone()))
     }
 
     fn render_interlock(&self, cx: &mut Context<Self>) -> Collapsible {
@@ -903,11 +908,7 @@ impl MetaCommandForm {
                         cx.notify();
                     })),
             )
-            .content(
-                v_flex()
-                    .pt_3()
-                    .child(self.parameter_to_set_list.clone()),
-            )
+            .content(v_flex().pt_3().child(self.parameter_to_set_list.clone()))
     }
 
     fn render_parameters_to_suspend_alarms(&self, cx: &mut Context<Self>) -> Collapsible {
@@ -1114,8 +1115,11 @@ struct EntryListView {
 struct CommandContainerEntryRow {
     kind_select: Entity<SelectState<Vec<CommandContainerEntryKind>>>,
     primary_input: Entity<InputState>,
+    primary_kind: CommandContainerEntryKind,
     secondary_input: Entity<InputState>,
     tertiary_input: Entity<InputState>,
+    order_input: Entity<InputState>,
+    description_input: Entity<InputState>,
     _subscriptions: Vec<Subscription>,
 }
 
@@ -1153,21 +1157,32 @@ fn container_entry_data(
     let primary = value(&row.primary_input, cx);
     let secondary = value(&row.secondary_input, cx);
     let tertiary = value(&row.tertiary_input, cx);
+    let order = value(&row.order_input, cx);
+    let description = value(&row.description_input, cx);
     match kind {
         CommandContainerEntryKind::ArgumentRef => EditableContainerEntry::ArgumentRef {
             reference: primary,
             offset: secondary.trim().parse().ok(),
-            description: optional_value(tertiary),
+            description: optional_value(description),
         },
         CommandContainerEntryKind::ParameterRef => EditableContainerEntry::ParameterRef {
             reference: primary,
             offset: secondary.trim().parse().ok(),
-            description: optional_value(tertiary),
+            description: optional_value(description),
         },
+        CommandContainerEntryKind::ParameterSegmentRef => {
+            EditableContainerEntry::ParameterSegmentRef {
+                reference: primary,
+                size_in_bits: tertiary.trim().parse().unwrap_or(i64::MIN),
+                order: order.trim().parse().ok(),
+                offset: secondary.trim().parse().ok(),
+                description: optional_value(description),
+            }
+        }
         CommandContainerEntryKind::ContainerRef => EditableContainerEntry::ContainerRef {
             reference: primary,
             offset: secondary.trim().parse().ok(),
-            description: optional_value(tertiary),
+            description: optional_value(description),
         },
         CommandContainerEntryKind::FixedValue => EditableContainerEntry::FixedValue {
             name: optional_value(primary),
@@ -1695,6 +1710,7 @@ impl EntryListView {
             return div().into_any_element();
         };
         let editor = self.editor(index, window, cx);
+        let details_editor = editor.clone();
         let selected = self.selected_index == Some(index);
         h_flex()
             .id(format!("command-container-entry-list-row-{index}"))
@@ -1726,9 +1742,18 @@ impl EntryListView {
             )
             .child(
                 h_flex()
-                    .w(px(100.))
+                    .w(px(160.))
                     .flex_none()
                     .gap_1()
+                    .child(
+                        Button::new(format!("edit-command-container-entry-details-{index}"))
+                            .small()
+                            .label("Details")
+                            .tooltip("Edit entry details")
+                            .on_click(move |_, window, cx| {
+                                open_command_entry_details(details_editor.clone(), window, cx);
+                            }),
+                    )
                     .child(
                         Button::new(format!("move-command-container-entry-up-{index}"))
                             .ghost()
@@ -1792,7 +1817,7 @@ impl Render for EntryListView {
                     .child(
                         v_flex()
                             .w_full()
-                            .min_w(px(930.))
+                            .min_w(px(700.))
                             .rounded_md()
                             .border_1()
                             .border_color(cx.theme().border)
@@ -1805,13 +1830,9 @@ impl Render for EntryListView {
                                     .text_xs()
                                     .font_medium()
                                     .child(div().w(px(52.)).child("Bit"))
-                                    .child(div().w(px(100.)).child("Actions"))
+                                    .child(div().w(px(160.)).child("Actions"))
                                     .child(div().w(px(130.)).child("Type"))
-                                    .child(div().flex_1().child("Reference / name"))
-                                    .child(div().w(px(86.)).child("Offset"))
-                                    .child(div().w(px(120.)).child("Binary value"))
-                                    .child(div().w(px(86.)).child("Size in bits"))
-                                    .child(div().flex_1().child("Description")),
+                                    .child(div().flex_1().child("Entry")),
                             )
                             .child(
                                 div()
@@ -1920,18 +1941,19 @@ fn virtual_list_height(
 }
 
 impl Render for CommandContainerEntryRow {
-    fn render(&mut self, _: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
-        let fixed_value = selected_value(
+    fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+        let kind = selected_value(
             &self.kind_select,
             CommandContainerEntryKind::ArgumentRef,
             cx,
-        ) == CommandContainerEntryKind::FixedValue;
-        let empty_cell = || {
-            div()
-                .h(px(32.))
-                .rounded_md()
-                .bg(cx.theme().muted.opacity(0.45))
-        };
+        );
+        if self.primary_kind != kind {
+            self.primary_kind = kind;
+            self.primary_input.update(cx, |input, cx| {
+                input.set_value("", window, cx);
+                input.set_placeholder(command_entry_placeholder(kind), window, cx);
+            });
+        }
         h_flex()
             .flex_1()
             .min_w_0()
@@ -1948,27 +1970,55 @@ impl Render for CommandContainerEntryRow {
                     .min_w_0()
                     .child(Input::new(&self.primary_input)),
             )
-            .child(div().w(px(86.)).flex_none().child(if fixed_value {
-                empty_cell().into_any_element()
-            } else {
-                Input::new(&self.secondary_input).into_any_element()
-            }))
-            .child(div().w(px(120.)).flex_none().child(if fixed_value {
-                Input::new(&self.secondary_input).into_any_element()
-            } else {
-                empty_cell().into_any_element()
-            }))
-            .child(div().w(px(86.)).flex_none().child(if fixed_value {
-                Input::new(&self.tertiary_input).into_any_element()
-            } else {
-                empty_cell().into_any_element()
-            }))
-            .child(div().flex_1().min_w_0().child(if fixed_value {
-                empty_cell().into_any_element()
-            } else {
-                Input::new(&self.tertiary_input).into_any_element()
-            }))
     }
+}
+
+fn open_command_entry_details(
+    editor: Entity<CommandContainerEntryRow>,
+    window: &mut Window,
+    cx: &mut App,
+) {
+    let title = {
+        let row = editor.read(cx);
+        format!(
+            "{} details",
+            selected_value(&row.kind_select, CommandContainerEntryKind::ArgumentRef, cx)
+        )
+    };
+    window.open_dialog(cx, move |dialog, _, _| {
+        let editor = editor.clone();
+        dialog
+            .title(title.clone())
+            .w(px(560.))
+            .content(move |content, _, cx| {
+                let row = editor.read(cx);
+                let kind =
+                    selected_value(&row.kind_select, CommandContainerEntryKind::ArgumentRef, cx);
+                let secondary = row.secondary_input.clone();
+                let tertiary = row.tertiary_input.clone();
+                let order = row.order_input.clone();
+                let description = row.description_input.clone();
+                let fixed = kind == CommandContainerEntryKind::FixedValue;
+                let segment = kind == CommandContainerEntryKind::ParameterSegmentRef;
+                content.child(
+                    v_flex()
+                        .p_4()
+                        .gap_3()
+                        .when(fixed, |form| {
+                            form.child(field("Binary value", "Required", &secondary, cx))
+                                .child(field("Size in bits", "Required", &tertiary, cx))
+                        })
+                        .when(!fixed, |form| {
+                            form.child(field("Offset", "Optional", &secondary, cx))
+                                .when(segment, |form| {
+                                    form.child(field("Size in bits", "Required", &tertiary, cx))
+                                        .child(field("Order", "Optional", &order, cx))
+                                })
+                                .child(field("Description", "Optional", &description, cx))
+                        }),
+                )
+            })
+    });
 }
 
 #[derive(Clone)]
@@ -2768,7 +2818,7 @@ fn new_command_container_entry_row(
     window: &mut Window,
     cx: &mut impl AppContext,
 ) -> Entity<CommandContainerEntryRow> {
-    let (kind, primary, secondary, tertiary) = match entry {
+    let (kind, primary, secondary, tertiary, order, description) = match entry {
         EditableContainerEntry::ArgumentRef {
             reference,
             offset,
@@ -2777,6 +2827,8 @@ fn new_command_container_entry_row(
             CommandContainerEntryKind::ArgumentRef,
             reference,
             offset.map(|value| value.to_string()).unwrap_or_default(),
+            String::new(),
+            String::new(),
             description.unwrap_or_default(),
         ),
         EditableContainerEntry::ParameterRef {
@@ -2787,6 +2839,22 @@ fn new_command_container_entry_row(
             CommandContainerEntryKind::ParameterRef,
             reference,
             offset.map(|value| value.to_string()).unwrap_or_default(),
+            String::new(),
+            String::new(),
+            description.unwrap_or_default(),
+        ),
+        EditableContainerEntry::ParameterSegmentRef {
+            reference,
+            size_in_bits,
+            order,
+            offset,
+            description,
+        } => (
+            CommandContainerEntryKind::ParameterSegmentRef,
+            reference,
+            offset.map(|value| value.to_string()).unwrap_or_default(),
+            size_in_bits.to_string(),
+            order.map(|value| value.to_string()).unwrap_or_default(),
             description.unwrap_or_default(),
         ),
         EditableContainerEntry::ContainerRef {
@@ -2797,6 +2865,8 @@ fn new_command_container_entry_row(
             CommandContainerEntryKind::ContainerRef,
             reference,
             offset.map(|value| value.to_string()).unwrap_or_default(),
+            String::new(),
+            String::new(),
             description.unwrap_or_default(),
         ),
         EditableContainerEntry::FixedValue {
@@ -2808,6 +2878,8 @@ fn new_command_container_entry_row(
             name.unwrap_or_default(),
             binary_value,
             size_in_bits.to_string(),
+            String::new(),
+            String::new(),
         ),
     };
     let selected_index = CommandContainerEntryKind::VARIANTS
@@ -2828,7 +2900,9 @@ fn new_command_container_entry_row(
             |_, _, _: &SelectEvent<Vec<CommandContainerEntryKind>>, cx| cx.notify(),
         );
         let primary_input = cx.new(|cx| {
-            let mut input = InputState::new(window, cx).default_value(primary.clone());
+            let mut input = InputState::new(window, cx)
+                .default_value(primary.clone())
+                .placeholder(command_entry_placeholder(kind));
             input.lsp.completion_provider = Some(Rc::new(EntryArgumentCompletionProvider {
                 arguments: arguments.clone(),
                 kind_select: kind_select.clone(),
@@ -2839,8 +2913,11 @@ fn new_command_container_entry_row(
         CommandContainerEntryRow {
             kind_select,
             primary_input,
+            primary_kind: kind,
             secondary_input: input(&secondary, false, window, cx),
             tertiary_input: input(&tertiary, false, window, cx),
+            order_input: input(&order, false, window, cx),
+            description_input: input(&description, false, window, cx),
             _subscriptions: vec![kind_subscription],
         }
     })
@@ -2864,6 +2941,25 @@ fn command_container_entry_rows_value(rows: &Entity<EntryListView>, cx: &App) ->
 }
 
 fn encode_editable_entry(entry: &EditableContainerEntry) -> Option<String> {
+    if let EditableContainerEntry::ParameterSegmentRef {
+        reference,
+        size_in_bits,
+        order,
+        offset,
+        description,
+    } = entry
+    {
+        return (!reference.trim().is_empty() && *size_in_bits != i64::MIN).then(|| {
+            format!(
+                "ParameterSegmentRefEntry | {} | {} | {} | {} | {}",
+                reference.trim(),
+                size_in_bits,
+                order.map(|value| value.to_string()).unwrap_or_default(),
+                offset.map(|value| value.to_string()).unwrap_or_default(),
+                description.as_deref().unwrap_or_default()
+            )
+        });
+    }
     let (kind, primary, secondary, tertiary) = match entry {
         EditableContainerEntry::ArgumentRef {
             reference,
@@ -2910,6 +3006,7 @@ fn encode_editable_entry(entry: &EditableContainerEntry) -> Option<String> {
                 size_in_bits.to_string(),
             )
         }
+        EditableContainerEntry::ParameterSegmentRef { .. } => unreachable!(),
     };
     if primary.trim().is_empty() && kind != CommandContainerEntryKind::FixedValue {
         return None;
@@ -3217,6 +3314,13 @@ enum EditableContainerEntry {
         offset: Option<i64>,
         description: Option<String>,
     },
+    ParameterSegmentRef {
+        reference: String,
+        size_in_bits: i64,
+        order: Option<i64>,
+        offset: Option<i64>,
+        description: Option<String>,
+    },
     ContainerRef {
         reference: String,
         offset: Option<i64>,
@@ -3315,6 +3419,20 @@ fn command_entry_bit_positions_from_sizes(
                 ),
                 EditableContainerEntry::ParameterRef { .. }
                 | EditableContainerEntry::ContainerRef { .. } => (None, None),
+                EditableContainerEntry::ParameterSegmentRef {
+                    offset,
+                    size_in_bits,
+                    ..
+                } => (
+                    offset
+                        .unwrap_or_default()
+                        .try_into()
+                        .ok()
+                        .and_then(|offset: u64| {
+                            cursor.and_then(|cursor| cursor.checked_add(offset))
+                        }),
+                    u64::try_from(*size_in_bits).ok().filter(|size| *size > 0),
+                ),
             };
             cursor = offset.and_then(|offset| size.and_then(|size| offset.checked_add(size)));
             offset.filter(|_| size.is_some())
@@ -3429,6 +3547,20 @@ fn append_command_packet_entries(
                 *cursor = None;
                 continue;
             }
+            EditableContainerEntry::ParameterSegmentRef {
+                reference,
+                offset,
+                size_in_bits,
+                ..
+            } => (
+                reference.clone(),
+                cursor.and_then(|cursor| {
+                    u64::try_from(offset.unwrap_or_default())
+                        .ok()
+                        .and_then(|offset| cursor.checked_add(offset))
+                }),
+                u64::try_from(*size_in_bits).ok().filter(|size| *size > 0),
+            ),
             EditableContainerEntry::ContainerRef { reference, .. } => {
                 layout
                     .unresolved
@@ -3644,6 +3776,19 @@ fn encode_container_entries(list: &xtce::CommandContainerEntryListType) -> Strin
                 fixed_entry_offset(entry.location_in_container_in_bits.as_ref()),
                 entry.short_description.as_deref().unwrap_or_default()
             )),
+            xtce::CommandContainerEntryListTypeContent::ParameterSegmentRefEntry(entry) => {
+                Some(format!(
+                    "ParameterSegmentRefEntry | {} | {} | {} | {} | {}",
+                    entry.parameter_ref,
+                    entry.size_in_bits,
+                    entry
+                        .order
+                        .map(|value| value.to_string())
+                        .unwrap_or_default(),
+                    fixed_entry_offset(entry.location_in_container_in_bits.as_ref()),
+                    entry.short_description.as_deref().unwrap_or_default()
+                ))
+            }
             xtce::CommandContainerEntryListTypeContent::ContainerRefEntry(entry) => Some(format!(
                 "ContainerRefEntry | {} | {} | {}",
                 entry.container_ref,
@@ -3687,6 +3832,13 @@ fn decode_container_entries(value: &str) -> Vec<EditableContainerEntry> {
                     offset: numeric_field(&fields, 2),
                     description: optional_field(&fields, 3),
                 }),
+                "ParameterSegmentRefEntry" => Some(EditableContainerEntry::ParameterSegmentRef {
+                    reference: nonempty_field(&fields, 1)?,
+                    size_in_bits: fields.get(2)?.parse().ok()?,
+                    order: numeric_field(&fields, 3),
+                    offset: numeric_field(&fields, 4),
+                    description: optional_field(&fields, 5),
+                }),
                 "ContainerRefEntry" => Some(EditableContainerEntry::ContainerRef {
                     reference: nonempty_field(&fields, 1)?,
                     offset: numeric_field(&fields, 2),
@@ -3721,6 +3873,7 @@ fn numeric_field(fields: &[&str], index: usize) -> Option<i64> {
 fn apply_container_entries(list: &mut xtce::CommandContainerEntryListType, value: &str) {
     let mut argument_entries = VecDeque::new();
     let mut parameter_entries = VecDeque::new();
+    let mut parameter_segment_entries = VecDeque::new();
     let mut container_entries = VecDeque::new();
     let mut fixed_entries = VecDeque::new();
     let mut unsupported_entries = Vec::new();
@@ -3732,6 +3885,9 @@ fn apply_container_entries(list: &mut xtce::CommandContainerEntryListType, value
             }
             xtce::CommandContainerEntryListTypeContent::ParameterRefEntry(entry) => {
                 parameter_entries.push_back(entry);
+            }
+            xtce::CommandContainerEntryListTypeContent::ParameterSegmentRefEntry(entry) => {
+                parameter_segment_entries.push_back(entry);
             }
             xtce::CommandContainerEntryListTypeContent::ContainerRefEntry(entry) => {
                 container_entries.push_back(entry);
@@ -3786,6 +3942,32 @@ fn apply_container_entries(list: &mut xtce::CommandContainerEntryListType, value
                     entry.short_description = description;
                     apply_fixed_entry_offset(&mut entry.location_in_container_in_bits, offset);
                     xtce::CommandContainerEntryListTypeContent::ParameterRefEntry(entry)
+                }
+                EditableContainerEntry::ParameterSegmentRef {
+                    reference,
+                    size_in_bits,
+                    order,
+                    offset,
+                    description,
+                } => {
+                    let mut entry = parameter_segment_entries.pop_front().unwrap_or(
+                        xtce::ArgumentParameterSegmentRefEntryType {
+                            short_description: None,
+                            parameter_ref: String::new(),
+                            order: None,
+                            size_in_bits: 0,
+                            location_in_container_in_bits: None,
+                            repeat_entry: None,
+                            include_condition: None,
+                            ancillary_data_set: None,
+                        },
+                    );
+                    entry.parameter_ref = reference;
+                    entry.size_in_bits = size_in_bits;
+                    entry.order = order;
+                    entry.short_description = description;
+                    apply_fixed_entry_offset(&mut entry.location_in_container_in_bits, offset);
+                    xtce::CommandContainerEntryListTypeContent::ParameterSegmentRefEntry(entry)
                 }
                 EditableContainerEntry::ContainerRef {
                     reference,
@@ -3945,10 +4127,7 @@ impl InterlockValues {
     fn from_interlock(interlock: Option<&xtce::InterlockType>) -> Self {
         match interlock {
             Some(interlock) => Self {
-                scope_to_space_system: interlock
-                    .scope_to_space_system
-                    .clone()
-                    .unwrap_or_default(),
+                scope_to_space_system: interlock.scope_to_space_system.clone().unwrap_or_default(),
                 verification_to_wait_for: match interlock.verification_to_wait_for {
                     xtce::VerifierEnumerationType::Release => VerificationToWaitForChoice::Release,
                     xtce::VerifierEnumerationType::TransferredToRange => {
@@ -3957,11 +4136,19 @@ impl InterlockValues {
                     xtce::VerifierEnumerationType::SentFromRange => {
                         VerificationToWaitForChoice::SentFromRange
                     }
-                    xtce::VerifierEnumerationType::Received => VerificationToWaitForChoice::Received,
-                    xtce::VerifierEnumerationType::Accepted => VerificationToWaitForChoice::Accepted,
+                    xtce::VerifierEnumerationType::Received => {
+                        VerificationToWaitForChoice::Received
+                    }
+                    xtce::VerifierEnumerationType::Accepted => {
+                        VerificationToWaitForChoice::Accepted
+                    }
                     xtce::VerifierEnumerationType::Queued => VerificationToWaitForChoice::Queued,
-                    xtce::VerifierEnumerationType::Executing => VerificationToWaitForChoice::Executing,
-                    xtce::VerifierEnumerationType::Complete => VerificationToWaitForChoice::Complete,
+                    xtce::VerifierEnumerationType::Executing => {
+                        VerificationToWaitForChoice::Executing
+                    }
+                    xtce::VerifierEnumerationType::Complete => {
+                        VerificationToWaitForChoice::Complete
+                    }
                     xtce::VerifierEnumerationType::Failed => VerificationToWaitForChoice::Failed,
                 },
                 verification_progress_percentage: interlock
@@ -4004,10 +4191,7 @@ impl InterlockValues {
             VerificationToWaitForChoice::Failed => xtce::VerifierEnumerationType::Failed,
             VerificationToWaitForChoice::None => unreachable!(),
         };
-        let progress = self
-            .verification_progress_percentage
-            .parse::<f64>()
-            .ok();
+        let progress = self.verification_progress_percentage.parse::<f64>().ok();
         *interlock = Some(xtce::InterlockType {
             scope_to_space_system: optional_value(self.scope_to_space_system.clone()),
             verification_to_wait_for,
@@ -4105,11 +4289,7 @@ impl VerifierListForm {
         cx.notify();
     }
 
-    pub(super) fn apply_to_verifier_set(
-        &self,
-        set: &mut Option<xtce::VerifierSetType>,
-        cx: &App,
-    ) {
+    pub(super) fn apply_to_verifier_set(&self, set: &mut Option<xtce::VerifierSetType>, cx: &App) {
         let mut received = None;
         let mut accepted = None;
         let mut queued = None;
@@ -4158,7 +4338,8 @@ impl VerifierListForm {
                     failed = Some(build_failed_verifier(param, op_str, val, time_to_stop));
                 }
                 VerifierStageChoice::TransferredToRange => {
-                    transferred = Some(build_transferred_verifier(param, op_str, val, time_to_stop));
+                    transferred =
+                        Some(build_transferred_verifier(param, op_str, val, time_to_stop));
                 }
                 VerifierStageChoice::SentFromRange => {
                     sent = Some(build_sent_verifier(param, op_str, val, time_to_stop));
@@ -4635,7 +4816,12 @@ fn verifier_entity(
     let parameter = input(&model.parameter, false, window, cx);
     let value_input = input(&model.value, false, window, cx);
     let time_to_stop = input(&model.time_to_stop, false, window, cx);
-    let operator = select(ComparisonOperatorChoice::VARIANTS, model.operator, window, cx);
+    let operator = select(
+        ComparisonOperatorChoice::VARIANTS,
+        model.operator,
+        window,
+        cx,
+    );
 
     cx.new(|_| VerifierRowForm {
         stage,
@@ -4804,18 +4990,16 @@ impl Render for ParameterToSetListForm {
                     .rounded_md()
                     .border_1()
                     .border_color(cx.theme().border)
-                    .child(div().flex_1().child(field(
-                        "Parameter",
-                        "",
-                        &row_read.parameter,
-                        cx,
-                    )))
-                    .child(div().flex_1().child(field(
-                        "New value",
-                        "",
-                        &row_read.value,
-                        cx,
-                    )))
+                    .child(
+                        div()
+                            .flex_1()
+                            .child(field("Parameter", "", &row_read.parameter, cx)),
+                    )
+                    .child(
+                        div()
+                            .flex_1()
+                            .child(field("New value", "", &row_read.value, cx)),
+                    )
                     .child(div().w(px(140.)).child(select_field(
                         "Verification trigger",
                         "",
@@ -4823,17 +5007,15 @@ impl Render for ParameterToSetListForm {
                         cx,
                     )))
                     .child(
-                        div()
-                            .mb(px(6.))
-                            .child(
-                                Button::new(format!("remove-parameter-to-set-{index}"))
-                                    .small()
-                                    .icon(IconName::Minus)
-                                    .on_click(cx.listener(move |this, _, _, cx| {
-                                        this.rows.remove(index);
-                                        cx.notify();
-                                    })),
-                            ),
+                        div().mb(px(6.)).child(
+                            Button::new(format!("remove-parameter-to-set-{index}"))
+                                .small()
+                                .icon(IconName::Minus)
+                                .on_click(cx.listener(move |this, _, _, cx| {
+                                    this.rows.remove(index);
+                                    cx.notify();
+                                })),
+                        ),
                     )
             }))
     }
@@ -4981,11 +5163,12 @@ impl Render for ParametersToSuspendAlarmsOnSetForm {
                                     window,
                                     cx,
                                 );
-                                this.rows.push(cx.new(|_| ParameterToSuspendAlarmsOnRowForm {
-                                    parameter,
-                                    suspense_time,
-                                    trigger,
-                                }));
+                                this.rows
+                                    .push(cx.new(|_| ParameterToSuspendAlarmsOnRowForm {
+                                        parameter,
+                                        suspense_time,
+                                        trigger,
+                                    }));
                                 cx.notify();
                             })),
                     ),
@@ -5000,12 +5183,11 @@ impl Render for ParametersToSuspendAlarmsOnSetForm {
                     .rounded_md()
                     .border_1()
                     .border_color(cx.theme().border)
-                    .child(div().flex_1().child(field(
-                        "Parameter",
-                        "",
-                        &row_read.parameter,
-                        cx,
-                    )))
+                    .child(
+                        div()
+                            .flex_1()
+                            .child(field("Parameter", "", &row_read.parameter, cx)),
+                    )
                     .child(div().w(px(140.)).child(field(
                         "Suspense time (e.g. PT30S)",
                         "",
@@ -5019,17 +5201,15 @@ impl Render for ParametersToSuspendAlarmsOnSetForm {
                         cx,
                     )))
                     .child(
-                        div()
-                            .mb(px(6.))
-                            .child(
-                                Button::new(format!("remove-suspend-alarm-{index}"))
-                                    .small()
-                                    .icon(IconName::Minus)
-                                    .on_click(cx.listener(move |this, _, _, cx| {
-                                        this.rows.remove(index);
-                                        cx.notify();
-                                    })),
-                            ),
+                        div().mb(px(6.)).child(
+                            Button::new(format!("remove-suspend-alarm-{index}"))
+                                .small()
+                                .icon(IconName::Minus)
+                                .on_click(cx.listener(move |this, _, _, cx| {
+                                    this.rows.remove(index);
+                                    cx.notify();
+                                })),
+                        ),
                     )
             }))
     }
@@ -5038,7 +5218,9 @@ impl Render for ParametersToSuspendAlarmsOnSetForm {
 fn stage_choice_from_verifier(v: &xtce::VerifierEnumerationType) -> VerifierStageChoice {
     match v {
         xtce::VerifierEnumerationType::Release => VerifierStageChoice::Release,
-        xtce::VerifierEnumerationType::TransferredToRange => VerifierStageChoice::TransferredToRange,
+        xtce::VerifierEnumerationType::TransferredToRange => {
+            VerifierStageChoice::TransferredToRange
+        }
         xtce::VerifierEnumerationType::SentFromRange => VerifierStageChoice::SentFromRange,
         xtce::VerifierEnumerationType::Received => VerifierStageChoice::Received,
         xtce::VerifierEnumerationType::Accepted => VerifierStageChoice::Accepted,
@@ -5052,7 +5234,9 @@ fn stage_choice_from_verifier(v: &xtce::VerifierEnumerationType) -> VerifierStag
 fn stage_choice_to_verifier(v: VerifierStageChoice) -> xtce::VerifierEnumerationType {
     match v {
         VerifierStageChoice::Release => xtce::VerifierEnumerationType::Release,
-        VerifierStageChoice::TransferredToRange => xtce::VerifierEnumerationType::TransferredToRange,
+        VerifierStageChoice::TransferredToRange => {
+            xtce::VerifierEnumerationType::TransferredToRange
+        }
         VerifierStageChoice::SentFromRange => xtce::VerifierEnumerationType::SentFromRange,
         VerifierStageChoice::Received => xtce::VerifierEnumerationType::Received,
         VerifierStageChoice::Accepted => xtce::VerifierEnumerationType::Accepted,
@@ -5112,30 +5296,26 @@ impl Render for VerifierListForm {
                     .rounded_md()
                     .border_1()
                     .border_color(cx.theme().border)
-                    .child(div().w(px(140.)).child(select_field(
-                        "Stage",
-                        "",
-                        &row_read.stage,
-                        cx,
-                    )))
-                    .child(div().flex_1().child(field(
-                        "Parameter",
-                        "",
-                        &row_read.parameter,
-                        cx,
-                    )))
-                    .child(div().w(px(100.)).child(select_field(
-                        "Op",
-                        "",
-                        &row_read.operator,
-                        cx,
-                    )))
-                    .child(div().flex_1().child(field(
-                        "Value",
-                        "",
-                        &row_read.value,
-                        cx,
-                    )))
+                    .child(
+                        div()
+                            .w(px(140.))
+                            .child(select_field("Stage", "", &row_read.stage, cx)),
+                    )
+                    .child(
+                        div()
+                            .flex_1()
+                            .child(field("Parameter", "", &row_read.parameter, cx)),
+                    )
+                    .child(
+                        div()
+                            .w(px(100.))
+                            .child(select_field("Op", "", &row_read.operator, cx)),
+                    )
+                    .child(
+                        div()
+                            .flex_1()
+                            .child(field("Value", "", &row_read.value, cx)),
+                    )
                     .child(div().w(px(140.)).child(field(
                         "Timeout (e.g. PT10S)",
                         "",
@@ -5143,17 +5323,15 @@ impl Render for VerifierListForm {
                         cx,
                     )))
                     .child(
-                        div()
-                            .mb(px(6.))
-                            .child(
-                                Button::new(format!("remove-verifier-{index}"))
-                                    .small()
-                                    .icon(IconName::Minus)
-                                    .on_click(cx.listener(move |this, _, _, cx| {
-                                        this.rows.remove(index);
-                                        cx.notify();
-                                    })),
-                            ),
+                        div().mb(px(6.)).child(
+                            Button::new(format!("remove-verifier-{index}"))
+                                .small()
+                                .icon(IconName::Minus)
+                                .on_click(cx.listener(move |this, _, _, cx| {
+                                    this.rows.remove(index);
+                                    cx.notify();
+                                })),
+                        ),
                     )
             }))
     }
@@ -5270,7 +5448,11 @@ fn constraint_models(list: Option<&xtce::TransmissionConstraintListType>) -> Vec
                     operator_choice_from_str(&c.comparison_operator),
                     c.value.clone(),
                 ),
-                _ => (String::new(), ComparisonOperatorChoice::Equal, String::new()),
+                _ => (
+                    String::new(),
+                    ComparisonOperatorChoice::Equal,
+                    String::new(),
+                ),
             };
             ConstraintModel {
                 parameter: param,
@@ -5317,7 +5499,12 @@ fn constraint_entity(
     let parameter = input(&model.parameter, false, window, cx);
     let value_input = input(&model.value, false, window, cx);
     let time_out = input(&model.time_out, false, window, cx);
-    let operator = select(ComparisonOperatorChoice::VARIANTS, model.operator, window, cx);
+    let operator = select(
+        ComparisonOperatorChoice::VARIANTS,
+        model.operator,
+        window,
+        cx,
+    );
     let suspendable = select(SuspendableChoice::VARIANTS, model.suspendable, window, cx);
 
     cx.new(|_| TransmissionConstraintRowForm {
@@ -5339,7 +5526,12 @@ impl Render for TransmissionConstraintListForm {
                     .justify_between()
                     .child(
                         v_flex()
-                            .child(div().text_sm().font_medium().child("Transmission constraints"))
+                            .child(
+                                div()
+                                    .text_sm()
+                                    .font_medium()
+                                    .child("Transmission constraints"),
+                            )
                             .child(
                                 div()
                                     .text_xs()
@@ -5393,24 +5585,21 @@ impl Render for TransmissionConstraintListForm {
                                 &row_read.operator,
                                 cx,
                             )))
-                            .child(div().flex_1().child(field(
-                                "Value",
-                                "",
-                                &row_read.value,
-                                cx,
-                            )))
                             .child(
                                 div()
-                                    .mb(px(6.))
-                                    .child(
-                                        Button::new(format!("remove-transmission-constraint-{index}"))
-                                            .small()
-                                            .icon(IconName::Minus)
-                                            .on_click(cx.listener(move |this, _, _, cx| {
-                                                this.rows.remove(index);
-                                                cx.notify();
-                                            })),
-                                    ),
+                                    .flex_1()
+                                    .child(field("Value", "", &row_read.value, cx)),
+                            )
+                            .child(
+                                div().mb(px(6.)).child(
+                                    Button::new(format!("remove-transmission-constraint-{index}"))
+                                        .small()
+                                        .icon(IconName::Minus)
+                                        .on_click(cx.listener(move |this, _, _, cx| {
+                                            this.rows.remove(index);
+                                            cx.notify();
+                                        })),
+                                ),
                             ),
                     )
                     .child(
@@ -6359,7 +6548,9 @@ mod tests {
 
     #[test]
     fn meta_command_parameters_to_suspend_alarms_roundtrip() {
-        use super::{VerifierStageChoice, parameter_to_suspend_alarms_on_models, stage_choice_to_verifier};
+        use super::{
+            VerifierStageChoice, parameter_to_suspend_alarms_on_models, stage_choice_to_verifier,
+        };
 
         let list = xtce::ParametersToSuspendAlarmsOnSetType {
             parameter_to_suspend_alarms_on: vec![xtce::ParameterToSuspendAlarmsOnType {
