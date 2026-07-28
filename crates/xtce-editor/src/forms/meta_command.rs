@@ -59,6 +59,25 @@ enum CommandContainerEntryKind {
 }
 impl_select_item!(CommandContainerEntryKind);
 
+#[derive(Clone, Copy, Debug, Display, EnumString, VariantArray, PartialEq, Eq)]
+enum ConsequenceLevelChoice {
+    #[strum(serialize = "None")]
+    None,
+    #[strum(serialize = "normal")]
+    Normal,
+    #[strum(serialize = "vital")]
+    Vital,
+    #[strum(serialize = "critical")]
+    Critical,
+    #[strum(serialize = "forbidden")]
+    Forbidden,
+    #[strum(serialize = "user1")]
+    User1,
+    #[strum(serialize = "user2")]
+    User2,
+}
+impl_select_item!(ConsequenceLevelChoice);
+
 pub(super) struct MetaCommandForm {
     kind_select: Entity<SelectState<Vec<MetaCommandKind>>>,
     abstract_select: Entity<SelectState<Vec<AbstractChoice>>>,
@@ -77,9 +96,13 @@ pub(super) struct MetaCommandForm {
     container_long_description_input: Entity<InputState>,
     container_base_ref_input: Entity<InputState>,
     entry_list: Entity<EntryListView>,
+    consequence_level_select: Entity<SelectState<Vec<ConsequenceLevelChoice>>>,
+    reason_for_warning_input: Entity<InputState>,
+    space_system_at_risk_input: Entity<InputState>,
     documentation_open: bool,
     inheritance_open: bool,
     identification_open: bool,
+    significance_open: bool,
     container_details_open: bool,
     _subscriptions: Vec<Subscription>,
 }
@@ -200,9 +223,28 @@ impl MetaCommandForm {
                     cx,
                 ),
                 entry_list,
+                consequence_level_select: select(
+                    ConsequenceLevelChoice::VARIANTS,
+                    values.default_significance.consequence_level,
+                    window,
+                    cx,
+                ),
+                reason_for_warning_input: input(
+                    &values.default_significance.reason_for_warning,
+                    false,
+                    window,
+                    cx,
+                ),
+                space_system_at_risk_input: input(
+                    &values.default_significance.space_system_at_risk,
+                    false,
+                    window,
+                    cx,
+                ),
                 documentation_open: false,
                 inheritance_open: false,
                 identification_open: false,
+                significance_open: false,
                 container_details_open: false,
                 _subscriptions: vec![name_subscription, kind_subscription, base_ref_subscription],
             }
@@ -221,7 +263,14 @@ impl MetaCommandForm {
         self.documentation_open = false;
         self.inheritance_open = false;
         self.identification_open = false;
+        self.significance_open = false;
         self.container_details_open = false;
+        sync_select(
+            &self.consequence_level_select,
+            values.default_significance.consequence_level,
+            window,
+            cx,
+        );
         *self.assignment_context.borrow_mut() = AssignmentContext::new(
             &values.base_meta_command_ref,
             meta_command_set,
@@ -291,6 +340,14 @@ impl MetaCommandForm {
                 &self.container_base_ref_input,
                 values.command_container.base_ref,
             ),
+            (
+                &self.reason_for_warning_input,
+                values.default_significance.reason_for_warning,
+            ),
+            (
+                &self.space_system_at_risk_input,
+                values.default_significance.space_system_at_risk,
+            ),
         ] {
             input.update(cx, |input, cx| input.set_value(value, window, cx));
         }
@@ -319,6 +376,15 @@ impl MetaCommandForm {
             base_ref: value(&self.container_base_ref_input, cx),
             entries: command_container_entry_rows_value(&self.entry_list, cx),
         };
+        let default_significance = SignificanceValues {
+            consequence_level: selected_value(
+                &self.consequence_level_select,
+                ConsequenceLevelChoice::None,
+                cx,
+            ),
+            reason_for_warning: value(&self.reason_for_warning_input, cx),
+            space_system_at_risk: value(&self.space_system_at_risk_input, cx),
+        };
         MetaCommandValues {
             name_or_ref: value(&self.name_or_ref_input, cx),
             short_description: value(&self.short_description_input, cx),
@@ -335,6 +401,7 @@ impl MetaCommandForm {
             arguments: command_argument_rows_value(&self.argument_list, cx),
             block_steps: value(&self.block_steps_input, cx),
             command_container,
+            default_significance,
         }
         .apply_to(command);
     }
@@ -367,6 +434,7 @@ impl MetaCommandForm {
                 .child(self.render_documentation(cx))
                 .child(self.render_inheritance(cx))
                 .child(self.render_identification(cx))
+                .child(self.render_significance(cx))
                 .child(self.render_command_container(cx)),
             MetaCommandKind::BlockMetaCommand => form
                 .child(field(
@@ -473,6 +541,49 @@ impl MetaCommandForm {
                 &self.system_name_input,
                 cx,
             )))
+    }
+
+    fn render_significance(&self, cx: &mut Context<Self>) -> Collapsible {
+        Collapsible::new()
+            .open(self.significance_open)
+            .child(
+                Button::new("toggle-meta-command-significance")
+                    .small()
+                    .link()
+                    .icon(if self.significance_open {
+                        IconName::ChevronDown
+                    } else {
+                        IconName::ChevronRight
+                    })
+                    .label("Significance")
+                    .on_click(cx.listener(|this, _, _, cx| {
+                        this.significance_open = !this.significance_open;
+                        cx.notify();
+                    })),
+            )
+            .content(
+                v_flex()
+                    .pt_3()
+                    .gap_4()
+                    .child(select_field(
+                        "Consequence level",
+                        "Required if significance specified",
+                        &self.consequence_level_select,
+                        cx,
+                    ))
+                    .child(field(
+                        "Reason for warning",
+                        "Optional",
+                        &self.reason_for_warning_input,
+                        cx,
+                    ))
+                    .child(field(
+                        "Space system at risk",
+                        "Optional",
+                        &self.space_system_at_risk_input,
+                        cx,
+                    )),
+            )
     }
 
     fn render_base_assignments(&self, _: &App) -> Div {
@@ -2475,6 +2586,7 @@ struct MetaCommandValues {
     arguments: String,
     block_steps: String,
     command_container: CommandContainerValues,
+    default_significance: SignificanceValues,
 }
 
 struct CommandContainerValues {
@@ -2537,6 +2649,58 @@ impl CommandContainerValues {
     }
 }
 
+#[derive(Clone, Debug, PartialEq, Eq)]
+struct SignificanceValues {
+    consequence_level: ConsequenceLevelChoice,
+    reason_for_warning: String,
+    space_system_at_risk: String,
+}
+
+impl SignificanceValues {
+    fn from_significance(significance: Option<&xtce::SignificanceType>) -> Self {
+        match significance {
+            Some(sig) => Self {
+                consequence_level: match sig.consequence_level {
+                    xtce::ConsequenceLevelType::Normal => ConsequenceLevelChoice::Normal,
+                    xtce::ConsequenceLevelType::Vital => ConsequenceLevelChoice::Vital,
+                    xtce::ConsequenceLevelType::Critical => ConsequenceLevelChoice::Critical,
+                    xtce::ConsequenceLevelType::Forbidden => ConsequenceLevelChoice::Forbidden,
+                    xtce::ConsequenceLevelType::User1 => ConsequenceLevelChoice::User1,
+                    xtce::ConsequenceLevelType::User2 => ConsequenceLevelChoice::User2,
+                },
+                reason_for_warning: sig.reason_for_warning.clone().unwrap_or_default(),
+                space_system_at_risk: sig.space_system_at_risk.clone().unwrap_or_default(),
+            },
+            None => Self {
+                consequence_level: ConsequenceLevelChoice::None,
+                reason_for_warning: String::new(),
+                space_system_at_risk: String::new(),
+            },
+        }
+    }
+
+    fn apply_to(&self, significance: &mut Option<xtce::SignificanceType>) {
+        if self.consequence_level == ConsequenceLevelChoice::None {
+            *significance = None;
+            return;
+        }
+        let consequence_level = match self.consequence_level {
+            ConsequenceLevelChoice::Normal => xtce::ConsequenceLevelType::Normal,
+            ConsequenceLevelChoice::Vital => xtce::ConsequenceLevelType::Vital,
+            ConsequenceLevelChoice::Critical => xtce::ConsequenceLevelType::Critical,
+            ConsequenceLevelChoice::Forbidden => xtce::ConsequenceLevelType::Forbidden,
+            ConsequenceLevelChoice::User1 => xtce::ConsequenceLevelType::User1,
+            ConsequenceLevelChoice::User2 => xtce::ConsequenceLevelType::User2,
+            ConsequenceLevelChoice::None => unreachable!(),
+        };
+        *significance = Some(xtce::SignificanceType {
+            space_system_at_risk: optional_value(self.space_system_at_risk.clone()),
+            reason_for_warning: optional_value(self.reason_for_warning.clone()),
+            consequence_level,
+        });
+    }
+}
+
 impl MetaCommandValues {
     fn from_command(command: Option<&xtce::MetaCommandSetTypeContent>) -> Self {
         let mut values = Self {
@@ -2550,6 +2714,7 @@ impl MetaCommandValues {
             arguments: String::new(),
             block_steps: String::new(),
             command_container: CommandContainerValues::from_container(None),
+            default_significance: SignificanceValues::from_significance(None),
         };
         match command {
             Some(xtce::MetaCommandSetTypeContent::MetaCommand(command)) => {
@@ -2568,6 +2733,8 @@ impl MetaCommandValues {
                 values.arguments = encode_arguments(command.argument_list.as_ref());
                 values.command_container =
                     CommandContainerValues::from_container(command.command_container.as_ref());
+                values.default_significance =
+                    SignificanceValues::from_significance(command.default_significance.as_ref());
             }
             Some(xtce::MetaCommandSetTypeContent::MetaCommandRef(reference)) => {
                 values.name_or_ref.clone_from(reference);
@@ -2599,6 +2766,8 @@ impl MetaCommandValues {
                 apply_arguments(&mut command.argument_list, &self.arguments);
                 self.command_container
                     .apply_to(&mut command.command_container);
+                self.default_significance
+                    .apply_to(&mut command.default_significance);
             }
             xtce::MetaCommandSetTypeContent::MetaCommandRef(reference) => {
                 reference.clone_from(&self.name_or_ref);
@@ -3630,10 +3799,11 @@ fn value(input: &Entity<InputState>, cx: &App) -> String {
 mod tests {
     use super::{
         ArgumentSpec, AssignmentContext, CommandArguments, CommandContainerValues,
-        EditableContainerEntry, MetaCommandValues, ValueRule, apply_arguments,
-        apply_container_entries, apply_steps, command_entry_bit_positions_from_sizes,
-        command_packet_layout_from_sizes, decode_assignments, default_command_container,
-        default_meta_command, matching_argument_names, swap_rows,
+        ConsequenceLevelChoice, EditableContainerEntry, MetaCommandValues, SignificanceValues,
+        ValueRule, apply_arguments, apply_container_entries, apply_steps,
+        command_entry_bit_positions_from_sizes, command_packet_layout_from_sizes,
+        decode_assignments, default_command_container, default_meta_command,
+        matching_argument_names, swap_rows,
     };
     use std::collections::HashMap;
 
@@ -3936,6 +4106,7 @@ mod tests {
             arguments: String::new(),
             block_steps: String::new(),
             command_container: CommandContainerValues::from_container(None),
+            default_significance: SignificanceValues::from_significance(None),
         }
         .apply_to(&mut command);
 
@@ -3944,6 +4115,32 @@ mod tests {
         };
         assert_eq!(value.name, "Reset");
         assert!(value.alias_set.is_some());
+    }
+
+    #[test]
+    fn meta_command_significance_roundtrip() {
+        let sig = xtce::SignificanceType {
+            space_system_at_risk: Some("Payload".to_owned()),
+            reason_for_warning: Some("High power command".to_owned()),
+            consequence_level: xtce::ConsequenceLevelType::Critical,
+        };
+        let values = SignificanceValues::from_significance(Some(&sig));
+        assert_eq!(values.consequence_level, ConsequenceLevelChoice::Critical);
+        assert_eq!(values.reason_for_warning, "High power command");
+        assert_eq!(values.space_system_at_risk, "Payload");
+
+        let mut applied_sig = None;
+        values.apply_to(&mut applied_sig);
+        let applied = applied_sig.expect("significance present");
+        assert_eq!(applied.reason_for_warning.as_deref(), Some("High power command"));
+        assert_eq!(applied.space_system_at_risk.as_deref(), Some("Payload"));
+        assert!(matches!(applied.consequence_level, xtce::ConsequenceLevelType::Critical));
+
+        let none_values = SignificanceValues::from_significance(None);
+        assert_eq!(none_values.consequence_level, ConsequenceLevelChoice::None);
+        let mut cleared_sig = Some(sig);
+        none_values.apply_to(&mut cleared_sig);
+        assert!(cleared_sig.is_none());
     }
 
     #[test]
