@@ -31,6 +31,10 @@ pub(super) enum RpnOperationEntry {
         instance: i64,
         use_calibrated_value: bool,
     },
+    ArgumentInstance {
+        argument_ref: String,
+        use_calibrated_value: bool,
+    },
 }
 
 #[derive(Clone, Copy, Debug, Display, EnumString, VariantArray, PartialEq, Eq)]
@@ -42,6 +46,8 @@ enum EntryKind {
     Operator,
     #[strum(serialize = "Parameter reference")]
     ParameterInstanceRef,
+    #[strum(serialize = "Argument reference")]
+    ArgumentInstanceRef,
 }
 impl_select_item!(EntryKind);
 
@@ -57,6 +63,7 @@ impl_select_item!(BooleanChoice);
 pub(super) struct RpnOperationForm {
     rows: Vec<RpnOperationRow>,
     selected: usize,
+    allow_argument_instances: bool,
 }
 
 struct RpnOperationRow {
@@ -75,8 +82,22 @@ impl RpnOperationForm {
     ) -> Entity<Self> {
         let entries = normalized(entries);
         cx.new(move |cx| Self {
-            rows: row_values(entries, window, cx),
+            rows: row_values(entries, false, window, cx),
             selected: 0,
+            allow_argument_instances: false,
+        })
+    }
+
+    pub(super) fn new_argument(
+        entries: Vec<RpnOperationEntry>,
+        window: &mut Window,
+        cx: &mut impl AppContext,
+    ) -> Entity<Self> {
+        let entries = normalized(entries);
+        cx.new(move |cx| Self {
+            rows: row_values(entries, true, window, cx),
+            selected: 0,
+            allow_argument_instances: true,
         })
     }
 
@@ -86,7 +107,12 @@ impl RpnOperationForm {
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
-        self.rows = row_values(normalized(entries), window, cx);
+        self.rows = row_values(
+            normalized(entries),
+            self.allow_argument_instances,
+            window,
+            cx,
+        );
         self.selected = 0;
         cx.notify();
     }
@@ -96,7 +122,12 @@ impl RpnOperationForm {
     }
 
     fn add_entry(&mut self, entry: RpnOperationEntry, window: &mut Window, cx: &mut Context<Self>) {
-        self.rows.push(RpnOperationRow::new(entry, window, cx));
+        self.rows.push(RpnOperationRow::new(
+            entry,
+            self.allow_argument_instances,
+            window,
+            cx,
+        ));
         self.selected = self.rows.len() - 1;
         cx.notify();
     }
@@ -235,17 +266,27 @@ impl RpnOperationForm {
                             ),
                     )
             })
+            .when(kind == EntryKind::ArgumentInstanceRef, |form| {
+                form.child(field("Argument reference", "Required", &row.value, cx))
+                    .child(
+                        gpui_component::form::field()
+                            .label("Use calibrated value")
+                            .required(true)
+                            .child(Select::new(&row.calibrated).w_full()),
+                    )
+            })
     }
 }
 
 impl RpnOperationRow {
     fn new(
         entry: RpnOperationEntry,
+        allow_argument_instances: bool,
         window: &mut Window,
         cx: &mut Context<RpnOperationForm>,
     ) -> Self {
         let (kind, value, instance, calibrated) = entry_values(entry);
-        let kind = select(EntryKind::VARIANTS, kind, window, cx);
+        let kind = select(entry_kinds(allow_argument_instances), kind, window, cx);
         let value = input(&value, window, cx);
         let instance = input(&instance, window, cx);
         let calibrated = select(BooleanChoice::VARIANTS, calibrated, window, cx);
@@ -278,6 +319,11 @@ impl RpnOperationRow {
             EntryKind::ParameterInstanceRef => RpnOperationEntry::ParameterInstance {
                 parameter_ref: value,
                 instance: input_value(&self.instance, cx).trim().parse().unwrap_or(0),
+                use_calibrated_value: selected_value(&self.calibrated, BooleanChoice::True, cx)
+                    == BooleanChoice::True,
+            },
+            EntryKind::ArgumentInstanceRef => RpnOperationEntry::ArgumentInstance {
+                argument_ref: value,
                 use_calibrated_value: selected_value(&self.calibrated, BooleanChoice::True, cx)
                     == BooleanChoice::True,
             },
@@ -370,6 +416,25 @@ impl Render for RpnOperationForm {
                                 );
                             })),
                     )
+                    .when(self.allow_argument_instances, |toolbar| {
+                        toolbar.child(
+                            Button::new("add-rpn-argument")
+                                .xsmall()
+                                .ghost()
+                                .icon(IconName::Plus)
+                                .label("Argument")
+                                .on_click(cx.listener(|this, _, window, cx| {
+                                    this.add_entry(
+                                        RpnOperationEntry::ArgumentInstance {
+                                            argument_ref: String::new(),
+                                            use_calibrated_value: true,
+                                        },
+                                        window,
+                                        cx,
+                                    );
+                                })),
+                        )
+                    })
                     .child(
                         Button::new("add-rpn-operator")
                             .xsmall()
@@ -414,13 +479,27 @@ fn normalized(mut entries: Vec<RpnOperationEntry>) -> Vec<RpnOperationEntry> {
 
 fn row_values(
     entries: Vec<RpnOperationEntry>,
+    allow_argument_instances: bool,
     window: &mut Window,
     cx: &mut Context<RpnOperationForm>,
 ) -> Vec<RpnOperationRow> {
     entries
         .into_iter()
-        .map(|entry| RpnOperationRow::new(entry, window, cx))
+        .map(|entry| RpnOperationRow::new(entry, allow_argument_instances, window, cx))
         .collect()
+}
+
+fn entry_kinds(allow_argument_instances: bool) -> &'static [EntryKind] {
+    if allow_argument_instances {
+        EntryKind::VARIANTS
+    } else {
+        &[
+            EntryKind::ValueOperand,
+            EntryKind::ThisParameterOperand,
+            EntryKind::Operator,
+            EntryKind::ParameterInstanceRef,
+        ]
+    }
 }
 
 fn entry_values(entry: RpnOperationEntry) -> (EntryKind, String, String, BooleanChoice) {
@@ -457,6 +536,19 @@ fn entry_values(entry: RpnOperationEntry) -> (EntryKind, String, String, Boolean
                 BooleanChoice::False
             },
         ),
+        RpnOperationEntry::ArgumentInstance {
+            argument_ref,
+            use_calibrated_value,
+        } => (
+            EntryKind::ArgumentInstanceRef,
+            argument_ref,
+            "0".to_owned(),
+            if use_calibrated_value {
+                BooleanChoice::True
+            } else {
+                BooleanChoice::False
+            },
+        ),
     }
 }
 
@@ -476,6 +568,12 @@ fn token_label(entry: &RpnOperationEntry) -> String {
             instance,
             ..
         } => format!("{parameter_ref}[{instance}]"),
+        RpnOperationEntry::ArgumentInstance { argument_ref, .. }
+            if argument_ref.trim().is_empty() =>
+        {
+            "Argument".to_owned()
+        }
+        RpnOperationEntry::ArgumentInstance { argument_ref, .. } => argument_ref.clone(),
     }
 }
 
@@ -504,6 +602,13 @@ fn expression_preview(entries: &[RpnOperationEntry]) -> Result<String, String> {
                     "parameter".to_owned()
                 } else {
                     parameter_ref.clone()
+                });
+            }
+            RpnOperationEntry::ArgumentInstance { argument_ref, .. } => {
+                stack.push(if argument_ref.trim().is_empty() {
+                    "argument".to_owned()
+                } else {
+                    argument_ref.clone()
                 });
             }
             RpnOperationEntry::Operator(operator) => {

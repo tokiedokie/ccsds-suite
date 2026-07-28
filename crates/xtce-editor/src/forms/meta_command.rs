@@ -27,10 +27,14 @@ use lsp_types::{
 use strum::{Display, EnumString, VariantArray};
 
 use super::{
-    alias_set::AliasSetForm, ancillary_data_set::AncillaryDataSetForm,
-    container_binary_encoding::ContainerBinaryEncodingForm, container_rate::ContainerRateForm,
-    context_significance::ContextSignificanceListForm, dynamic_value::DynamicValueForm, field,
-    impl_select_item, optional_value,
+    alias_set::AliasSetForm,
+    ancillary_data_set::AncillaryDataSetForm,
+    container_binary_encoding::ContainerBinaryEncodingForm,
+    container_rate::ContainerRateForm,
+    context_significance::ContextSignificanceListForm,
+    dynamic_value::DynamicValueForm,
+    field, impl_select_item, optional_value,
+    rpn_operation::{RpnOperationEntry, RpnOperationForm},
 };
 use crate::XtceEditor;
 
@@ -6166,15 +6170,27 @@ pub(super) struct ParameterToSetListForm {
     rows: Vec<Entity<ParameterToSetRowForm>>,
 }
 
+#[derive(Clone, Copy, Debug, Display, EnumString, VariantArray, PartialEq, Eq)]
+enum ParameterToSetContentChoice {
+    #[strum(serialize = "New value")]
+    NewValue,
+    Derivation,
+}
+impl_select_item!(ParameterToSetContentChoice);
+
 struct ParameterToSetRowForm {
     parameter: Entity<InputState>,
     value: Entity<InputState>,
+    content_kind: Entity<SelectState<Vec<ParameterToSetContentChoice>>>,
+    derivation: Entity<RpnOperationForm>,
     trigger: Entity<SelectState<Vec<VerifierStageChoice>>>,
 }
 
 struct ParameterToSetModel {
     parameter: String,
     value: String,
+    content_kind: ParameterToSetContentChoice,
+    derivation: Vec<RpnOperationEntry>,
     trigger: VerifierStageChoice,
 }
 
@@ -6212,10 +6228,24 @@ impl ParameterToSetListForm {
                 }
                 let val = value(&row_read.value, cx);
                 let trigger = selected_value(&row_read.trigger, VerifierStageChoice::Complete, cx);
+                let content = match selected_value(
+                    &row_read.content_kind,
+                    ParameterToSetContentChoice::NewValue,
+                    cx,
+                ) {
+                    ParameterToSetContentChoice::NewValue => {
+                        xtce::ParameterToSetTypeContent::NewValue(val)
+                    }
+                    ParameterToSetContentChoice::Derivation => {
+                        xtce::ParameterToSetTypeContent::Derivation(argument_math_operation(
+                            row_read.derivation.read(cx).entries(cx),
+                        ))
+                    }
+                };
                 Some(xtce::ParameterToSetType {
                     parameter_ref: param,
                     set_on_verification: stage_choice_to_verifier(trigger),
-                    content: xtce::ParameterToSetTypeContent::NewValue(val),
+                    content,
                 })
             })
             .collect::<Vec<_>>();
@@ -6233,13 +6263,23 @@ fn parameter_to_set_models(
         l.parameter_to_set
             .iter()
             .map(|item| {
-                let new_value = match &item.content {
-                    xtce::ParameterToSetTypeContent::NewValue(val) => val.clone(),
-                    _ => String::new(),
+                let (content_kind, new_value, derivation) = match &item.content {
+                    xtce::ParameterToSetTypeContent::NewValue(val) => (
+                        ParameterToSetContentChoice::NewValue,
+                        val.clone(),
+                        Vec::new(),
+                    ),
+                    xtce::ParameterToSetTypeContent::Derivation(operation) => (
+                        ParameterToSetContentChoice::Derivation,
+                        String::new(),
+                        rpn_entries_from_argument_math(operation),
+                    ),
                 };
                 ParameterToSetModel {
                     parameter: item.parameter_ref.clone(),
                     value: new_value,
+                    content_kind,
+                    derivation,
                     trigger: stage_choice_from_verifier(&item.set_on_verification),
                 }
             })
@@ -6258,11 +6298,20 @@ fn parameter_to_set_entities(
         .map(|model| {
             let parameter = input(&model.parameter, false, window, cx);
             let value_input = input(&model.value, false, window, cx);
+            let content_kind = select(
+                ParameterToSetContentChoice::VARIANTS,
+                model.content_kind,
+                window,
+                cx,
+            );
+            let derivation = RpnOperationForm::new_argument(model.derivation, window, cx);
             let trigger = select(VerifierStageChoice::VARIANTS, model.trigger, window, cx);
 
             cx.new(|_| ParameterToSetRowForm {
                 parameter,
                 value: value_input,
+                content_kind,
+                derivation,
                 trigger,
             })
         })
@@ -6295,6 +6344,14 @@ impl Render for ParameterToSetListForm {
                             .on_click(cx.listener(|this, _, window, cx| {
                                 let parameter = input("", false, window, cx);
                                 let value_input = input("", false, window, cx);
+                                let content_kind = select(
+                                    ParameterToSetContentChoice::VARIANTS,
+                                    ParameterToSetContentChoice::NewValue,
+                                    window,
+                                    cx,
+                                );
+                                let derivation =
+                                    RpnOperationForm::new_argument(Vec::new(), window, cx);
                                 let trigger = select(
                                     VerifierStageChoice::VARIANTS,
                                     VerifierStageChoice::Complete,
@@ -6304,6 +6361,8 @@ impl Render for ParameterToSetListForm {
                                 this.rows.push(cx.new(|_| ParameterToSetRowForm {
                                     parameter,
                                     value: value_input,
+                                    content_kind,
+                                    derivation,
                                     trigger,
                                 }));
                                 cx.notify();
@@ -6331,23 +6390,152 @@ impl Render for ParameterToSetListForm {
                             .child(field("New value", "", &row_read.value, cx)),
                     )
                     .child(div().w(px(140.)).child(select_field(
+                        "Value source",
+                        "",
+                        &row_read.content_kind,
+                        cx,
+                    )))
+                    .child(div().w(px(140.)).child(select_field(
                         "Verification trigger",
                         "",
                         &row_read.trigger,
                         cx,
                     )))
                     .child(
-                        div().mb(px(6.)).child(
-                            Button::new(format!("remove-parameter-to-set-{index}"))
-                                .small()
-                                .icon(IconName::Minus)
-                                .on_click(cx.listener(move |this, _, _, cx| {
-                                    this.rows.remove(index);
-                                    cx.notify();
-                                })),
-                        ),
+                        h_flex()
+                            .mb(px(6.))
+                            .gap_1()
+                            .child(
+                                Button::new(format!("parameter-to-set-options-{index}"))
+                                    .small()
+                                    .ghost()
+                                    .icon(IconName::Ellipsis)
+                                    .tooltip("Value source options")
+                                    .on_click({
+                                        let row = row.clone();
+                                        move |_, window, cx| {
+                                            open_parameter_to_set_options(row.clone(), window, cx);
+                                        }
+                                    }),
+                            )
+                            .child(
+                                Button::new(format!("remove-parameter-to-set-{index}"))
+                                    .small()
+                                    .icon(IconName::Minus)
+                                    .on_click(cx.listener(move |this, _, _, cx| {
+                                        this.rows.remove(index);
+                                        cx.notify();
+                                    })),
+                            ),
                     )
             }))
+    }
+}
+
+fn open_parameter_to_set_options(
+    editor: Entity<ParameterToSetRowForm>,
+    window: &mut Window,
+    cx: &mut App,
+) {
+    window.open_dialog(cx, move |dialog, _, _| {
+        let editor = editor.clone();
+        dialog
+            .title("Parameter value source")
+            .w(px(680.))
+            .content(move |content, _, cx| {
+                let row = editor.read(cx);
+                let kind =
+                    selected_value(&row.content_kind, ParameterToSetContentChoice::NewValue, cx);
+                let derivation = row.derivation.clone();
+                content.child(
+                    v_flex()
+                        .p_4()
+                        .gap_3()
+                        .when(kind == ParameterToSetContentChoice::Derivation, |form| {
+                            form.child(derivation)
+                        })
+                        .when(kind == ParameterToSetContentChoice::NewValue, |form| {
+                            form.child(
+                                div()
+                                    .text_sm()
+                                    .text_color(cx.theme().muted_foreground)
+                                    .child("The new value is edited directly in the list."),
+                            )
+                        }),
+                )
+            })
+    });
+}
+
+fn rpn_entries_from_argument_math(
+    operation: &xtce::ArgumentMathOperationType,
+) -> Vec<RpnOperationEntry> {
+    operation
+        .content
+        .iter()
+        .map(|entry| match entry {
+            xtce::ArgumentMathOperationTypeContent::ValueOperand(value) => {
+                RpnOperationEntry::Value(value.clone())
+            }
+            xtce::ArgumentMathOperationTypeContent::ThisParameterOperand(value) => {
+                RpnOperationEntry::ThisParameter(value.clone())
+            }
+            xtce::ArgumentMathOperationTypeContent::Operator(value) => {
+                RpnOperationEntry::Operator(value.clone())
+            }
+            xtce::ArgumentMathOperationTypeContent::ParameterInstanceRefOperand(value) => {
+                RpnOperationEntry::ParameterInstance {
+                    parameter_ref: value.parameter_ref.clone(),
+                    instance: value.instance,
+                    use_calibrated_value: value.use_calibrated_value,
+                }
+            }
+            xtce::ArgumentMathOperationTypeContent::ArgumentInstanceRefOperand(value) => {
+                RpnOperationEntry::ArgumentInstance {
+                    argument_ref: value.argument_ref.clone(),
+                    use_calibrated_value: value.use_calibrated_value,
+                }
+            }
+        })
+        .collect()
+}
+
+fn argument_math_operation(entries: Vec<RpnOperationEntry>) -> xtce::ArgumentMathOperationType {
+    xtce::ArgumentMathOperationType {
+        content: entries
+            .into_iter()
+            .map(|entry| match entry {
+                RpnOperationEntry::Value(value) => {
+                    xtce::ArgumentMathOperationTypeContent::ValueOperand(value)
+                }
+                RpnOperationEntry::ThisParameter(value) => {
+                    xtce::ArgumentMathOperationTypeContent::ThisParameterOperand(value)
+                }
+                RpnOperationEntry::Operator(value) => {
+                    xtce::ArgumentMathOperationTypeContent::Operator(value)
+                }
+                RpnOperationEntry::ParameterInstance {
+                    parameter_ref,
+                    instance,
+                    use_calibrated_value,
+                } => xtce::ArgumentMathOperationTypeContent::ParameterInstanceRefOperand(
+                    xtce::ParameterInstanceRefType {
+                        parameter_ref,
+                        instance,
+                        use_calibrated_value,
+                    },
+                ),
+                RpnOperationEntry::ArgumentInstance {
+                    argument_ref,
+                    use_calibrated_value,
+                } => xtce::ArgumentMathOperationTypeContent::ArgumentInstanceRefOperand(
+                    xtce::ArgumentInstanceRefType {
+                        argument_ref,
+                        use_calibrated_value,
+                    },
+                ),
+            })
+            .collect(),
     }
 }
 
@@ -8109,26 +8297,73 @@ mod tests {
 
     #[test]
     fn meta_command_parameter_to_set_roundtrip() {
-        use super::{VerifierStageChoice, parameter_to_set_models, stage_choice_to_verifier};
+        use super::{
+            ParameterToSetContentChoice, VerifierStageChoice, argument_math_operation,
+            parameter_to_set_models, rpn_entries_from_argument_math, stage_choice_to_verifier,
+        };
+        use crate::forms::rpn_operation::RpnOperationEntry;
 
         let list = xtce::ParameterToSetListType {
-            parameter_to_set: vec![xtce::ParameterToSetType {
-                parameter_ref: "MODE_PARAM".to_owned(),
-                set_on_verification: xtce::VerifierEnumerationType::Complete,
-                content: xtce::ParameterToSetTypeContent::NewValue("ACTIVE".to_owned()),
-            }],
+            parameter_to_set: vec![
+                xtce::ParameterToSetType {
+                    parameter_ref: "MODE_PARAM".to_owned(),
+                    set_on_verification: xtce::VerifierEnumerationType::Complete,
+                    content: xtce::ParameterToSetTypeContent::NewValue("ACTIVE".to_owned()),
+                },
+                xtce::ParameterToSetType {
+                    parameter_ref: "TARGET_PARAM".to_owned(),
+                    set_on_verification: xtce::VerifierEnumerationType::Executing,
+                    content: xtce::ParameterToSetTypeContent::Derivation(
+                        xtce::ArgumentMathOperationType {
+                            content: vec![
+                                xtce::ArgumentMathOperationTypeContent::ArgumentInstanceRefOperand(
+                                    xtce::ArgumentInstanceRefType {
+                                        argument_ref: "target".to_owned(),
+                                        use_calibrated_value: true,
+                                    },
+                                ),
+                                xtce::ArgumentMathOperationTypeContent::ValueOperand(
+                                    "2".to_owned(),
+                                ),
+                                xtce::ArgumentMathOperationTypeContent::Operator("*".to_owned()),
+                            ],
+                        },
+                    ),
+                },
+            ],
         };
 
         let models = parameter_to_set_models(Some(&list));
-        assert_eq!(models.len(), 1);
+        assert_eq!(models.len(), 2);
         assert_eq!(models[0].parameter, "MODE_PARAM");
         assert_eq!(models[0].value, "ACTIVE");
         assert_eq!(models[0].trigger, VerifierStageChoice::Complete);
+        assert_eq!(
+            models[1].content_kind,
+            ParameterToSetContentChoice::Derivation
+        );
+        assert_eq!(
+            models[1].derivation,
+            vec![
+                RpnOperationEntry::ArgumentInstance {
+                    argument_ref: "target".to_owned(),
+                    use_calibrated_value: true,
+                },
+                RpnOperationEntry::Value("2".to_owned()),
+                RpnOperationEntry::Operator("*".to_owned()),
+            ]
+        );
 
         assert!(matches!(
             stage_choice_to_verifier(models[0].trigger),
             xtce::VerifierEnumerationType::Complete
         ));
+
+        let rebuilt = argument_math_operation(models[1].derivation.clone());
+        assert_eq!(
+            rpn_entries_from_argument_math(&rebuilt),
+            models[1].derivation
+        );
     }
 
     #[test]

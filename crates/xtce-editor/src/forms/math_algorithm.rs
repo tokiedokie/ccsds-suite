@@ -424,6 +424,9 @@ fn triggered_math_content(entry: RpnOperationEntry) -> xtce::TriggeredMathOperat
                 use_calibrated_value,
             },
         ),
+        RpnOperationEntry::ArgumentInstance { .. } => {
+            unreachable!("argument operands are not enabled for math algorithms")
+        }
     }
 }
 

@@ -732,6 +732,9 @@ fn math_calibrator_content(entry: RpnOperationEntry) -> xtce::MathOperationCalib
                 use_calibrated_value,
             },
         ),
+        RpnOperationEntry::ArgumentInstance { .. } => {
+            unreachable!("argument operands are not enabled for calibrators")
+        }
     }
 }
 
@@ -745,6 +748,9 @@ fn rpn_entry_preview(entry: &RpnOperationEntry) -> String {
             instance,
             ..
         } => format!("{parameter_ref}[{instance}]"),
+        RpnOperationEntry::ArgumentInstance { .. } => {
+            unreachable!("argument operands are not enabled for calibrators")
+        }
     }
 }
 
