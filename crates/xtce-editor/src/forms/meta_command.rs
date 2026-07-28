@@ -60,16 +60,30 @@ enum CommandContainerEntryKind {
     ContainerSegmentRef,
     #[strum(serialize = "StreamSegmentEntry")]
     StreamSegment,
+    #[strum(serialize = "IndirectParameterRefEntry")]
+    IndirectParameterRef,
     #[strum(serialize = "FixedValueEntry")]
     FixedValue,
 }
 impl_select_item!(CommandContainerEntryKind);
+
+#[derive(Clone, Copy, Debug, Display, EnumString, VariantArray, PartialEq, Eq)]
+enum CommandParameterValueChoice {
+    #[strum(serialize = "Calibrated value")]
+    Calibrated,
+    #[strum(serialize = "Raw value")]
+    Raw,
+}
+impl_select_item!(CommandParameterValueChoice);
 
 fn command_entry_placeholder(kind: CommandContainerEntryKind) -> &'static str {
     match kind {
         CommandContainerEntryKind::ArgumentRef => "Select an argument...",
         CommandContainerEntryKind::ParameterRef
         | CommandContainerEntryKind::ParameterSegmentRef => "Select a parameter...",
+        CommandContainerEntryKind::IndirectParameterRef => {
+            "Select the parameter that names the target..."
+        }
         CommandContainerEntryKind::ContainerRef => "Select a container...",
         CommandContainerEntryKind::ContainerSegmentRef => "Select a container...",
         CommandContainerEntryKind::StreamSegment => "Select a stream...",
@@ -1125,6 +1139,9 @@ struct CommandContainerEntryRow {
     secondary_input: Entity<InputState>,
     tertiary_input: Entity<InputState>,
     order_input: Entity<InputState>,
+    instance_input: Entity<InputState>,
+    calibrated_select: Entity<SelectState<Vec<CommandParameterValueChoice>>>,
+    alias_namespace_input: Entity<InputState>,
     description_input: Entity<InputState>,
     _subscriptions: Vec<Subscription>,
 }
@@ -1164,6 +1181,13 @@ fn container_entry_data(
     let secondary = value(&row.secondary_input, cx);
     let tertiary = value(&row.tertiary_input, cx);
     let order = value(&row.order_input, cx);
+    let instance = value(&row.instance_input, cx);
+    let use_calibrated_value = selected_value(
+        &row.calibrated_select,
+        CommandParameterValueChoice::Calibrated,
+        cx,
+    ) == CommandParameterValueChoice::Calibrated;
+    let alias_namespace = value(&row.alias_namespace_input, cx);
     let description = value(&row.description_input, cx);
     match kind {
         CommandContainerEntryKind::ArgumentRef => EditableContainerEntry::ArgumentRef {
@@ -1206,6 +1230,19 @@ fn container_entry_data(
             offset: secondary.trim().parse().ok(),
             description: optional_value(description),
         },
+        CommandContainerEntryKind::IndirectParameterRef => {
+            EditableContainerEntry::IndirectParameterRef {
+                reference: primary,
+                instance: instance
+                    .trim()
+                    .parse()
+                    .unwrap_or_else(|_| xtce::ParameterInstanceRefType::default_instance()),
+                use_calibrated_value,
+                alias_namespace: optional_value(alias_namespace),
+                offset: secondary.trim().parse().ok(),
+                description: optional_value(description),
+            }
+        }
         CommandContainerEntryKind::FixedValue => EditableContainerEntry::FixedValue {
             name: optional_value(primary),
             binary_value: secondary,
@@ -1979,10 +2016,15 @@ impl Render for CommandContainerEntryRow {
                 &self.secondary_input,
                 &self.tertiary_input,
                 &self.order_input,
+                &self.instance_input,
+                &self.alias_namespace_input,
                 &self.description_input,
             ] {
                 input.update(cx, |input, cx| input.set_value("", window, cx));
             }
+            self.calibrated_select.update(cx, |select, cx| {
+                select.set_selected_value(&CommandParameterValueChoice::Calibrated, window, cx);
+            });
         }
         h_flex()
             .flex_1()
@@ -1990,7 +2032,7 @@ impl Render for CommandContainerEntryRow {
             .gap_2()
             .child(
                 div()
-                    .w(px(130.))
+                    .w(px(190.))
                     .flex_none()
                     .child(Select::new(&self.kind_select).w_full()),
             )
@@ -2027,8 +2069,12 @@ fn open_command_entry_details(
                 let secondary = row.secondary_input.clone();
                 let tertiary = row.tertiary_input.clone();
                 let order = row.order_input.clone();
+                let instance = row.instance_input.clone();
+                let calibrated = row.calibrated_select.clone();
+                let alias_namespace = row.alias_namespace_input.clone();
                 let description = row.description_input.clone();
                 let fixed = kind == CommandContainerEntryKind::FixedValue;
+                let indirect = kind == CommandContainerEntryKind::IndirectParameterRef;
                 let segment = matches!(
                     kind,
                     CommandContainerEntryKind::ParameterSegmentRef
@@ -2048,6 +2094,27 @@ fn open_command_entry_details(
                                 .when(segment, |form| {
                                     form.child(field("Size in bits", "Required", &tertiary, cx))
                                         .child(field("Order", "Optional", &order, cx))
+                                })
+                                .when(indirect, |form| {
+                                    form.child(field(
+                                        "Instance",
+                                        "Optional; defaults to 0",
+                                        &instance,
+                                        cx,
+                                    ))
+                                    .child(
+                                        v_flex()
+                                            .w_full()
+                                            .gap_1()
+                                            .child(div().text_sm().child("Parameter value"))
+                                            .child(Select::new(&calibrated).w_full()),
+                                    )
+                                    .child(field(
+                                        "Alias namespace",
+                                        "Optional",
+                                        &alias_namespace,
+                                        cx,
+                                    ))
                                 })
                                 .child(field("Description", "Optional", &description, cx))
                         }),
@@ -2853,6 +2920,19 @@ fn new_command_container_entry_row(
     window: &mut Window,
     cx: &mut impl AppContext,
 ) -> Entity<CommandContainerEntryRow> {
+    let (instance, use_calibrated_value, alias_namespace) = match &entry {
+        EditableContainerEntry::IndirectParameterRef {
+            instance,
+            use_calibrated_value,
+            alias_namespace,
+            ..
+        } => (
+            instance.to_string(),
+            *use_calibrated_value,
+            alias_namespace.clone().unwrap_or_default(),
+        ),
+        _ => (String::new(), true, String::new()),
+    };
     let (kind, primary, secondary, tertiary, order, description) = match entry {
         EditableContainerEntry::ArgumentRef {
             reference,
@@ -2932,6 +3012,19 @@ fn new_command_container_entry_row(
             order.map(|value| value.to_string()).unwrap_or_default(),
             description.unwrap_or_default(),
         ),
+        EditableContainerEntry::IndirectParameterRef {
+            reference,
+            offset,
+            description,
+            ..
+        } => (
+            CommandContainerEntryKind::IndirectParameterRef,
+            reference,
+            offset.map(|value| value.to_string()).unwrap_or_default(),
+            String::new(),
+            String::new(),
+            description.unwrap_or_default(),
+        ),
         EditableContainerEntry::FixedValue {
             name,
             binary_value,
@@ -2962,6 +3055,14 @@ fn new_command_container_entry_row(
             &kind_select,
             |_, _, _: &SelectEvent<Vec<CommandContainerEntryKind>>, cx| cx.notify(),
         );
+        let calibrated_select = cx.new(|cx| {
+            SelectState::new(
+                CommandParameterValueChoice::VARIANTS.to_vec(),
+                Some(IndexPath::default().row(usize::from(!use_calibrated_value))),
+                window,
+                cx,
+            )
+        });
         let primary_input = cx.new(|cx| {
             let mut input = InputState::new(window, cx)
                 .default_value(primary.clone())
@@ -2980,6 +3081,9 @@ fn new_command_container_entry_row(
             secondary_input: input(&secondary, false, window, cx),
             tertiary_input: input(&tertiary, false, window, cx),
             order_input: input(&order, false, window, cx),
+            instance_input: input(&instance, false, window, cx),
+            calibrated_select,
+            alias_namespace_input: input(&alias_namespace, false, window, cx),
             description_input: input(&description, false, window, cx),
             _subscriptions: vec![kind_subscription],
         }
@@ -3004,6 +3108,27 @@ fn command_container_entry_rows_value(rows: &Entity<EntryListView>, cx: &App) ->
 }
 
 fn encode_editable_entry(entry: &EditableContainerEntry) -> Option<String> {
+    if let EditableContainerEntry::IndirectParameterRef {
+        reference,
+        instance,
+        use_calibrated_value,
+        alias_namespace,
+        offset,
+        description,
+    } = entry
+    {
+        return (!reference.trim().is_empty()).then(|| {
+            format!(
+                "IndirectParameterRefEntry | {} | {} | {} | {} | {} | {}",
+                reference.trim(),
+                instance,
+                use_calibrated_value,
+                alias_namespace.as_deref().unwrap_or_default(),
+                offset.map(|value| value.to_string()).unwrap_or_default(),
+                description.as_deref().unwrap_or_default()
+            )
+        });
+    }
     if let EditableContainerEntry::StreamSegment {
         reference,
         size_in_bits,
@@ -3110,6 +3235,7 @@ fn encode_editable_entry(entry: &EditableContainerEntry) -> Option<String> {
         EditableContainerEntry::ParameterSegmentRef { .. } => unreachable!(),
         EditableContainerEntry::ContainerSegmentRef { .. } => unreachable!(),
         EditableContainerEntry::StreamSegment { .. } => unreachable!(),
+        EditableContainerEntry::IndirectParameterRef { .. } => unreachable!(),
     };
     if primary.trim().is_empty() && kind != CommandContainerEntryKind::FixedValue {
         return None;
@@ -3443,6 +3569,14 @@ enum EditableContainerEntry {
         offset: Option<i64>,
         description: Option<String>,
     },
+    IndirectParameterRef {
+        reference: String,
+        instance: i64,
+        use_calibrated_value: bool,
+        alias_namespace: Option<String>,
+        offset: Option<i64>,
+        description: Option<String>,
+    },
     FixedValue {
         name: Option<String>,
         binary_value: String,
@@ -3535,7 +3669,8 @@ fn command_entry_bit_positions_from_sizes(
                     u64::try_from(*size_in_bits).ok().filter(|size| *size > 0),
                 ),
                 EditableContainerEntry::ParameterRef { .. }
-                | EditableContainerEntry::ContainerRef { .. } => (None, None),
+                | EditableContainerEntry::ContainerRef { .. }
+                | EditableContainerEntry::IndirectParameterRef { .. } => (None, None),
                 EditableContainerEntry::ParameterSegmentRef {
                     offset,
                     size_in_bits,
@@ -3671,6 +3806,13 @@ fn append_command_packet_entries(
                 layout
                     .unresolved
                     .push(format!("{reference}: parameter size is unknown"));
+                *cursor = None;
+                continue;
+            }
+            EditableContainerEntry::IndirectParameterRef { reference, .. } => {
+                layout
+                    .unresolved
+                    .push(format!("{reference}: indirect parameter size is unknown"));
                 *cursor = None;
                 continue;
             }
@@ -3974,6 +4116,17 @@ fn encode_container_entries(list: &xtce::CommandContainerEntryListType) -> Strin
                 fixed_entry_offset(entry.location_in_container_in_bits.as_ref()),
                 entry.short_description.as_deref().unwrap_or_default()
             )),
+            xtce::CommandContainerEntryListTypeContent::IndirectParameterRefEntry(entry) => {
+                Some(format!(
+                    "IndirectParameterRefEntry | {} | {} | {} | {} | {} | {}",
+                    entry.parameter_instance.parameter_ref,
+                    entry.parameter_instance.instance,
+                    entry.parameter_instance.use_calibrated_value,
+                    entry.alias_name_space.as_deref().unwrap_or_default(),
+                    fixed_entry_offset(entry.location_in_container_in_bits.as_ref()),
+                    entry.short_description.as_deref().unwrap_or_default()
+                ))
+            }
             xtce::CommandContainerEntryListTypeContent::FixedValueEntry(entry) => Some(format!(
                 "FixedValueEntry | {} | {} | {}",
                 entry.name.as_deref().unwrap_or_default(),
@@ -4037,6 +4190,22 @@ fn decode_container_entries(value: &str) -> Vec<EditableContainerEntry> {
                     offset: numeric_field(&fields, 4),
                     description: optional_field(&fields, 5),
                 }),
+                "IndirectParameterRefEntry" => Some(EditableContainerEntry::IndirectParameterRef {
+                    reference: nonempty_field(&fields, 1)?,
+                    instance: fields
+                        .get(2)
+                        .and_then(|value| value.parse().ok())
+                        .unwrap_or_else(xtce::ParameterInstanceRefType::default_instance),
+                    use_calibrated_value: fields
+                        .get(3)
+                        .and_then(|value| value.parse().ok())
+                        .unwrap_or_else(
+                            xtce::ParameterInstanceRefType::default_use_calibrated_value,
+                        ),
+                    alias_namespace: optional_field(&fields, 4),
+                    offset: numeric_field(&fields, 5),
+                    description: optional_field(&fields, 6),
+                }),
                 "FixedValueEntry" => Some(EditableContainerEntry::FixedValue {
                     name: optional_field(&fields, 1),
                     binary_value: nonempty_field(&fields, 2)?,
@@ -4070,6 +4239,7 @@ fn apply_container_entries(list: &mut xtce::CommandContainerEntryListType, value
     let mut container_entries = VecDeque::new();
     let mut container_segment_entries = VecDeque::new();
     let mut stream_segment_entries = VecDeque::new();
+    let mut indirect_parameter_entries = VecDeque::new();
     let mut fixed_entries = VecDeque::new();
     let mut unsupported_entries = Vec::new();
 
@@ -4092,6 +4262,9 @@ fn apply_container_entries(list: &mut xtce::CommandContainerEntryListType, value
             }
             xtce::CommandContainerEntryListTypeContent::StreamSegmentEntry(entry) => {
                 stream_segment_entries.push_back(entry);
+            }
+            xtce::CommandContainerEntryListTypeContent::IndirectParameterRefEntry(entry) => {
+                indirect_parameter_entries.push_back(entry);
             }
             xtce::CommandContainerEntryListTypeContent::FixedValueEntry(entry) => {
                 fixed_entries.push_back(entry);
@@ -4241,6 +4414,38 @@ fn apply_container_entries(list: &mut xtce::CommandContainerEntryListType, value
                     entry.short_description = description;
                     apply_fixed_entry_offset(&mut entry.location_in_container_in_bits, offset);
                     xtce::CommandContainerEntryListTypeContent::StreamSegmentEntry(entry)
+                }
+                EditableContainerEntry::IndirectParameterRef {
+                    reference,
+                    instance,
+                    use_calibrated_value,
+                    alias_namespace,
+                    offset,
+                    description,
+                } => {
+                    let mut entry = indirect_parameter_entries.pop_front().unwrap_or(
+                        xtce::ArgumentIndirectParameterRefEntryType {
+                            short_description: None,
+                            alias_name_space: None,
+                            location_in_container_in_bits: None,
+                            repeat_entry: None,
+                            include_condition: None,
+                            ancillary_data_set: None,
+                            parameter_instance: xtce::ParameterInstanceRefType {
+                                parameter_ref: String::new(),
+                                instance: xtce::ParameterInstanceRefType::default_instance(),
+                                use_calibrated_value:
+                                    xtce::ParameterInstanceRefType::default_use_calibrated_value(),
+                            },
+                        },
+                    );
+                    entry.parameter_instance.parameter_ref = reference;
+                    entry.parameter_instance.instance = instance;
+                    entry.parameter_instance.use_calibrated_value = use_calibrated_value;
+                    entry.alias_name_space = alias_namespace;
+                    entry.short_description = description;
+                    apply_fixed_entry_offset(&mut entry.location_in_container_in_bits, offset);
+                    xtce::CommandContainerEntryListTypeContent::IndirectParameterRefEntry(entry)
                 }
                 EditableContainerEntry::FixedValue {
                     name,
@@ -6706,6 +6911,41 @@ mod tests {
             &container.entry_list.content[0],
             xtce::CommandContainerEntryListTypeContent::StreamSegmentEntry(entry)
                 if entry.stream_ref == "CommandStream"
+        ));
+    }
+
+    #[test]
+    fn indirect_parameter_entry_round_trips_through_the_form() {
+        let mut container = default_command_container();
+        container.entry_list.content.push(
+            xtce::CommandContainerEntryListTypeContent::IndirectParameterRefEntry(
+                xtce::ArgumentIndirectParameterRefEntryType {
+                    short_description: Some("resolve target".to_owned()),
+                    alias_name_space: Some("OPS".to_owned()),
+                    location_in_container_in_bits: None,
+                    repeat_entry: None,
+                    include_condition: None,
+                    ancillary_data_set: None,
+                    parameter_instance: xtce::ParameterInstanceRefType {
+                        parameter_ref: "target_name".to_owned(),
+                        instance: -1,
+                        use_calibrated_value: false,
+                    },
+                },
+            ),
+        );
+
+        let encoded = super::encode_container_entries(&container.entry_list);
+        apply_container_entries(&mut container.entry_list, &encoded);
+
+        assert!(matches!(
+            &container.entry_list.content[0],
+            xtce::CommandContainerEntryListTypeContent::IndirectParameterRefEntry(entry)
+                if entry.parameter_instance.parameter_ref == "target_name"
+                    && entry.parameter_instance.instance == -1
+                    && !entry.parameter_instance.use_calibrated_value
+                    && entry.alias_name_space.as_deref() == Some("OPS")
+                    && entry.short_description.as_deref() == Some("resolve target")
         ));
     }
 
