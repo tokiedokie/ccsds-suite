@@ -303,7 +303,7 @@ impl MetaCommandForm {
                 .with_uniform_item_height(px(50.)),
             });
             let argument_list = cx.new(|_| ArgumentListView {
-                rows: command_argument_models(&values.arguments),
+                rows: values.arguments.clone(),
                 editors: HashMap::new(),
                 context: assignment_context.clone(),
                 optional_fields_open: false,
@@ -676,7 +676,7 @@ impl MetaCommandForm {
             cx.notify();
         });
         self.argument_list.update(cx, |list, cx| {
-            list.rows = command_argument_models(&values.arguments);
+            list.rows = values.arguments.clone();
             list.editors.clear();
             list.context = self.assignment_context.clone();
             list.optional_fields_open = false;
@@ -1416,6 +1416,7 @@ struct CommandArgumentData {
     type_ref: String,
     initial_value: String,
     short_description: String,
+    long_description: String,
 }
 
 struct CommandArgumentRow {
@@ -1423,6 +1424,7 @@ struct CommandArgumentRow {
     type_ref_input: Entity<InputState>,
     initial_value_input: Entity<InputState>,
     short_description_input: Entity<InputState>,
+    long_description_input: Entity<InputState>,
     optional_fields_open: bool,
 }
 
@@ -1477,6 +1479,7 @@ fn command_argument_data(row: &Entity<CommandArgumentRow>, cx: &App) -> CommandA
         type_ref: value(&row.type_ref_input, cx),
         initial_value: value(&row.initial_value_input, cx),
         short_description: value(&row.short_description_input, cx),
+        long_description: value(&row.long_description_input, cx),
     }
 }
 
@@ -1781,23 +1784,40 @@ impl ArgumentListView {
             .gap_2()
             .border_b_1()
             .border_color(cx.theme().border)
-            .child(row)
+            .child(row.clone())
             .child(
-                div().w(px(52.)).flex_none().child(
-                    Button::new(format!("remove-command-argument-{index}"))
-                        .ghost()
-                        .small()
-                        .icon(IconName::Minus)
-                        .tooltip("Remove argument")
-                        .on_click(cx.listener(move |this, _, _, cx| {
-                            if index < this.rows.len() {
-                                this.flush_editors(cx);
-                                this.rows.remove(index);
-                                this.editors.clear();
-                                cx.notify();
-                            }
-                        })),
-                ),
+                h_flex()
+                    .w(px(88.))
+                    .flex_none()
+                    .gap_1()
+                    .child(
+                        Button::new(format!("command-argument-options-{index}"))
+                            .ghost()
+                            .small()
+                            .icon(IconName::Ellipsis)
+                            .tooltip("Argument options")
+                            .on_click({
+                                let row = row.clone();
+                                move |_, window, cx| {
+                                    open_command_argument_options(row.clone(), window, cx);
+                                }
+                            }),
+                    )
+                    .child(
+                        Button::new(format!("remove-command-argument-{index}"))
+                            .ghost()
+                            .small()
+                            .icon(IconName::Minus)
+                            .tooltip("Remove argument")
+                            .on_click(cx.listener(move |this, _, _, cx| {
+                                if index < this.rows.len() {
+                                    this.flush_editors(cx);
+                                    this.rows.remove(index);
+                                    this.editors.clear();
+                                    cx.notify();
+                                }
+                            })),
+                    ),
             )
             .into_any_element()
     }
@@ -1908,7 +1928,7 @@ impl Render for ArgumentListView {
                                                         div().flex_1().child("Short description"),
                                                     )
                                             })
-                                            .child(div().w(px(52.)).flex_none().child("Actions")),
+                                            .child(div().w(px(88.)).flex_none().child("Actions")),
                                     )
                                     .when(row_count > 0, |table| table.children(rows)),
                             ),
@@ -1950,6 +1970,28 @@ impl Render for CommandArgumentRow {
                 )
             })
     }
+}
+
+fn open_command_argument_options(
+    editor: Entity<CommandArgumentRow>,
+    window: &mut Window,
+    cx: &mut App,
+) {
+    window.open_dialog(cx, move |dialog, _, _| {
+        let editor = editor.clone();
+        dialog
+            .title("Argument options")
+            .w(px(680.))
+            .content(move |content, _, cx| {
+                let long_description = editor.read(cx).long_description_input.clone();
+                content.child(v_flex().p_4().child(field(
+                    "Long description",
+                    "Optional",
+                    &long_description,
+                    cx,
+                )))
+            })
+    });
 }
 
 impl EntryListView {
@@ -3178,17 +3220,15 @@ fn new_assignment_row(
     })
 }
 
-fn command_argument_models(value: &str) -> Vec<CommandArgumentData> {
-    value
-        .lines()
-        .filter_map(|line| {
-            let mut fields = line.splitn(4, " | ").map(str::trim);
-            Some(CommandArgumentData {
-                name: fields.next()?.to_owned(),
-                type_ref: fields.next()?.to_owned(),
-                initial_value: fields.next().unwrap_or_default().to_owned(),
-                short_description: fields.next().unwrap_or_default().to_owned(),
-            })
+fn command_argument_models(list: Option<&xtce::ArgumentListType>) -> Vec<CommandArgumentData> {
+    list.into_iter()
+        .flat_map(|list| &list.argument)
+        .map(|argument| CommandArgumentData {
+            name: argument.name.clone(),
+            type_ref: argument.argument_type_ref.clone(),
+            initial_value: argument.initial_value.clone().unwrap_or_default(),
+            short_description: argument.short_description.clone().unwrap_or_default(),
+            long_description: argument.long_description.clone().unwrap_or_default(),
         })
         .collect()
 }
@@ -3234,12 +3274,16 @@ fn new_command_argument_row(
             type_ref_input,
             initial_value_input,
             short_description_input: input_with_context(&data.short_description, window, cx),
+            long_description_input: input(&data.long_description, true, window, cx),
             optional_fields_open,
         }
     })
 }
 
-fn command_argument_rows_value(rows: &Entity<ArgumentListView>, cx: &App) -> String {
+fn command_argument_rows_value(
+    rows: &Entity<ArgumentListView>,
+    cx: &App,
+) -> Vec<CommandArgumentData> {
     let rows = rows.read(cx);
     rows.rows
         .iter()
@@ -3260,17 +3304,16 @@ fn command_argument_rows_value(rows: &Entity<ArgumentListView>, cx: &App) -> Str
                 String::new()
             };
             (!data.name.trim().is_empty() && !data.type_ref.is_empty()).then(|| {
-                format!(
-                    "{} | {} | {} | {}",
-                    data.name.trim(),
-                    data.type_ref,
-                    initial_value.trim(),
-                    data.short_description.trim()
-                )
+                CommandArgumentData {
+                    name: data.name.trim().to_owned(),
+                    type_ref: data.type_ref.trim().to_owned(),
+                    initial_value: initial_value.trim().to_owned(),
+                    short_description: data.short_description.trim().to_owned(),
+                    long_description: data.long_description,
+                }
             })
         })
-        .collect::<Vec<_>>()
-        .join("\n")
+        .collect()
 }
 
 fn new_command_container_entry_row(
@@ -3707,7 +3750,7 @@ struct MetaCommandValues {
     system_name: String,
     base_meta_command_ref: String,
     base_assignments: String,
-    arguments: String,
+    arguments: Vec<CommandArgumentData>,
     block_steps: String,
     command_container: CommandContainerValues,
     default_significance: SignificanceValues,
@@ -3835,7 +3878,7 @@ impl MetaCommandValues {
             system_name: String::new(),
             base_meta_command_ref: String::new(),
             base_assignments: String::new(),
-            arguments: String::new(),
+            arguments: Vec::new(),
             block_steps: String::new(),
             command_container: CommandContainerValues::from_container(None),
             default_significance: SignificanceValues::from_significance(None),
@@ -3854,7 +3897,7 @@ impl MetaCommandValues {
                     values.base_assignments =
                         encode_assignments(base.argument_assignment_list.as_ref());
                 }
-                values.arguments = encode_arguments(command.argument_list.as_ref());
+                values.arguments = command_argument_models(command.argument_list.as_ref());
                 values.command_container =
                     CommandContainerValues::from_container(command.command_container.as_ref());
                 values.default_significance =
@@ -8131,39 +8174,7 @@ fn apply_base(base: &mut Option<xtce::BaseMetaCommandType>, reference: &str, ass
         });
 }
 
-fn encode_arguments(list: Option<&xtce::ArgumentListType>) -> String {
-    list.into_iter()
-        .flat_map(|list| &list.argument)
-        .map(|argument| {
-            format!(
-                "{} | {} | {} | {}",
-                argument.name,
-                argument.argument_type_ref,
-                argument.initial_value.as_deref().unwrap_or_default(),
-                argument.short_description.as_deref().unwrap_or_default()
-            )
-        })
-        .collect::<Vec<_>>()
-        .join("\n")
-}
-
-fn apply_arguments(list: &mut Option<xtce::ArgumentListType>, value: &str) {
-    let rows = value
-        .lines()
-        .filter_map(|line| {
-            let mut fields = line.splitn(4, " | ").map(str::trim);
-            let name = fields.next()?.to_owned();
-            let type_ref = fields.next()?.to_owned();
-            (!name.is_empty() && !type_ref.is_empty()).then(|| {
-                (
-                    name,
-                    type_ref,
-                    optional_value(fields.next().unwrap_or_default().to_owned()),
-                    optional_value(fields.next().unwrap_or_default().to_owned()),
-                )
-            })
-        })
-        .collect::<Vec<_>>();
+fn apply_arguments(list: &mut Option<xtce::ArgumentListType>, rows: &[CommandArgumentData]) {
     if rows.is_empty() {
         *list = None;
         return;
@@ -8175,25 +8186,24 @@ fn apply_arguments(list: &mut Option<xtce::ArgumentListType>, value: &str) {
         .collect::<Vec<_>>()
         .into_iter();
     let arguments = rows
-        .into_iter()
-        .map(
-            |(name, argument_type_ref, initial_value, short_description)| {
-                let mut argument = existing.next().unwrap_or(xtce::ArgumentType {
-                    short_description: None,
-                    name: String::new(),
-                    argument_type_ref: String::new(),
-                    initial_value: None,
-                    long_description: None,
-                    alias_set: None,
-                    ancillary_data_set: None,
-                });
-                argument.name = name;
-                argument.argument_type_ref = argument_type_ref;
-                argument.initial_value = initial_value;
-                argument.short_description = short_description;
-                argument
-            },
-        )
+        .iter()
+        .map(|row| {
+            let mut argument = existing.next().unwrap_or(xtce::ArgumentType {
+                short_description: None,
+                name: String::new(),
+                argument_type_ref: String::new(),
+                initial_value: None,
+                long_description: None,
+                alias_set: None,
+                ancillary_data_set: None,
+            });
+            argument.name.clone_from(&row.name);
+            argument.argument_type_ref.clone_from(&row.type_ref);
+            argument.initial_value = optional_value(row.initial_value.clone());
+            argument.short_description = optional_value(row.short_description.clone());
+            argument.long_description = optional_value(row.long_description.clone());
+            argument
+        })
         .collect();
     *list = Some(xtce::ArgumentListType {
         argument: arguments,
@@ -8354,11 +8364,12 @@ fn value(input: &Entity<InputState>, cx: &App) -> String {
 #[cfg(test)]
 mod tests {
     use super::{
-        ArgumentSpec, AssignmentContext, CommandArguments, CommandContainerValues,
-        EditableContainerEntry, MetaCommandValues, SignificanceValues, ValueRule, apply_arguments,
-        apply_container_entries, apply_steps, command_entry_bit_positions_from_sizes,
-        command_packet_layout_from_sizes, decode_assignments, default_command_container,
-        default_meta_command, matching_argument_names, swap_rows,
+        ArgumentSpec, AssignmentContext, CommandArgumentData, CommandArguments,
+        CommandContainerValues, EditableContainerEntry, MetaCommandValues, SignificanceValues,
+        ValueRule, apply_arguments, apply_container_entries, apply_steps,
+        command_entry_bit_positions_from_sizes, command_packet_layout_from_sizes,
+        decode_assignments, default_command_container, default_meta_command,
+        matching_argument_names, swap_rows,
     };
     use std::collections::HashMap;
 
@@ -8510,7 +8521,7 @@ mod tests {
     }
 
     #[test]
-    fn editing_arguments_preserves_unshown_argument_metadata() {
+    fn argument_long_description_is_editable_without_losing_other_metadata() {
         let mut list = Some(xtce::ArgumentListType {
             argument: vec![xtce::ArgumentType {
                 short_description: None,
@@ -8518,16 +8529,29 @@ mod tests {
                 argument_type_ref: "OldType".to_owned(),
                 initial_value: None,
                 long_description: Some("preserved".to_owned()),
-                alias_set: None,
+                alias_set: Some(xtce::AliasSetType { alias: Vec::new() }),
                 ancillary_data_set: None,
             }],
         });
 
-        apply_arguments(&mut list, "mode | ModeType | SAFE | Operating mode");
+        apply_arguments(
+            &mut list,
+            &[CommandArgumentData {
+                name: "mode".to_owned(),
+                type_ref: "ModeType".to_owned(),
+                initial_value: "SAFE".to_owned(),
+                short_description: "Operating mode".to_owned(),
+                long_description: "First line\nSecond line".to_owned(),
+            }],
+        );
 
         let argument = &list.expect("argument list").argument[0];
         assert_eq!(argument.name, "mode");
-        assert_eq!(argument.long_description.as_deref(), Some("preserved"));
+        assert_eq!(
+            argument.long_description.as_deref(),
+            Some("First line\nSecond line")
+        );
+        assert!(argument.alias_set.is_some());
     }
 
     #[test]
@@ -8658,7 +8682,7 @@ mod tests {
             system_name: String::new(),
             base_meta_command_ref: String::new(),
             base_assignments: String::new(),
-            arguments: String::new(),
+            arguments: Vec::new(),
             block_steps: String::new(),
             command_container: CommandContainerValues::from_container(None),
             default_significance: SignificanceValues::from_significance(None),
