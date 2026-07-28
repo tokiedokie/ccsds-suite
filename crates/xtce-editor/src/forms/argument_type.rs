@@ -14,6 +14,7 @@ use gpui_component::{
 use strum::{Display, EnumString, VariantArray};
 
 use super::{
+    aggregate_member_list::AggregateMemberListForm,
     data_encoding::{
         DataEncodingForm, find_argument_data_encoding, find_argument_data_encoding_mut,
         set_argument_data_encoding_kind,
@@ -123,6 +124,7 @@ pub(super) struct ArgumentTypeForm {
     signed_select: Entity<SelectState<Vec<SignedChoice>>>,
     float_size_select: Entity<SelectState<Vec<FloatSizeChoice>>>,
     enumeration_list: Entity<EnumerationListForm>,
+    aggregate_members: Entity<AggregateMemberListForm>,
     data_encoding: Entity<DataEncodingForm>,
     base_defaults_open: bool,
     documentation_open: bool,
@@ -189,6 +191,11 @@ impl ArgumentTypeForm {
                     window,
                     cx,
                 ),
+                aggregate_members: AggregateMemberListForm::new_argument_type(
+                    argument_type,
+                    window,
+                    cx,
+                ),
                 data_encoding: DataEncodingForm::new(
                     argument_type.and_then(find_argument_data_encoding),
                     window,
@@ -242,6 +249,9 @@ impl ArgumentTypeForm {
         sync_select(&self.signed_select, signed, window, cx);
         sync_select(&self.float_size_select, float_size, window, cx);
         self.enumeration_list.update(cx, |form, cx| {
+            form.load_argument_type(argument_type, cx);
+        });
+        self.aggregate_members.update(cx, |form, cx| {
             form.load_argument_type(argument_type, cx);
         });
         self.data_encoding.update(cx, |form, cx| {
@@ -304,6 +314,7 @@ impl ArgumentTypeForm {
         .apply_to(argument_type);
         apply_nested_items(argument_type, &value(&self.nested_items_input, cx));
         self.enumeration_list.read(cx).apply_to_argument_type(argument_type, cx);
+        self.aggregate_members.read(cx).apply_to_argument_type(argument_type, cx);
         set_argument_data_encoding_kind(argument_type, self.data_encoding.read(cx).selected_kind(cx));
         if let Some(encoding) = find_argument_data_encoding_mut(argument_type) {
             self.data_encoding.read(cx).apply_to(encoding, cx);
@@ -378,12 +389,7 @@ impl ArgumentTypeForm {
                 ));
             }
             ArgumentKind::Aggregate => {
-                form = form.child(field(
-                    "Members",
-                    "name | type ref | initial value | short description",
-                    &self.nested_items_input,
-                    cx,
-                ));
+                form = form.child(self.aggregate_members.clone());
             }
             _ => {}
         }
@@ -1166,5 +1172,27 @@ mod tests {
         assert_eq!(rows.len(), 1);
         assert_eq!(rows[0].label, "STATUS_OK");
         assert_eq!(rows[0].value, "1");
+    }
+
+    #[test]
+    fn argument_aggregate_member_list_round_trip() {
+        let mut value = default_argument_type(ArgumentKind::Aggregate);
+        let xtce::ArgumentTypeSetTypeContent::AggregateArgumentType(agg_type) = &mut value else {
+            panic!("expected aggregate argument")
+        };
+        agg_type.member_list.member.push(xtce::MemberType {
+            name: "header".to_string(),
+            type_ref: "HeaderType".to_string(),
+            initial_value: None,
+            short_description: Some("Packet header".to_string()),
+            long_description: None,
+            alias_set: None,
+            ancillary_data_set: None,
+        });
+
+        let rows = super::super::aggregate_member_list::rows_from_argument_type(Some(&value));
+        assert_eq!(rows.len(), 1);
+        assert_eq!(rows[0].name, "header");
+        assert_eq!(rows[0].type_ref, "HeaderType");
     }
 }

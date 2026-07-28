@@ -15,12 +15,12 @@ use gpui_component::{
 const ROW_HEIGHT: f32 = 52.;
 
 #[derive(Clone)]
-struct MemberRowData {
-    name: String,
-    type_ref: String,
-    initial_value: String,
-    description: String,
-    source_index: Option<usize>,
+pub(super) struct MemberRowData {
+    pub(super) name: String,
+    pub(super) type_ref: String,
+    pub(super) initial_value: String,
+    pub(super) description: String,
+    pub(super) source_index: Option<usize>,
 }
 
 impl MemberRowData {
@@ -59,6 +59,15 @@ impl AggregateMemberListForm {
         cx.new(move |_| Self::from_rows(rows))
     }
 
+    pub(super) fn new_argument_type(
+        argument_type: Option<&xtce::ArgumentTypeSetTypeContent>,
+        _: &mut Window,
+        cx: &mut impl AppContext,
+    ) -> Entity<Self> {
+        let rows = rows_from_argument_type(argument_type);
+        cx.new(move |_| Self::from_rows(rows))
+    }
+
     fn from_rows(mut rows: Vec<MemberRowData>) -> Self {
         if rows.is_empty() {
             rows.push(MemberRowData::default_row());
@@ -78,6 +87,23 @@ impl AggregateMemberListForm {
         cx: &mut Context<Self>,
     ) {
         let mut rows = rows_from_type(parameter_type);
+        if rows.is_empty() {
+            rows.push(MemberRowData::default_row());
+        }
+        self.rows = rows;
+        self.editors.clear();
+        self.cache_order.clear();
+        self.list_state
+            .reset_with_uniform_height(self.rows.len(), px(ROW_HEIGHT));
+        cx.notify();
+    }
+
+    pub(super) fn load_argument_type(
+        &mut self,
+        argument_type: Option<&xtce::ArgumentTypeSetTypeContent>,
+        cx: &mut Context<Self>,
+    ) {
+        let mut rows = rows_from_argument_type(argument_type);
         if rows.is_empty() {
             rows.push(MemberRowData::default_row());
         }
@@ -121,17 +147,46 @@ impl AggregateMemberListForm {
                 }
                 let mut member = row
                     .source_index
-                    .and_then(|index| existing.get_mut(index))
-                    .and_then(Option::take)
-                    .unwrap_or(xtce::MemberType {
-                        short_description: None,
-                        name: String::new(),
-                        type_ref: String::new(),
-                        initial_value: None,
-                        long_description: None,
-                        alias_set: None,
-                        ancillary_data_set: None,
-                    });
+                    .and_then(|index| existing.get_mut(index)?.take())
+                    .unwrap_or_else(default_member);
+                member.name = name.to_owned();
+                member.type_ref = type_ref.to_owned();
+                member.initial_value = optional(&row.initial_value);
+                member.short_description = optional(&row.description);
+                Some(member)
+            })
+            .collect();
+        if value.member_list.member.is_empty() {
+            value.member_list.member.push(default_member());
+        }
+    }
+
+    pub(super) fn apply_to_argument_type(
+        &self,
+        argument_type: &mut xtce::ArgumentTypeSetTypeContent,
+        cx: &App,
+    ) {
+        let xtce::ArgumentTypeSetTypeContent::AggregateArgumentType(value) = argument_type
+        else {
+            return;
+        };
+        let rows = self.current_rows(cx);
+        let mut existing = std::mem::take(&mut value.member_list.member)
+            .into_iter()
+            .map(Some)
+            .collect::<Vec<_>>();
+        value.member_list.member = rows
+            .into_iter()
+            .filter_map(|row| {
+                let name = row.name.trim();
+                let type_ref = row.type_ref.trim();
+                if name.is_empty() || type_ref.is_empty() {
+                    return None;
+                }
+                let mut member = row
+                    .source_index
+                    .and_then(|index| existing.get_mut(index)?.take())
+                    .unwrap_or_else(default_member);
                 member.name = name.to_owned();
                 member.type_ref = type_ref.to_owned();
                 member.initial_value = optional(&row.initial_value);
@@ -387,6 +442,28 @@ fn rows_from_type(
     parameter_type: Option<&xtce::ParameterTypeSetTypeContent>,
 ) -> Vec<MemberRowData> {
     let Some(xtce::ParameterTypeSetTypeContent::AggregateParameterType(value)) = parameter_type
+    else {
+        return Vec::new();
+    };
+    value
+        .member_list
+        .member
+        .iter()
+        .enumerate()
+        .map(|(index, member)| MemberRowData {
+            name: member.name.clone(),
+            type_ref: member.type_ref.clone(),
+            initial_value: member.initial_value.clone().unwrap_or_default(),
+            description: member.short_description.clone().unwrap_or_default(),
+            source_index: Some(index),
+        })
+        .collect()
+}
+
+pub(super) fn rows_from_argument_type(
+    argument_type: Option<&xtce::ArgumentTypeSetTypeContent>,
+) -> Vec<MemberRowData> {
+    let Some(xtce::ArgumentTypeSetTypeContent::AggregateArgumentType(value)) = argument_type
     else {
         return Vec::new();
     };
