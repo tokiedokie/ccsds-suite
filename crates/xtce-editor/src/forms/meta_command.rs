@@ -26,7 +26,7 @@ use lsp_types::{
 };
 use strum::{Display, EnumString, VariantArray};
 
-use super::{field, impl_select_item, optional_value};
+use super::{container_rate::ContainerRateForm, field, impl_select_item, optional_value};
 use crate::XtceEditor;
 
 #[derive(Clone, Copy, Debug, Display, EnumString, VariantArray, PartialEq, Eq)]
@@ -141,6 +141,7 @@ pub(super) struct MetaCommandForm {
     container_short_description_input: Entity<InputState>,
     container_long_description_input: Entity<InputState>,
     container_base_ref_input: Entity<InputState>,
+    container_rate: Entity<ContainerRateForm>,
     entry_list: Entity<EntryListView>,
     consequence_level_select: Entity<SelectState<Vec<ConsequenceLevelChoice>>>,
     reason_for_warning_input: Entity<InputState>,
@@ -163,6 +164,7 @@ pub(super) struct MetaCommandForm {
     parameter_to_set_list_open: bool,
     parameters_to_suspend_alarms_open: bool,
     container_details_open: bool,
+    container_rate_open: bool,
     _subscriptions: Vec<Subscription>,
 }
 
@@ -175,6 +177,18 @@ impl MetaCommandForm {
         cx: &mut Context<XtceEditor>,
     ) -> Entity<Self> {
         let values = MetaCommandValues::from_command(command);
+        let command_container = command.and_then(|command| match command {
+            xtce::MetaCommandSetTypeContent::MetaCommand(command) => {
+                command.command_container.as_ref()
+            }
+            _ => None,
+        });
+        let container_rate = ContainerRateForm::new(
+            command_container.and_then(|container| container.default_rate_in_stream.as_ref()),
+            command_container.and_then(|container| container.rate_in_stream_set.as_ref()),
+            window,
+            cx,
+        );
         let interlock_values = InterlockValues::from_interlock(command.and_then(|cmd| match cmd {
             xtce::MetaCommandSetTypeContent::MetaCommand(cmd) => cmd.interlock.as_ref(),
             _ => None,
@@ -285,6 +299,7 @@ impl MetaCommandForm {
                     window,
                     cx,
                 ),
+                container_rate,
                 entry_list,
                 consequence_level_select: select(
                     ConsequenceLevelChoice::VARIANTS,
@@ -378,6 +393,7 @@ impl MetaCommandForm {
                 parameter_to_set_list_open: false,
                 parameters_to_suspend_alarms_open: false,
                 container_details_open: false,
+                container_rate_open: false,
                 _subscriptions: vec![name_subscription, kind_subscription, base_ref_subscription],
             }
         })
@@ -406,6 +422,21 @@ impl MetaCommandForm {
         self.parameter_to_set_list_open = false;
         self.parameters_to_suspend_alarms_open = false;
         self.container_details_open = false;
+        self.container_rate_open = false;
+        let command_container = command.and_then(|command| match command {
+            xtce::MetaCommandSetTypeContent::MetaCommand(command) => {
+                command.command_container.as_ref()
+            }
+            _ => None,
+        });
+        self.container_rate.update(cx, |form, cx| {
+            form.load(
+                command_container.and_then(|container| container.default_rate_in_stream.as_ref()),
+                command_container.and_then(|container| container.rate_in_stream_set.as_ref()),
+                window,
+                cx,
+            );
+        });
         self.parameter_to_set_list.update(cx, |form, cx| {
             form.load(
                 command.and_then(|cmd| match cmd {
@@ -611,6 +642,13 @@ impl MetaCommandForm {
         }
         .apply_to(command);
         if let xtce::MetaCommandSetTypeContent::MetaCommand(cmd) = command {
+            if let Some(container) = cmd.command_container.as_mut() {
+                self.container_rate.read(cx).apply_to(
+                    &mut container.default_rate_in_stream,
+                    &mut container.rate_in_stream_set,
+                    cx,
+                );
+            }
             cmd.transmission_constraint_list = self.transmission_constraints.read(cx).to_list(cx);
             self.verifiers
                 .read(cx)
@@ -1080,6 +1118,26 @@ impl MetaCommandForm {
                                 cx,
                             )),
                     ),
+            )
+            .child(
+                Collapsible::new()
+                    .open(self.container_rate_open)
+                    .child(
+                        Button::new("toggle-command-container-rates")
+                            .small()
+                            .link()
+                            .icon(if self.container_rate_open {
+                                IconName::ChevronDown
+                            } else {
+                                IconName::ChevronRight
+                            })
+                            .label("Stream rates")
+                            .on_click(cx.listener(|this, _, _, cx| {
+                                this.container_rate_open = !this.container_rate_open;
+                                cx.notify();
+                            })),
+                    )
+                    .content(div().pt_3().child(self.container_rate.clone())),
             )
             .child(self.entry_list.clone())
     }
