@@ -219,7 +219,7 @@ pub(super) enum MessageCriteriaRef<'a> {
 }
 
 impl MessageCriteriaForm {
-    fn new(
+    pub(super) fn new(
         criteria: Option<&xtce::MatchCriteriaType>,
         window: &mut Window,
         cx: &mut impl AppContext,
@@ -267,7 +267,7 @@ impl MessageCriteriaForm {
         })
     }
 
-    fn load(
+    pub(super) fn load(
         &mut self,
         criteria: Option<&xtce::MatchCriteriaType>,
         window: &mut Window,
@@ -285,7 +285,7 @@ impl MessageCriteriaForm {
         cx.notify();
     }
 
-    fn apply_to(&self, criteria: &mut xtce::MatchCriteriaType, cx: &App) {
+    pub(super) fn apply_to(&self, criteria: &mut xtce::MatchCriteriaType, cx: &App) {
         *criteria = match selected_value(&self.kind_select, CriteriaKind::Comparison, cx) {
             CriteriaKind::BooleanExpression => xtce::MatchCriteriaType::BooleanExpression(
                 self.boolean_expression.read(cx).expression(cx),
