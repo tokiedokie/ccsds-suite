@@ -371,6 +371,60 @@ fn set_parameter_type_unit_set(
     }
 }
 
+fn string_size_range(
+    parameter_type: &xtce::ParameterTypeSetTypeContent,
+) -> Option<&xtce::IntegerRangeType> {
+    let xtce::ParameterTypeSetTypeContent::StringParameterType(value) = parameter_type else {
+        return None;
+    };
+    value.content.iter().find_map(|item| match item {
+        xtce::StringParameterTypeContent::SizeRangeInCharacters(value) => Some(value),
+        _ => None,
+    })
+}
+
+fn set_string_size_range(
+    parameter_type: &mut xtce::ParameterTypeSetTypeContent,
+    size_range: Option<xtce::IntegerRangeType>,
+) {
+    let xtce::ParameterTypeSetTypeContent::StringParameterType(value) = parameter_type else {
+        return;
+    };
+    let existing = value.content.iter().position(|item| {
+        matches!(
+            item,
+            xtce::StringParameterTypeContent::SizeRangeInCharacters(_)
+        )
+    });
+    match (size_range, existing) {
+        (Some(size_range), Some(index)) => {
+            value.content[index] =
+                xtce::StringParameterTypeContent::SizeRangeInCharacters(size_range);
+        }
+        (Some(size_range), None) => {
+            let index = value
+                .content
+                .iter()
+                .position(|item| {
+                    matches!(
+                        item,
+                        xtce::StringParameterTypeContent::DefaultAlarm(_)
+                            | xtce::StringParameterTypeContent::ContextAlarmList(_)
+                    )
+                })
+                .unwrap_or(value.content.len());
+            value.content.insert(
+                index,
+                xtce::StringParameterTypeContent::SizeRangeInCharacters(size_range),
+            );
+        }
+        (None, Some(index)) => {
+            value.content.remove(index);
+        }
+        (None, None) => {}
+    }
+}
+
 #[derive(Clone, Copy, Debug, Display, EnumString, VariantArray, PartialEq, Eq)]
 enum CharacterWidthChoice {
     Default,
@@ -415,6 +469,8 @@ pub(super) struct ParameterTypeForm {
     alias_set: AliasSetForm,
     ancillary_data_set: AncillaryDataSetForm,
     unit_set: Entity<UnitSetForm>,
+    size_range_min_input: Entity<InputState>,
+    size_range_max_input: Entity<InputState>,
     extra_a_input: Entity<InputState>,
     extra_b_input: Entity<InputState>,
     character_width_select: Entity<SelectState<Vec<CharacterWidthChoice>>>,
@@ -465,6 +521,7 @@ impl ParameterTypeForm {
         );
         let unit_set =
             UnitSetForm::new(parameter_type.and_then(parameter_type_unit_set), window, cx);
+        let size_range = parameter_type.and_then(string_size_range);
         let name_subscription = cx.subscribe(&name_input, |editor, _, _: &InputEvent, cx| {
             editor.refresh_tree(cx);
             cx.notify();
@@ -482,6 +539,24 @@ impl ParameterTypeForm {
             let initial_value_input = input(&values.initial_value, false, window, cx);
             let short_description_input = input(&values.short_description, false, window, cx);
             let long_description_input = input(&values.long_description, true, window, cx);
+            let size_range_min_input = input(
+                &size_range
+                    .and_then(|range| range.min_inclusive)
+                    .map(|value| value.to_string())
+                    .unwrap_or_default(),
+                false,
+                window,
+                cx,
+            );
+            let size_range_max_input = input(
+                &size_range
+                    .and_then(|range| range.max_inclusive)
+                    .map(|value| value.to_string())
+                    .unwrap_or_default(),
+                false,
+                window,
+                cx,
+            );
             let extra_a_input = input(&values.extra_a, false, window, cx);
             let extra_b_input = input(&values.extra_b, false, window, cx);
             let character_width_select = select(
@@ -522,6 +597,8 @@ impl ParameterTypeForm {
             let kind_nested_items = nested_items_input.clone();
             let kind_enumeration_list = enumeration_list.clone();
             let kind_aggregate_members = aggregate_members.clone();
+            let kind_size_range_min = size_range_min_input.clone();
+            let kind_size_range_max = size_range_max_input.clone();
             subscriptions.push(cx.subscribe_in(
                 &kind_select,
                 window,
@@ -591,6 +668,11 @@ impl ParameterTypeForm {
                     kind_nested_items.update(cx, |input, cx| {
                         input.set_value(default_nested_items(selected_kind).to_owned(), window, cx);
                     });
+                    for input in [&kind_size_range_min, &kind_size_range_max] {
+                        input.update(cx, |input, cx| {
+                            input.set_value(String::new(), window, cx);
+                        });
+                    }
                     if selected_kind == ParameterTypeKind::Enumerated {
                         kind_enumeration_list.update(cx, |form, cx| {
                             form.reset_to_default(cx);
@@ -617,6 +699,8 @@ impl ParameterTypeForm {
                 alias_set,
                 ancillary_data_set,
                 unit_set,
+                size_range_min_input,
+                size_range_max_input,
                 extra_a_input,
                 extra_b_input,
                 character_width_select,
@@ -720,6 +804,25 @@ impl ParameterTypeForm {
         self.unit_set.update(cx, |form, cx| {
             form.load(parameter_type.and_then(parameter_type_unit_set), window, cx);
         });
+        let size_range = parameter_type.and_then(string_size_range);
+        for (input, value) in [
+            (
+                &self.size_range_min_input,
+                size_range
+                    .and_then(|range| range.min_inclusive)
+                    .map(|value| value.to_string())
+                    .unwrap_or_default(),
+            ),
+            (
+                &self.size_range_max_input,
+                size_range
+                    .and_then(|range| range.max_inclusive)
+                    .map(|value| value.to_string())
+                    .unwrap_or_default(),
+            ),
+        ] {
+            input.update(cx, |input, cx| input.set_value(value, window, cx));
+        }
         cx.notify();
     }
 
@@ -781,6 +884,13 @@ impl ParameterTypeForm {
             AncillaryDataSetForm::parse(&self.ancillary_data_set.text(cx)),
         );
         set_parameter_type_unit_set(parameter_type, self.unit_set.read(cx).to_set(cx));
+        set_string_size_range(
+            parameter_type,
+            integer_range(
+                &value(&self.size_range_min_input, cx),
+                &value(&self.size_range_max_input, cx),
+            ),
+        );
     }
 
     fn render_form(&self, cx: &mut Context<Self>) -> Div {
@@ -863,6 +973,35 @@ impl ParameterTypeForm {
                 .child(self.unit_set.clone())
                 .child(div().text_lg().font_semibold().child("Data encoding"))
                 .child(self.data_encoding.clone());
+        }
+        if kind == ParameterTypeKind::String {
+            form = form.child(
+                v_flex()
+                    .gap_2()
+                    .child(
+                        div()
+                            .text_lg()
+                            .font_semibold()
+                            .child("Size range in characters"),
+                    )
+                    .child(
+                        h_flex()
+                            .gap_4()
+                            .items_start()
+                            .child(field(
+                                "Minimum",
+                                "Optional; inclusive",
+                                &self.size_range_min_input,
+                                cx,
+                            ))
+                            .child(field(
+                                "Maximum",
+                                "Optional; inclusive",
+                                &self.size_range_max_input,
+                                cx,
+                            )),
+                    ),
+            );
         }
         form.child(self.base_defaults(cx))
             .child(self.documentation(cx))
@@ -1581,6 +1720,19 @@ fn bool_from_str(value: &str) -> Option<bool> {
     }
 }
 
+fn integer_range(minimum: &str, maximum: &str) -> Option<xtce::IntegerRangeType> {
+    let minimum = minimum.trim().parse().ok();
+    let maximum = maximum.trim().parse().ok();
+    if minimum.is_none() && maximum.is_none() {
+        None
+    } else {
+        Some(xtce::IntegerRangeType {
+            min_inclusive: minimum,
+            max_inclusive: maximum,
+        })
+    }
+}
+
 fn input(
     value: &str,
     multi_line: bool,
@@ -1682,7 +1834,8 @@ mod tests {
         ParameterTypeKind, ParameterTypeValues, apply_nested_items, encode_nested_items,
         parameter_type_alias_set, parameter_type_ancillary_data_set, parameter_type_unit_set,
         replace_parameter_type_kind, set_parameter_type_alias_set,
-        set_parameter_type_ancillary_data_set, set_parameter_type_unit_set,
+        set_parameter_type_ancillary_data_set, set_parameter_type_unit_set, set_string_size_range,
+        string_size_range,
     };
 
     #[test]
@@ -1894,6 +2047,55 @@ mod tests {
             value.content[1],
             xtce::FloatParameterTypeContent::UnitSet(_)
         ));
+    }
+
+    #[test]
+    fn string_size_range_is_editable_in_schema_order() {
+        let mut parameter_type =
+            xtce::ParameterTypeSetTypeContent::StringParameterType(xtce::StringParameterType {
+                short_description: None,
+                name: "IdentifierType".to_owned(),
+                base_type: None,
+                initial_value: None,
+                restriction_pattern: None,
+                character_width: None,
+                content: vec![xtce::StringParameterTypeContent::DefaultAlarm(
+                    xtce::StringAlarmType {
+                        name: None,
+                        short_description: None,
+                        min_violations: xtce::StringAlarmType::default_min_violations(),
+                        min_conformance: xtce::StringAlarmType::default_min_conformance(),
+                        disabled: xtce::StringAlarmType::default_disabled(),
+                        default_alarm_level: xtce::StringAlarmType::default_default_alarm_level(),
+                        content: Vec::new(),
+                    },
+                )],
+            });
+        set_string_size_range(
+            &mut parameter_type,
+            Some(xtce::IntegerRangeType {
+                min_inclusive: Some(2),
+                max_inclusive: Some(16),
+            }),
+        );
+
+        let range = string_size_range(&parameter_type).expect("size range");
+        assert_eq!(range.min_inclusive, Some(2));
+        assert_eq!(range.max_inclusive, Some(16));
+        let xtce::ParameterTypeSetTypeContent::StringParameterType(value) = &parameter_type else {
+            panic!("expected a StringParameterType");
+        };
+        assert!(matches!(
+            value.content[0],
+            xtce::StringParameterTypeContent::SizeRangeInCharacters(_)
+        ));
+        assert!(matches!(
+            value.content[1],
+            xtce::StringParameterTypeContent::DefaultAlarm(_)
+        ));
+
+        set_string_size_range(&mut parameter_type, None);
+        assert!(string_size_range(&parameter_type).is_none());
     }
 
     #[test]
