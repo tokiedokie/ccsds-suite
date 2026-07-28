@@ -102,12 +102,17 @@ pub(super) struct MetaCommandForm {
     transmission_constraints: Entity<TransmissionConstraintListForm>,
     execution_verifiers: Entity<VerifierListForm>,
     complete_verifiers: Entity<VerifierListForm>,
+    interlock_verification_select: Entity<SelectState<Vec<VerificationToWaitForChoice>>>,
+    interlock_scope_input: Entity<InputState>,
+    interlock_progress_input: Entity<InputState>,
+    interlock_suspendable_select: Entity<SelectState<Vec<SuspendableChoice>>>,
     documentation_open: bool,
     inheritance_open: bool,
     identification_open: bool,
     significance_open: bool,
     transmission_constraints_open: bool,
     verifiers_open: bool,
+    interlock_open: bool,
     container_details_open: bool,
     _subscriptions: Vec<Subscription>,
 }
@@ -121,6 +126,12 @@ impl MetaCommandForm {
         cx: &mut Context<XtceEditor>,
     ) -> Entity<Self> {
         let values = MetaCommandValues::from_command(command);
+        let interlock_values = InterlockValues::from_interlock(
+            command.and_then(|cmd| match cmd {
+                xtce::MetaCommandSetTypeContent::MetaCommand(cmd) => cmd.interlock.as_ref(),
+                _ => None,
+            }),
+        );
         let name_or_ref_input = input(&values.name_or_ref, false, window, cx);
         // Name changes intentionally continue to invalidate XtceEditor directly so
         // the title and tree labels are updated by the existing mechanism.
@@ -286,12 +297,37 @@ impl MetaCommandForm {
                     window,
                     cx,
                 ),
+                interlock_verification_select: select(
+                    VerificationToWaitForChoice::VARIANTS,
+                    interlock_values.verification_to_wait_for,
+                    window,
+                    cx,
+                ),
+                interlock_scope_input: input(
+                    &interlock_values.scope_to_space_system,
+                    false,
+                    window,
+                    cx,
+                ),
+                interlock_progress_input: input(
+                    &interlock_values.verification_progress_percentage,
+                    false,
+                    window,
+                    cx,
+                ),
+                interlock_suspendable_select: select(
+                    SuspendableChoice::VARIANTS,
+                    interlock_values.suspendable,
+                    window,
+                    cx,
+                ),
                 documentation_open: false,
                 inheritance_open: false,
                 identification_open: false,
                 significance_open: false,
                 transmission_constraints_open: false,
                 verifiers_open: false,
+                interlock_open: false,
                 container_details_open: false,
                 _subscriptions: vec![name_subscription, kind_subscription, base_ref_subscription],
             }
@@ -307,13 +343,42 @@ impl MetaCommandForm {
         cx: &mut Context<Self>,
     ) {
         let values = MetaCommandValues::from_command(command);
+        let interlock_values = InterlockValues::from_interlock(
+            command.and_then(|cmd| match cmd {
+                xtce::MetaCommandSetTypeContent::MetaCommand(cmd) => cmd.interlock.as_ref(),
+                _ => None,
+            }),
+        );
         self.documentation_open = false;
         self.inheritance_open = false;
         self.identification_open = false;
         self.significance_open = false;
         self.transmission_constraints_open = false;
         self.verifiers_open = false;
+        self.interlock_open = false;
         self.container_details_open = false;
+        self.interlock_scope_input.update(cx, |input, cx| {
+            input.set_value(interlock_values.scope_to_space_system, window, cx);
+        });
+        self.interlock_progress_input.update(cx, |input, cx| {
+            input.set_value(
+                interlock_values.verification_progress_percentage,
+                window,
+                cx,
+            );
+        });
+        sync_select(
+            &self.interlock_verification_select,
+            interlock_values.verification_to_wait_for,
+            window,
+            cx,
+        );
+        sync_select(
+            &self.interlock_suspendable_select,
+            interlock_values.suspendable,
+            window,
+            cx,
+        );
         let verifier_set = command.and_then(|cmd| match cmd {
             xtce::MetaCommandSetTypeContent::MetaCommand(cmd) => cmd.verifier_set.as_ref(),
             _ => None,
@@ -520,6 +585,22 @@ impl MetaCommandForm {
                 set.execution_verifier = execs;
                 set.complete_verifier = comps;
             }
+
+            let interlock_values = InterlockValues {
+                scope_to_space_system: value(&self.interlock_scope_input, cx),
+                verification_to_wait_for: selected_value(
+                    &self.interlock_verification_select,
+                    VerificationToWaitForChoice::None,
+                    cx,
+                ),
+                verification_progress_percentage: value(&self.interlock_progress_input, cx),
+                suspendable: selected_value(
+                    &self.interlock_suspendable_select,
+                    SuspendableChoice::False,
+                    cx,
+                ),
+            };
+            interlock_values.apply_to(&mut cmd.interlock);
         }
     }
 
@@ -554,6 +635,7 @@ impl MetaCommandForm {
                 .child(self.render_significance(cx))
                 .child(self.render_transmission_constraints(cx))
                 .child(self.render_verifiers(cx))
+                .child(self.render_interlock(cx))
                 .child(self.render_command_container(cx)),
             MetaCommandKind::BlockMetaCommand => form
                 .child(field(
@@ -754,6 +836,65 @@ impl MetaCommandForm {
                     .gap_4()
                     .child(self.execution_verifiers.clone())
                     .child(self.complete_verifiers.clone()),
+            )
+    }
+
+    fn render_interlock(&self, cx: &mut Context<Self>) -> Collapsible {
+        Collapsible::new()
+            .open(self.interlock_open)
+            .child(
+                Button::new("toggle-meta-command-interlock")
+                    .small()
+                    .link()
+                    .icon(if self.interlock_open {
+                        IconName::ChevronDown
+                    } else {
+                        IconName::ChevronRight
+                    })
+                    .label("Interlock")
+                    .on_click(cx.listener(|this, _, _, cx| {
+                        this.interlock_open = !this.interlock_open;
+                        cx.notify();
+                    })),
+            )
+            .content(
+                v_flex()
+                    .pt_3()
+                    .gap_3()
+                    .child(
+                        h_flex()
+                            .gap_3()
+                            .items_end()
+                            .child(div().flex_1().child(select_field(
+                                "Verification to wait for",
+                                "",
+                                &self.interlock_verification_select,
+                                cx,
+                            )))
+                            .child(div().flex_1().child(field(
+                                "Scope to space system",
+                                "",
+                                &self.interlock_scope_input,
+                                cx,
+                            ))),
+                    )
+                    .child(
+                        h_flex()
+                            .gap_3()
+                            .items_end()
+                            .child(div().flex_1().child(field(
+                                "Progress percentage",
+                                "",
+                                &self.interlock_progress_input,
+                                cx,
+                            )))
+                            .child(div().w(px(140.)).child(select_field(
+                                "Suspendable",
+                                "",
+                                &self.interlock_suspendable_select,
+                                cx,
+                            ))),
+                    ),
             )
     }
 
@@ -3706,6 +3847,138 @@ enum SuspendableChoice {
 }
 impl_select_item!(SuspendableChoice);
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(super) enum VerificationToWaitForChoice {
+    None,
+    Release,
+    TransferredToRange,
+    SentFromRange,
+    Received,
+    Accepted,
+    Queued,
+    Executing,
+    Complete,
+    Failed,
+}
+
+impl VerificationToWaitForChoice {
+    const VARIANTS: &'static [Self] = &[
+        Self::None,
+        Self::Release,
+        Self::TransferredToRange,
+        Self::SentFromRange,
+        Self::Received,
+        Self::Accepted,
+        Self::Queued,
+        Self::Executing,
+        Self::Complete,
+        Self::Failed,
+    ];
+}
+
+impl std::fmt::Display for VerificationToWaitForChoice {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let s = match self {
+            Self::None => "None (Disabled)",
+            Self::Release => "Release",
+            Self::TransferredToRange => "Transferred to range",
+            Self::SentFromRange => "Sent from range",
+            Self::Received => "Received",
+            Self::Accepted => "Accepted",
+            Self::Queued => "Queued",
+            Self::Executing => "Executing",
+            Self::Complete => "Complete",
+            Self::Failed => "Failed",
+        };
+        write!(f, "{s}")
+    }
+}
+
+impl_select_item!(VerificationToWaitForChoice);
+
+struct InterlockValues {
+    scope_to_space_system: String,
+    verification_to_wait_for: VerificationToWaitForChoice,
+    verification_progress_percentage: String,
+    suspendable: SuspendableChoice,
+}
+
+impl InterlockValues {
+    fn from_interlock(interlock: Option<&xtce::InterlockType>) -> Self {
+        match interlock {
+            Some(interlock) => Self {
+                scope_to_space_system: interlock
+                    .scope_to_space_system
+                    .clone()
+                    .unwrap_or_default(),
+                verification_to_wait_for: match interlock.verification_to_wait_for {
+                    xtce::VerifierEnumerationType::Release => VerificationToWaitForChoice::Release,
+                    xtce::VerifierEnumerationType::TransferredToRange => {
+                        VerificationToWaitForChoice::TransferredToRange
+                    }
+                    xtce::VerifierEnumerationType::SentFromRange => {
+                        VerificationToWaitForChoice::SentFromRange
+                    }
+                    xtce::VerifierEnumerationType::Received => VerificationToWaitForChoice::Received,
+                    xtce::VerifierEnumerationType::Accepted => VerificationToWaitForChoice::Accepted,
+                    xtce::VerifierEnumerationType::Queued => VerificationToWaitForChoice::Queued,
+                    xtce::VerifierEnumerationType::Executing => VerificationToWaitForChoice::Executing,
+                    xtce::VerifierEnumerationType::Complete => VerificationToWaitForChoice::Complete,
+                    xtce::VerifierEnumerationType::Failed => VerificationToWaitForChoice::Failed,
+                },
+                verification_progress_percentage: interlock
+                    .verification_progress_percentage
+                    .map(|p| p.to_string())
+                    .unwrap_or_default(),
+                suspendable: if interlock.suspendable {
+                    SuspendableChoice::True
+                } else {
+                    SuspendableChoice::False
+                },
+            },
+            None => Self {
+                scope_to_space_system: String::new(),
+                verification_to_wait_for: VerificationToWaitForChoice::None,
+                verification_progress_percentage: String::new(),
+                suspendable: SuspendableChoice::False,
+            },
+        }
+    }
+
+    fn apply_to(&self, interlock: &mut Option<xtce::InterlockType>) {
+        if self.verification_to_wait_for == VerificationToWaitForChoice::None {
+            *interlock = None;
+            return;
+        }
+        let verification_to_wait_for = match self.verification_to_wait_for {
+            VerificationToWaitForChoice::Release => xtce::VerifierEnumerationType::Release,
+            VerificationToWaitForChoice::TransferredToRange => {
+                xtce::VerifierEnumerationType::TransferredToRange
+            }
+            VerificationToWaitForChoice::SentFromRange => {
+                xtce::VerifierEnumerationType::SentFromRange
+            }
+            VerificationToWaitForChoice::Received => xtce::VerifierEnumerationType::Received,
+            VerificationToWaitForChoice::Accepted => xtce::VerifierEnumerationType::Accepted,
+            VerificationToWaitForChoice::Queued => xtce::VerifierEnumerationType::Queued,
+            VerificationToWaitForChoice::Executing => xtce::VerifierEnumerationType::Executing,
+            VerificationToWaitForChoice::Complete => xtce::VerifierEnumerationType::Complete,
+            VerificationToWaitForChoice::Failed => xtce::VerifierEnumerationType::Failed,
+            VerificationToWaitForChoice::None => unreachable!(),
+        };
+        let progress = self
+            .verification_progress_percentage
+            .parse::<f64>()
+            .ok();
+        *interlock = Some(xtce::InterlockType {
+            scope_to_space_system: optional_value(self.scope_to_space_system.clone()),
+            verification_to_wait_for,
+            verification_progress_percentage: progress,
+            suspendable: self.suspendable == SuspendableChoice::True,
+        });
+    }
+}
+
 pub(super) struct VerifierListForm {
     title: &'static str,
     add_label: &'static str,
@@ -5014,6 +5287,47 @@ mod tests {
         assert_eq!(comp_models[0].operator, ComparisonOperatorChoice::Equal);
         assert_eq!(comp_models[0].value, "COMPLETED");
         assert_eq!(comp_models[0].time_to_stop, "PT30S");
+    }
+
+    #[test]
+    fn meta_command_interlock_roundtrip() {
+        use super::{InterlockValues, SuspendableChoice, VerificationToWaitForChoice};
+
+        let interlock = xtce::InterlockType {
+            scope_to_space_system: Some("/Vehicle".to_owned()),
+            verification_to_wait_for: xtce::VerifierEnumerationType::Complete,
+            verification_progress_percentage: Some(100.0),
+            suspendable: true,
+        };
+
+        let values = InterlockValues::from_interlock(Some(&interlock));
+        assert_eq!(values.scope_to_space_system, "/Vehicle");
+        assert_eq!(
+            values.verification_to_wait_for,
+            VerificationToWaitForChoice::Complete
+        );
+        assert_eq!(values.verification_progress_percentage, "100");
+        assert_eq!(values.suspendable, SuspendableChoice::True);
+
+        let mut applied = None;
+        values.apply_to(&mut applied);
+        let applied = applied.expect("interlock present");
+        assert_eq!(applied.scope_to_space_system.as_deref(), Some("/Vehicle"));
+        assert!(matches!(
+            applied.verification_to_wait_for,
+            xtce::VerifierEnumerationType::Complete
+        ));
+        assert_eq!(applied.verification_progress_percentage, Some(100.0));
+        assert!(applied.suspendable);
+
+        let none_values = InterlockValues::from_interlock(None);
+        assert_eq!(
+            none_values.verification_to_wait_for,
+            VerificationToWaitForChoice::None
+        );
+        let mut cleared = Some(interlock);
+        none_values.apply_to(&mut cleared);
+        assert!(cleared.is_none());
     }
 
     #[test]
