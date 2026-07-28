@@ -60,6 +60,8 @@ enum CommandContainerEntryKind {
     ContainerSegmentRef,
     #[strum(serialize = "StreamSegmentEntry")]
     StreamSegment,
+    #[strum(serialize = "ArrayParameterRefEntry")]
+    ArrayParameterRef,
     #[strum(serialize = "IndirectParameterRefEntry")]
     IndirectParameterRef,
     #[strum(serialize = "FixedValueEntry")]
@@ -76,11 +78,19 @@ enum CommandParameterValueChoice {
 }
 impl_select_item!(CommandParameterValueChoice);
 
+#[derive(Clone, Copy, Debug, Display, EnumString, VariantArray, PartialEq, Eq)]
+enum LastArrayEntryChoice {
+    No,
+    Yes,
+}
+impl_select_item!(LastArrayEntryChoice);
+
 fn command_entry_placeholder(kind: CommandContainerEntryKind) -> &'static str {
     match kind {
         CommandContainerEntryKind::ArgumentRef => "Select an argument...",
         CommandContainerEntryKind::ParameterRef
         | CommandContainerEntryKind::ParameterSegmentRef => "Select a parameter...",
+        CommandContainerEntryKind::ArrayParameterRef => "Select an array parameter...",
         CommandContainerEntryKind::IndirectParameterRef => {
             "Select the parameter that names the target..."
         }
@@ -1142,6 +1152,8 @@ struct CommandContainerEntryRow {
     instance_input: Entity<InputState>,
     calibrated_select: Entity<SelectState<Vec<CommandParameterValueChoice>>>,
     alias_namespace_input: Entity<InputState>,
+    dimensions_input: Entity<InputState>,
+    last_array_entry_select: Entity<SelectState<Vec<LastArrayEntryChoice>>>,
     description_input: Entity<InputState>,
     _subscriptions: Vec<Subscription>,
 }
@@ -1188,6 +1200,10 @@ fn container_entry_data(
         cx,
     ) == CommandParameterValueChoice::Calibrated;
     let alias_namespace = value(&row.alias_namespace_input, cx);
+    let dimensions = value(&row.dimensions_input, cx);
+    let last_array_entry =
+        selected_value(&row.last_array_entry_select, LastArrayEntryChoice::No, cx)
+            == LastArrayEntryChoice::Yes;
     let description = value(&row.description_input, cx);
     match kind {
         CommandContainerEntryKind::ArgumentRef => EditableContainerEntry::ArgumentRef {
@@ -1227,6 +1243,13 @@ fn container_entry_data(
             reference: primary,
             size_in_bits: tertiary.trim().parse().unwrap_or(i64::MIN),
             order: order.trim().parse().ok(),
+            offset: secondary.trim().parse().ok(),
+            description: optional_value(description),
+        },
+        CommandContainerEntryKind::ArrayParameterRef => EditableContainerEntry::ArrayParameterRef {
+            reference: primary,
+            dimensions,
+            last_array_entry,
             offset: secondary.trim().parse().ok(),
             description: optional_value(description),
         },
@@ -2018,12 +2041,16 @@ impl Render for CommandContainerEntryRow {
                 &self.order_input,
                 &self.instance_input,
                 &self.alias_namespace_input,
+                &self.dimensions_input,
                 &self.description_input,
             ] {
                 input.update(cx, |input, cx| input.set_value("", window, cx));
             }
             self.calibrated_select.update(cx, |select, cx| {
                 select.set_selected_value(&CommandParameterValueChoice::Calibrated, window, cx);
+            });
+            self.last_array_entry_select.update(cx, |select, cx| {
+                select.set_selected_value(&LastArrayEntryChoice::No, window, cx);
             });
         }
         h_flex()
@@ -2072,9 +2099,12 @@ fn open_command_entry_details(
                 let instance = row.instance_input.clone();
                 let calibrated = row.calibrated_select.clone();
                 let alias_namespace = row.alias_namespace_input.clone();
+                let dimensions = row.dimensions_input.clone();
+                let last_array_entry = row.last_array_entry_select.clone();
                 let description = row.description_input.clone();
                 let fixed = kind == CommandContainerEntryKind::FixedValue;
                 let indirect = kind == CommandContainerEntryKind::IndirectParameterRef;
+                let array = kind == CommandContainerEntryKind::ArrayParameterRef;
                 let segment = matches!(
                     kind,
                     CommandContainerEntryKind::ParameterSegmentRef
@@ -2115,6 +2145,25 @@ fn open_command_entry_details(
                                         &alias_namespace,
                                         cx,
                                     ))
+                                })
+                                .when(array, |form| {
+                                    form.child(field(
+                                        "Dimensions",
+                                        "Optional; comma-separated ranges such as 0..3, 1..2",
+                                        &dimensions,
+                                        cx,
+                                    ))
+                                    .child(
+                                        v_flex()
+                                            .w_full()
+                                            .gap_1()
+                                            .child(
+                                                div()
+                                                    .text_sm()
+                                                    .child("Last entry for this array instance"),
+                                            )
+                                            .child(Select::new(&last_array_entry).w_full()),
+                                    )
                                 })
                                 .child(field("Description", "Optional", &description, cx))
                         }),
@@ -2933,6 +2982,14 @@ fn new_command_container_entry_row(
         ),
         _ => (String::new(), true, String::new()),
     };
+    let (dimensions, last_array_entry) = match &entry {
+        EditableContainerEntry::ArrayParameterRef {
+            dimensions,
+            last_array_entry,
+            ..
+        } => (dimensions.clone(), *last_array_entry),
+        _ => (String::new(), false),
+    };
     let (kind, primary, secondary, tertiary, order, description) = match entry {
         EditableContainerEntry::ArgumentRef {
             reference,
@@ -3012,6 +3069,19 @@ fn new_command_container_entry_row(
             order.map(|value| value.to_string()).unwrap_or_default(),
             description.unwrap_or_default(),
         ),
+        EditableContainerEntry::ArrayParameterRef {
+            reference,
+            offset,
+            description,
+            ..
+        } => (
+            CommandContainerEntryKind::ArrayParameterRef,
+            reference,
+            offset.map(|value| value.to_string()).unwrap_or_default(),
+            String::new(),
+            String::new(),
+            description.unwrap_or_default(),
+        ),
         EditableContainerEntry::IndirectParameterRef {
             reference,
             offset,
@@ -3063,6 +3133,14 @@ fn new_command_container_entry_row(
                 cx,
             )
         });
+        let last_array_entry_select = cx.new(|cx| {
+            SelectState::new(
+                LastArrayEntryChoice::VARIANTS.to_vec(),
+                Some(IndexPath::default().row(usize::from(last_array_entry))),
+                window,
+                cx,
+            )
+        });
         let primary_input = cx.new(|cx| {
             let mut input = InputState::new(window, cx)
                 .default_value(primary.clone())
@@ -3084,6 +3162,8 @@ fn new_command_container_entry_row(
             instance_input: input(&instance, false, window, cx),
             calibrated_select,
             alias_namespace_input: input(&alias_namespace, false, window, cx),
+            dimensions_input: input(&dimensions, false, window, cx),
+            last_array_entry_select,
             description_input: input(&description, false, window, cx),
             _subscriptions: vec![kind_subscription],
         }
@@ -3108,6 +3188,25 @@ fn command_container_entry_rows_value(rows: &Entity<EntryListView>, cx: &App) ->
 }
 
 fn encode_editable_entry(entry: &EditableContainerEntry) -> Option<String> {
+    if let EditableContainerEntry::ArrayParameterRef {
+        reference,
+        dimensions,
+        last_array_entry,
+        offset,
+        description,
+    } = entry
+    {
+        return (!reference.trim().is_empty()).then(|| {
+            format!(
+                "ArrayParameterRefEntry | {} | {} | {} | {} | {}",
+                reference.trim(),
+                dimensions.trim(),
+                last_array_entry,
+                offset.map(|value| value.to_string()).unwrap_or_default(),
+                description.as_deref().unwrap_or_default()
+            )
+        });
+    }
     if let EditableContainerEntry::IndirectParameterRef {
         reference,
         instance,
@@ -3235,6 +3334,7 @@ fn encode_editable_entry(entry: &EditableContainerEntry) -> Option<String> {
         EditableContainerEntry::ParameterSegmentRef { .. } => unreachable!(),
         EditableContainerEntry::ContainerSegmentRef { .. } => unreachable!(),
         EditableContainerEntry::StreamSegment { .. } => unreachable!(),
+        EditableContainerEntry::ArrayParameterRef { .. } => unreachable!(),
         EditableContainerEntry::IndirectParameterRef { .. } => unreachable!(),
     };
     if primary.trim().is_empty() && kind != CommandContainerEntryKind::FixedValue {
@@ -3569,6 +3669,13 @@ enum EditableContainerEntry {
         offset: Option<i64>,
         description: Option<String>,
     },
+    ArrayParameterRef {
+        reference: String,
+        dimensions: String,
+        last_array_entry: bool,
+        offset: Option<i64>,
+        description: Option<String>,
+    },
     IndirectParameterRef {
         reference: String,
         instance: i64,
@@ -3670,6 +3777,7 @@ fn command_entry_bit_positions_from_sizes(
                 ),
                 EditableContainerEntry::ParameterRef { .. }
                 | EditableContainerEntry::ContainerRef { .. }
+                | EditableContainerEntry::ArrayParameterRef { .. }
                 | EditableContainerEntry::IndirectParameterRef { .. } => (None, None),
                 EditableContainerEntry::ParameterSegmentRef {
                     offset,
@@ -3813,6 +3921,13 @@ fn append_command_packet_entries(
                 layout
                     .unresolved
                     .push(format!("{reference}: indirect parameter size is unknown"));
+                *cursor = None;
+                continue;
+            }
+            EditableContainerEntry::ArrayParameterRef { reference, .. } => {
+                layout
+                    .unresolved
+                    .push(format!("{reference}: array parameter size is unknown"));
                 *cursor = None;
                 continue;
             }
@@ -4116,6 +4231,25 @@ fn encode_container_entries(list: &xtce::CommandContainerEntryListType) -> Strin
                 fixed_entry_offset(entry.location_in_container_in_bits.as_ref()),
                 entry.short_description.as_deref().unwrap_or_default()
             )),
+            xtce::CommandContainerEntryListTypeContent::ArrayParameterRefEntry(entry) => {
+                Some(format!(
+                    "ArrayParameterRefEntry | {} | {} | {} | {} | {}",
+                    entry.parameter_ref,
+                    entry
+                        .content
+                        .as_ref()
+                        .map(|content| { encode_command_dimensions(&content.dimension_list) })
+                        .unwrap_or_default(),
+                    entry.last_entry_for_this_array_instance,
+                    fixed_entry_offset(
+                        entry
+                            .content
+                            .as_ref()
+                            .and_then(|content| { content.location_in_container_in_bits.as_ref() })
+                    ),
+                    entry.short_description.as_deref().unwrap_or_default()
+                ))
+            }
             xtce::CommandContainerEntryListTypeContent::IndirectParameterRefEntry(entry) => {
                 Some(format!(
                     "IndirectParameterRefEntry | {} | {} | {} | {} | {} | {}",
@@ -4190,6 +4324,18 @@ fn decode_container_entries(value: &str) -> Vec<EditableContainerEntry> {
                     offset: numeric_field(&fields, 4),
                     description: optional_field(&fields, 5),
                 }),
+                "ArrayParameterRefEntry" => Some(EditableContainerEntry::ArrayParameterRef {
+                    reference: nonempty_field(&fields, 1)?,
+                    dimensions: fields.get(2)?.trim().to_owned(),
+                    last_array_entry: fields
+                        .get(3)
+                        .and_then(|value| value.parse().ok())
+                        .unwrap_or_else(
+                            xtce::ArgumentArrayParameterRefEntryType::default_last_entry_for_this_array_instance,
+                        ),
+                    offset: numeric_field(&fields, 4),
+                    description: optional_field(&fields, 5),
+                }),
                 "IndirectParameterRefEntry" => Some(EditableContainerEntry::IndirectParameterRef {
                     reference: nonempty_field(&fields, 1)?,
                     instance: fields
@@ -4232,6 +4378,80 @@ fn numeric_field(fields: &[&str], index: usize) -> Option<i64> {
     fields.get(index).and_then(|value| value.parse().ok())
 }
 
+fn encode_command_dimensions(list: &xtce::DimensionListType) -> String {
+    list.dimension
+        .iter()
+        .map(|dimension| {
+            format!(
+                "{}..{}",
+                command_dimension_value_text(&dimension.starting_index),
+                command_dimension_value_text(&dimension.ending_index)
+            )
+        })
+        .collect::<Vec<_>>()
+        .join(", ")
+}
+
+fn command_dimension_value_text(value: &xtce::IntegerValueType) -> String {
+    match value {
+        xtce::IntegerValueType::FixedValue(value) => value.to_string(),
+        xtce::IntegerValueType::DynamicValue(_) => "<dynamic>".to_owned(),
+        xtce::IntegerValueType::DiscreteLookupList(_) => "<lookup>".to_owned(),
+    }
+}
+
+fn decode_command_dimensions(value: &str) -> Option<Vec<(i64, i64)>> {
+    let value = value.trim();
+    if value.is_empty() {
+        return Some(Vec::new());
+    }
+    value
+        .split(',')
+        .map(|dimension| {
+            let (start, end) = dimension.trim().split_once("..")?;
+            Some((start.trim().parse().ok()?, end.trim().parse().ok()?))
+        })
+        .collect()
+}
+
+fn apply_command_array_dimensions(
+    entry: &mut xtce::ArgumentArrayParameterRefEntryType,
+    value: &str,
+) {
+    let Some(dimensions) = decode_command_dimensions(value) else {
+        return;
+    };
+    if dimensions.is_empty() {
+        entry.content = None;
+        return;
+    }
+    let content =
+        entry
+            .content
+            .get_or_insert_with(|| xtce::ArgumentArrayParameterRefEntryTypeContent {
+                location_in_container_in_bits: None,
+                repeat_entry: None,
+                include_condition: None,
+                ancillary_data_set: None,
+                dimension_list: xtce::DimensionListType {
+                    dimension: Vec::new(),
+                },
+            });
+    let mut existing = std::mem::take(&mut content.dimension_list.dimension).into_iter();
+    content.dimension_list.dimension = dimensions
+        .into_iter()
+        .map(|(start, end)| {
+            let mut dimension = existing.next().unwrap_or(xtce::DimensionType {
+                starting_index: xtce::IntegerValueType::FixedValue(0),
+                ending_index: xtce::IntegerValueType::FixedValue(0),
+            });
+            dimension.starting_index = xtce::IntegerValueType::FixedValue(start);
+            dimension.ending_index = xtce::IntegerValueType::FixedValue(end);
+            dimension
+        })
+        .collect();
+}
+
 fn apply_container_entries(list: &mut xtce::CommandContainerEntryListType, value: &str) {
     let mut argument_entries = VecDeque::new();
     let mut parameter_entries = VecDeque::new();
@@ -4239,6 +4459,7 @@ fn apply_container_entries(list: &mut xtce::CommandContainerEntryListType, value
     let mut container_entries = VecDeque::new();
     let mut container_segment_entries = VecDeque::new();
     let mut stream_segment_entries = VecDeque::new();
+    let mut array_parameter_entries = VecDeque::new();
     let mut indirect_parameter_entries = VecDeque::new();
     let mut fixed_entries = VecDeque::new();
     let mut unsupported_entries = Vec::new();
@@ -4262,6 +4483,9 @@ fn apply_container_entries(list: &mut xtce::CommandContainerEntryListType, value
             }
             xtce::CommandContainerEntryListTypeContent::StreamSegmentEntry(entry) => {
                 stream_segment_entries.push_back(entry);
+            }
+            xtce::CommandContainerEntryListTypeContent::ArrayParameterRefEntry(entry) => {
+                array_parameter_entries.push_back(entry);
             }
             xtce::CommandContainerEntryListTypeContent::IndirectParameterRefEntry(entry) => {
                 indirect_parameter_entries.push_back(entry);
@@ -4414,6 +4638,34 @@ fn apply_container_entries(list: &mut xtce::CommandContainerEntryListType, value
                     entry.short_description = description;
                     apply_fixed_entry_offset(&mut entry.location_in_container_in_bits, offset);
                     xtce::CommandContainerEntryListTypeContent::StreamSegmentEntry(entry)
+                }
+                EditableContainerEntry::ArrayParameterRef {
+                    reference,
+                    dimensions,
+                    last_array_entry,
+                    offset,
+                    description,
+                } => {
+                    let mut entry = array_parameter_entries.pop_front().unwrap_or(
+                        xtce::ArgumentArrayParameterRefEntryType {
+                            short_description: None,
+                            parameter_ref: String::new(),
+                            last_entry_for_this_array_instance:
+                                xtce::ArgumentArrayParameterRefEntryType::default_last_entry_for_this_array_instance(),
+                            content: None,
+                        },
+                    );
+                    entry.parameter_ref = reference;
+                    entry.last_entry_for_this_array_instance = last_array_entry;
+                    entry.short_description = description;
+                    apply_command_array_dimensions(&mut entry, &dimensions);
+                    if let Some(content) = &mut entry.content {
+                        apply_fixed_entry_offset(
+                            &mut content.location_in_container_in_bits,
+                            offset,
+                        );
+                    }
+                    xtce::CommandContainerEntryListTypeContent::ArrayParameterRefEntry(entry)
                 }
                 EditableContainerEntry::IndirectParameterRef {
                     reference,
@@ -6947,6 +7199,56 @@ mod tests {
                     && entry.alias_name_space.as_deref() == Some("OPS")
                     && entry.short_description.as_deref() == Some("resolve target")
         ));
+    }
+
+    #[test]
+    fn array_parameter_entry_round_trips_through_the_form() {
+        let mut container = default_command_container();
+        container.entry_list.content.push(
+            xtce::CommandContainerEntryListTypeContent::ArrayParameterRefEntry(
+                xtce::ArgumentArrayParameterRefEntryType {
+                    short_description: Some("array slice".to_owned()),
+                    parameter_ref: "samples".to_owned(),
+                    last_entry_for_this_array_instance: true,
+                    content: Some(xtce::ArgumentArrayParameterRefEntryTypeContent {
+                        location_in_container_in_bits: None,
+                        repeat_entry: None,
+                        include_condition: None,
+                        ancillary_data_set: None,
+                        dimension_list: xtce::DimensionListType {
+                            dimension: vec![
+                                xtce::DimensionType {
+                                    starting_index: xtce::IntegerValueType::FixedValue(0),
+                                    ending_index: xtce::IntegerValueType::FixedValue(3),
+                                },
+                                xtce::DimensionType {
+                                    starting_index: xtce::IntegerValueType::FixedValue(1),
+                                    ending_index: xtce::IntegerValueType::FixedValue(2),
+                                },
+                            ],
+                        },
+                    }),
+                },
+            ),
+        );
+
+        let encoded = super::encode_container_entries(&container.entry_list);
+        apply_container_entries(&mut container.entry_list, &encoded);
+
+        let xtce::CommandContainerEntryListTypeContent::ArrayParameterRefEntry(entry) =
+            &container.entry_list.content[0]
+        else {
+            panic!("expected ArrayParameterRefEntry")
+        };
+        assert_eq!(entry.parameter_ref, "samples");
+        assert!(entry.last_entry_for_this_array_instance);
+        assert_eq!(
+            super::encode_command_dimensions(
+                &entry.content.as_ref().expect("dimensions").dimension_list
+            ),
+            "0..3, 1..2"
+        );
+        assert_eq!(entry.short_description.as_deref(), Some("array slice"));
     }
 
     #[test]
