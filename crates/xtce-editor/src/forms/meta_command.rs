@@ -5443,6 +5443,7 @@ struct VerifierRowForm {
     operator: Entity<SelectState<Vec<ComparisonOperatorChoice>>>,
     value: Entity<InputState>,
     time_to_stop: Entity<InputState>,
+    return_parameter: Entity<InputState>,
 }
 
 pub(super) struct VerifierModel {
@@ -5451,6 +5452,7 @@ pub(super) struct VerifierModel {
     operator: ComparisonOperatorChoice,
     value: String,
     time_to_stop: String,
+    return_parameter: String,
 }
 
 impl VerifierListForm {
@@ -5503,6 +5505,7 @@ impl VerifierListForm {
             };
             let val = value(&row_read.value, cx);
             let time_to_stop = value(&row_read.time_to_stop, cx).trim().to_owned();
+            let return_parameter = value(&row_read.return_parameter, cx).trim().to_owned();
             match stage {
                 VerifierStageChoice::Release => {}
                 VerifierStageChoice::Received => {
@@ -5518,10 +5521,22 @@ impl VerifierListForm {
                     execution.push(build_execution_verifier(param, op_str, val, time_to_stop));
                 }
                 VerifierStageChoice::Complete => {
-                    complete.push(build_complete_verifier(param, op_str, val, time_to_stop));
+                    complete.push(build_complete_verifier(
+                        param,
+                        op_str,
+                        val,
+                        time_to_stop,
+                        return_parameter,
+                    ));
                 }
                 VerifierStageChoice::Failed => {
-                    failed = Some(build_failed_verifier(param, op_str, val, time_to_stop));
+                    failed = Some(build_failed_verifier(
+                        param,
+                        op_str,
+                        val,
+                        time_to_stop,
+                        return_parameter,
+                    ));
                 }
                 VerifierStageChoice::TransferredToRange => {
                     transferred =
@@ -5628,7 +5643,7 @@ fn verifier_models(set: Option<&xtce::VerifierSetType>) -> Vec<VerifierModel> {
         }
     }
     for v in &set.complete_verifier {
-        if let Some(m) = parse_verifier_items(
+        if let Some(mut m) = parse_verifier_items(
             &v.content,
             VerifierStageChoice::Complete,
             |item| match item {
@@ -5640,11 +5655,21 @@ fn verifier_models(set: Option<&xtce::VerifierSetType>) -> Vec<VerifierModel> {
                 _ => None,
             },
         ) {
+            m.return_parameter = v
+                .content
+                .iter()
+                .find_map(|item| match item {
+                    xtce::CompleteVerifierTypeContent::ReturnParmRef(reference) => {
+                        Some(reference.parameter_ref.clone())
+                    }
+                    _ => None,
+                })
+                .unwrap_or_default();
             models.push(m);
         }
     }
     if let Some(v) = &set.failed_verifier {
-        if let Some(m) = parse_verifier_items(
+        if let Some(mut m) = parse_verifier_items(
             &v.content,
             VerifierStageChoice::Failed,
             |item| match item {
@@ -5656,6 +5681,16 @@ fn verifier_models(set: Option<&xtce::VerifierSetType>) -> Vec<VerifierModel> {
                 _ => None,
             },
         ) {
+            m.return_parameter = v
+                .content
+                .iter()
+                .find_map(|item| match item {
+                    xtce::FailedVerifierTypeContent::ReturnParmRef(reference) => {
+                        Some(reference.parameter_ref.clone())
+                    }
+                    _ => None,
+                })
+                .unwrap_or_default();
             models.push(m);
         }
     }
@@ -5723,6 +5758,7 @@ fn parse_verifier_items<T>(
         operator: op,
         value: val,
         time_to_stop: stop,
+        return_parameter: String::new(),
     })
 }
 
@@ -5859,6 +5895,7 @@ fn build_complete_verifier(
     op: &str,
     val: String,
     time_to_stop: String,
+    return_parameter: String,
 ) -> xtce::CompleteVerifierType {
     let mut content = vec![xtce::CompleteVerifierTypeContent::Comparison(
         xtce::ComparisonType {
@@ -5879,6 +5916,13 @@ fn build_complete_verifier(
             },
         ));
     }
+    if !return_parameter.is_empty() {
+        content.push(xtce::CompleteVerifierTypeContent::ReturnParmRef(
+            xtce::ParameterRefType {
+                parameter_ref: return_parameter,
+            },
+        ));
+    }
     xtce::CompleteVerifierType {
         short_description: None,
         name: None,
@@ -5891,6 +5935,7 @@ fn build_failed_verifier(
     op: &str,
     val: String,
     time_to_stop: String,
+    return_parameter: String,
 ) -> xtce::FailedVerifierType {
     let mut content = vec![xtce::FailedVerifierTypeContent::Comparison(
         xtce::ComparisonType {
@@ -5908,6 +5953,13 @@ fn build_failed_verifier(
                 time_to_stop_checking: time_to_stop,
                 time_window_is_relative_to:
                     xtce::TimeWindowIsRelativeToType::TimeLastVerifierPassed,
+            },
+        ));
+    }
+    if !return_parameter.is_empty() {
+        content.push(xtce::FailedVerifierTypeContent::ReturnParmRef(
+            xtce::ParameterRefType {
+                parameter_ref: return_parameter,
             },
         ));
     }
@@ -6002,6 +6054,7 @@ fn verifier_entity(
     let parameter = input(&model.parameter, false, window, cx);
     let value_input = input(&model.value, false, window, cx);
     let time_to_stop = input(&model.time_to_stop, false, window, cx);
+    let return_parameter = input(&model.return_parameter, false, window, cx);
     let operator = select(
         ComparisonOperatorChoice::VARIANTS,
         model.operator,
@@ -6015,6 +6068,7 @@ fn verifier_entity(
         operator,
         value: value_input,
         time_to_stop,
+        return_parameter,
     })
 }
 
@@ -6464,6 +6518,7 @@ impl Render for VerifierListForm {
                                         operator: ComparisonOperatorChoice::Equal,
                                         value: String::new(),
                                         time_to_stop: String::new(),
+                                        return_parameter: String::new(),
                                     },
                                     window,
                                     cx,
@@ -6509,18 +6564,83 @@ impl Render for VerifierListForm {
                         cx,
                     )))
                     .child(
-                        div().mb(px(6.)).child(
-                            Button::new(format!("remove-verifier-{index}"))
-                                .small()
-                                .icon(IconName::Minus)
-                                .on_click(cx.listener(move |this, _, _, cx| {
-                                    this.rows.remove(index);
-                                    cx.notify();
-                                })),
-                        ),
+                        h_flex()
+                            .mb(px(6.))
+                            .gap_1()
+                            .child(
+                                Button::new(format!("verifier-options-{index}"))
+                                    .small()
+                                    .ghost()
+                                    .icon(IconName::Ellipsis)
+                                    .tooltip("Verifier options")
+                                    .on_click({
+                                        let row = row.clone();
+                                        move |_, window, cx| {
+                                            open_verifier_options(row.clone(), window, cx);
+                                        }
+                                    }),
+                            )
+                            .child(
+                                Button::new(format!("remove-verifier-{index}"))
+                                    .small()
+                                    .icon(IconName::Minus)
+                                    .on_click(cx.listener(move |this, _, _, cx| {
+                                        this.rows.remove(index);
+                                        cx.notify();
+                                    })),
+                            ),
                     )
             }))
     }
+}
+
+fn open_verifier_options(editor: Entity<VerifierRowForm>, window: &mut Window, cx: &mut App) {
+    window.open_dialog(cx, move |dialog, _, _| {
+        let editor = editor.clone();
+        dialog
+            .title("Verifier options")
+            .w(px(520.))
+            .content(move |content, _, cx| {
+                let row = editor.read(cx);
+                let stage = selected_value(&row.stage, VerifierStageChoice::Execution, cx);
+                let return_parameter = row.return_parameter.clone();
+                content.child(
+                    v_flex()
+                        .p_4()
+                        .gap_3()
+                        .when(
+                            matches!(
+                                stage,
+                                VerifierStageChoice::Complete | VerifierStageChoice::Failed
+                            ),
+                            |form| {
+                                form.child(field(
+                                    "Return parameter reference",
+                                    "Optional",
+                                    &return_parameter,
+                                    cx,
+                                ))
+                            },
+                        )
+                        .when(
+                            !matches!(
+                                stage,
+                                VerifierStageChoice::Complete | VerifierStageChoice::Failed
+                            ),
+                            |form| {
+                                form.child(
+                                    div()
+                                        .text_sm()
+                                        .text_color(cx.theme().muted_foreground)
+                                        .child(
+                                            "This verifier stage has no stage-specific options.",
+                                        ),
+                                )
+                            },
+                        ),
+                )
+            })
+    });
 }
 
 struct TransmissionConstraintRowForm {
@@ -7490,6 +7610,9 @@ mod tests {
                     time_window_is_relative_to:
                         xtce::TimeWindowIsRelativeToType::TimeLastVerifierPassed,
                 }),
+                xtce::CompleteVerifierTypeContent::ReturnParmRef(xtce::ParameterRefType {
+                    parameter_ref: "COMMAND_RESULT".to_owned(),
+                }),
             ],
         };
 
@@ -7517,6 +7640,7 @@ mod tests {
         assert_eq!(models[1].operator, ComparisonOperatorChoice::Equal);
         assert_eq!(models[1].value, "COMPLETED");
         assert_eq!(models[1].time_to_stop, "PT30S");
+        assert_eq!(models[1].return_parameter, "COMMAND_RESULT");
     }
 
     #[test]
