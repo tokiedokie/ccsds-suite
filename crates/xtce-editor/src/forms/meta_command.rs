@@ -4305,13 +4305,17 @@ impl Render for VerifierListForm {
                         cx,
                     )))
                     .child(
-                        Button::new(format!("remove-verifier-{}-{index}", self.title))
-                            .small()
-                            .icon(IconName::Minus)
-                            .on_click(cx.listener(move |this, _, _, cx| {
-                                this.rows.remove(index);
-                                cx.notify();
-                            })),
+                        div()
+                            .mb(px(6.))
+                            .child(
+                                Button::new(format!("remove-verifier-{}-{index}", self.title))
+                                    .small()
+                                    .icon(IconName::Minus)
+                                    .on_click(cx.listener(move |this, _, _, cx| {
+                                        this.rows.remove(index);
+                                        cx.notify();
+                                    })),
+                            ),
                     )
             }))
     }
@@ -4558,13 +4562,17 @@ impl Render for TransmissionConstraintListForm {
                                 cx,
                             )))
                             .child(
-                                Button::new(format!("remove-transmission-constraint-{index}"))
-                                    .small()
-                                    .icon(IconName::Minus)
-                                    .on_click(cx.listener(move |this, _, _, cx| {
-                                        this.rows.remove(index);
-                                        cx.notify();
-                                    })),
+                                div()
+                                    .mb(px(6.))
+                                    .child(
+                                        Button::new(format!("remove-transmission-constraint-{index}"))
+                                            .small()
+                                            .icon(IconName::Minus)
+                                            .on_click(cx.listener(move |this, _, _, cx| {
+                                                this.rows.remove(index);
+                                                cx.notify();
+                                            })),
+                                    ),
                             ),
                     )
                     .child(
