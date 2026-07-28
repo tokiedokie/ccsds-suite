@@ -210,6 +210,13 @@ pub(super) struct MessageCriteriaForm {
     _subscriptions: Vec<Subscription>,
 }
 
+pub(super) enum MessageCriteriaRef<'a> {
+    Comparison(&'a xtce::ComparisonType),
+    ComparisonList(&'a xtce::ComparisonListType),
+    BooleanExpression(&'a xtce::BooleanExpressionType),
+    CustomAlgorithm(&'a xtce::InputAlgorithmType),
+}
+
 impl MessageCriteriaForm {
     fn new(
         criteria: Option<&xtce::MatchCriteriaType>,
@@ -226,6 +233,14 @@ impl MessageCriteriaForm {
         cx: &mut impl AppContext,
     ) -> Entity<Self> {
         Self::new_values(CriteriaValues::from_context(criteria), window, cx)
+    }
+
+    pub(super) fn new_ref(
+        criteria: Option<MessageCriteriaRef<'_>>,
+        window: &mut Window,
+        cx: &mut impl AppContext,
+    ) -> Entity<Self> {
+        Self::new_values(CriteriaValues::from_ref(criteria), window, cx)
     }
 
     fn new_values(
@@ -547,6 +562,41 @@ struct CriteriaValues<'a> {
 }
 
 impl<'a> CriteriaValues<'a> {
+    fn from_ref(criteria: Option<MessageCriteriaRef<'a>>) -> Self {
+        match criteria {
+            Some(MessageCriteriaRef::Comparison(comparison)) => Self {
+                kind: CriteriaKind::Comparison,
+                comparisons: vec![comparison],
+                boolean_expression: None,
+                custom_algorithm: None,
+            },
+            Some(MessageCriteriaRef::ComparisonList(list)) => Self {
+                kind: CriteriaKind::ComparisonList,
+                comparisons: list.comparison.iter().collect(),
+                boolean_expression: None,
+                custom_algorithm: None,
+            },
+            Some(MessageCriteriaRef::BooleanExpression(expression)) => Self {
+                kind: CriteriaKind::BooleanExpression,
+                comparisons: Vec::new(),
+                boolean_expression: Some(expression),
+                custom_algorithm: None,
+            },
+            Some(MessageCriteriaRef::CustomAlgorithm(algorithm)) => Self {
+                kind: CriteriaKind::CustomAlgorithm,
+                comparisons: Vec::new(),
+                boolean_expression: None,
+                custom_algorithm: Some(algorithm),
+            },
+            None => Self {
+                kind: CriteriaKind::Comparison,
+                comparisons: Vec::new(),
+                boolean_expression: None,
+                custom_algorithm: None,
+            },
+        }
+    }
+
     fn from_criteria(criteria: Option<&'a xtce::MatchCriteriaType>) -> Self {
         match criteria {
             Some(xtce::MatchCriteriaType::Comparison(comparison)) => Self {
@@ -756,6 +806,11 @@ fn value(input: &Entity<InputState>, cx: &App) -> String {
 #[cfg(test)]
 mod tests {
     use super::{CriteriaKind, CriteriaValues, default_comparison, parse_operator};
+
+    #[test]
+    fn new_comparison_has_an_empty_parameter_reference() {
+        assert!(default_comparison().parameter_ref.is_empty());
+    }
 
     #[test]
     fn comparison_criteria_loads_as_a_single_structured_row() {

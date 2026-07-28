@@ -33,7 +33,10 @@ use super::{
     container_rate::ContainerRateForm,
     context_significance::ContextSignificanceListForm,
     dynamic_value::DynamicValueForm,
-    field, impl_select_item, optional_value,
+    field, impl_select_item,
+    input_algorithm::InputAlgorithmForm,
+    message::{MessageCriteriaForm, MessageCriteriaRef},
+    optional_value,
     rpn_operation::{RpnOperationEntry, RpnOperationForm},
 };
 use crate::XtceEditor;
@@ -5448,6 +5451,35 @@ enum PercentCompleteChoice {
 }
 impl_select_item!(PercentCompleteChoice);
 
+#[derive(Clone, Copy, Debug, Display, EnumString, VariantArray, PartialEq, Eq)]
+enum VerifierConditionChoice {
+    #[strum(serialize = "Match criteria")]
+    MatchCriteria,
+    #[strum(serialize = "Container reference")]
+    ContainerRef,
+    #[strum(serialize = "Parameter value change")]
+    ParameterValueChange,
+}
+impl_select_item!(VerifierConditionChoice);
+
+#[derive(Clone, Copy, Debug, Display, EnumString, VariantArray, PartialEq, Eq)]
+enum VerifierWindowChoice {
+    #[strum(serialize = "Fixed window")]
+    Fixed,
+    #[strum(serialize = "Algorithmic window")]
+    Algorithms,
+}
+impl_select_item!(VerifierWindowChoice);
+
+#[derive(Clone, Copy, Debug, Display, EnumString, VariantArray, PartialEq, Eq)]
+enum WindowRelativeToChoice {
+    #[strum(serialize = "Command release")]
+    CommandRelease,
+    #[strum(serialize = "Last verifier passed")]
+    LastVerifierPassed,
+}
+impl_select_item!(WindowRelativeToChoice);
+
 pub(super) struct VerifierListForm {
     rows: Vec<Entity<VerifierRowForm>>,
 }
@@ -5456,16 +5488,28 @@ struct VerifierRowForm {
     stage: Entity<SelectState<Vec<VerifierStageChoice>>>,
     name: Entity<InputState>,
     short_description: Entity<InputState>,
-    parameter: Entity<InputState>,
-    operator: Entity<SelectState<Vec<ComparisonOperatorChoice>>>,
-    value: Entity<InputState>,
+    long_description: Entity<InputState>,
+    alias_set: AliasSetForm,
+    ancillary_data_set: AncillaryDataSetForm,
+    condition_kind: Entity<SelectState<Vec<VerifierConditionChoice>>>,
+    criteria: Entity<MessageCriteriaForm>,
+    container_ref: Entity<InputState>,
+    change_parameter_ref: Entity<InputState>,
+    change_value: Entity<InputState>,
+    window_kind: Entity<SelectState<Vec<VerifierWindowChoice>>>,
+    time_to_start: Entity<InputState>,
     time_to_stop: Entity<InputState>,
+    window_relative_to: Entity<SelectState<Vec<WindowRelativeToChoice>>>,
+    start_check_algorithm: Entity<InputAlgorithmForm>,
+    stop_time_algorithm: Entity<InputAlgorithmForm>,
+    argument_restrictions: Entity<InputState>,
     return_parameter: Entity<InputState>,
     percent_complete_kind: Entity<SelectState<Vec<PercentCompleteChoice>>>,
     percent_complete_fixed: Entity<InputState>,
     percent_complete_dynamic: Entity<DynamicValueForm>,
 }
 
+#[cfg(test)]
 pub(super) struct VerifierModel {
     stage: VerifierStageChoice,
     name: String,
@@ -5480,16 +5524,209 @@ pub(super) struct VerifierModel {
     percent_complete_dynamic: Option<xtce::DynamicValueType>,
 }
 
+enum VerifierConditionRef<'a> {
+    Comparison(&'a xtce::ComparisonType),
+    ComparisonList(&'a xtce::ComparisonListType),
+    ContainerRef(&'a xtce::ContainerRefType),
+    ParameterValueChange(&'a xtce::ParameterValueChangeType),
+    CustomAlgorithm(&'a xtce::InputAlgorithmType),
+    BooleanExpression(&'a xtce::BooleanExpressionType),
+}
+
+struct VerifierSource<'a> {
+    stage: VerifierStageChoice,
+    name: Option<&'a str>,
+    short_description: Option<&'a str>,
+    long_description: Option<&'a str>,
+    alias_set: Option<&'a xtce::AliasSetType>,
+    ancillary_data_set: Option<&'a xtce::AncillaryDataSetType>,
+    condition: Option<VerifierConditionRef<'a>>,
+    check_window: Option<&'a xtce::CheckWindowType>,
+    check_window_algorithms: Option<&'a xtce::CheckWindowAlgorithmsType>,
+    argument_restrictions: Option<&'a xtce::ArgumentAssignmentListType>,
+    percent_complete: Option<&'a xtce::PercentCompleteType>,
+    return_parameter: Option<&'a xtce::ParameterRefType>,
+}
+
+enum VerifierCondition {
+    MatchCriteria(xtce::ContextMatchType),
+    ContainerRef(xtce::ContainerRefType),
+    ParameterValueChange(xtce::ParameterValueChangeType),
+}
+
+enum VerifierWindow {
+    Fixed(xtce::CheckWindowType),
+    Algorithms(xtce::CheckWindowAlgorithmsType),
+}
+
+struct VerifierCommon {
+    name: Option<String>,
+    short_description: Option<String>,
+    long_description: Option<String>,
+    alias_set: Option<xtce::AliasSetType>,
+    ancillary_data_set: Option<xtce::AncillaryDataSetType>,
+    condition: VerifierCondition,
+    window: VerifierWindow,
+    argument_restrictions: Option<xtce::ArgumentAssignmentListType>,
+}
+
+macro_rules! verifier_source {
+    ($verifier:expr, $stage:expr, $content:ident, $percent:expr, $return_parameter:expr) => {{
+        let verifier = $verifier;
+        let mut source = VerifierSource {
+            stage: $stage,
+            name: verifier.name.as_deref(),
+            short_description: verifier.short_description.as_deref(),
+            long_description: None,
+            alias_set: None,
+            ancillary_data_set: None,
+            condition: None,
+            check_window: None,
+            check_window_algorithms: None,
+            argument_restrictions: None,
+            percent_complete: $percent,
+            return_parameter: $return_parameter,
+        };
+        for item in &verifier.content {
+            #[allow(unreachable_patterns)]
+            match item {
+                xtce::$content::LongDescription(value) => {
+                    source.long_description = Some(value.as_str())
+                }
+                xtce::$content::AliasSet(value) => source.alias_set = Some(value),
+                xtce::$content::AncillaryDataSet(value) => source.ancillary_data_set = Some(value),
+                xtce::$content::Comparison(value) => {
+                    source.condition = Some(VerifierConditionRef::Comparison(value))
+                }
+                xtce::$content::ComparisonList(value) => {
+                    source.condition = Some(VerifierConditionRef::ComparisonList(value))
+                }
+                xtce::$content::ContainerRef(value) => {
+                    source.condition = Some(VerifierConditionRef::ContainerRef(value))
+                }
+                xtce::$content::ParameterValueChange(value) => {
+                    source.condition = Some(VerifierConditionRef::ParameterValueChange(value))
+                }
+                xtce::$content::CustomAlgorithm(value) => {
+                    source.condition = Some(VerifierConditionRef::CustomAlgorithm(value))
+                }
+                xtce::$content::BooleanExpression(value) => {
+                    source.condition = Some(VerifierConditionRef::BooleanExpression(value))
+                }
+                xtce::$content::CheckWindow(value) => source.check_window = Some(value),
+                xtce::$content::CheckWindowAlgorithms(value) => {
+                    source.check_window_algorithms = Some(value)
+                }
+                xtce::$content::ArgumentRestrictionList(value) => {
+                    source.argument_restrictions = Some(value)
+                }
+                _ => {}
+            }
+        }
+        source
+    }};
+}
+
+macro_rules! build_verifier {
+    ($function:ident, $verifier:ident, $content:ident) => {
+        fn $function(common: VerifierCommon) -> xtce::$verifier {
+            let mut content = Vec::new();
+            if let Some(value) = common.long_description {
+                content.push(xtce::$content::LongDescription(value));
+            }
+            if let Some(value) = common.alias_set {
+                content.push(xtce::$content::AliasSet(value));
+            }
+            if let Some(value) = common.ancillary_data_set {
+                content.push(xtce::$content::AncillaryDataSet(value));
+            }
+            match common.condition {
+                VerifierCondition::MatchCriteria(xtce::ContextMatchType::Comparison(value)) => {
+                    content.push(xtce::$content::Comparison(value))
+                }
+                VerifierCondition::MatchCriteria(xtce::ContextMatchType::ComparisonList(value)) => {
+                    content.push(xtce::$content::ComparisonList(value))
+                }
+                VerifierCondition::MatchCriteria(xtce::ContextMatchType::BooleanExpression(
+                    value,
+                )) => content.push(xtce::$content::BooleanExpression(value)),
+                VerifierCondition::MatchCriteria(xtce::ContextMatchType::CustomAlgorithm(
+                    value,
+                )) => content.push(xtce::$content::CustomAlgorithm(value)),
+                VerifierCondition::ContainerRef(value) => {
+                    content.push(xtce::$content::ContainerRef(value))
+                }
+                VerifierCondition::ParameterValueChange(value) => {
+                    content.push(xtce::$content::ParameterValueChange(value))
+                }
+            }
+            match common.window {
+                VerifierWindow::Fixed(value) => content.push(xtce::$content::CheckWindow(value)),
+                VerifierWindow::Algorithms(value) => {
+                    content.push(xtce::$content::CheckWindowAlgorithms(value))
+                }
+            }
+            if let Some(value) = common.argument_restrictions {
+                content.push(xtce::$content::ArgumentRestrictionList(value));
+            }
+            xtce::$verifier {
+                short_description: common.short_description,
+                name: common.name,
+                content,
+            }
+        }
+    };
+}
+
+build_verifier!(
+    build_received_verifier_full,
+    ReceivedVerifierType,
+    ReceivedVerifierTypeContent
+);
+build_verifier!(
+    build_accepted_verifier_full,
+    AcceptedVerifierType,
+    AcceptedVerifierTypeContent
+);
+build_verifier!(
+    build_queued_verifier_full,
+    QueuedVerifierType,
+    QueuedVerifierTypeContent
+);
+build_verifier!(
+    build_execution_verifier_full,
+    ExecutionVerifierType,
+    ExecutionVerifierTypeContent
+);
+build_verifier!(
+    build_complete_verifier_full,
+    CompleteVerifierType,
+    CompleteVerifierTypeContent
+);
+build_verifier!(
+    build_failed_verifier_full,
+    FailedVerifierType,
+    FailedVerifierTypeContent
+);
+build_verifier!(
+    build_transferred_verifier_full,
+    TransferredToRangeVerifierType,
+    TransferredToRangeVerifierTypeContent
+);
+build_verifier!(
+    build_sent_verifier_full,
+    SentFromRangeVerifierType,
+    SentFromRangeVerifierTypeContent
+);
+
 impl VerifierListForm {
     pub(super) fn new(
         verifier_set: Option<&xtce::VerifierSetType>,
         window: &mut Window,
         cx: &mut impl AppContext,
     ) -> Entity<Self> {
-        let models = verifier_models(verifier_set);
-        cx.new(move |cx| Self {
-            rows: verifier_entities(models, window, cx),
-        })
+        let rows = verifier_entities_from_set(verifier_set, window, cx);
+        cx.new(|_| Self { rows })
     }
 
     pub(super) fn load(
@@ -5498,7 +5735,7 @@ impl VerifierListForm {
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
-        self.rows = verifier_entities(verifier_models(verifier_set), window, cx);
+        self.rows = verifier_entities_from_set(verifier_set, window, cx);
         cx.notify();
     }
 
@@ -5514,24 +5751,90 @@ impl VerifierListForm {
 
         for row in &self.rows {
             let row_read = row.read(cx);
-            let param = value(&row_read.parameter, cx).trim().to_owned();
-            if param.is_empty() {
+            let stage = selected_value(&row_read.stage, VerifierStageChoice::Execution, cx);
+            if stage == VerifierStageChoice::Release {
                 continue;
             }
-            let stage = selected_value(&row_read.stage, VerifierStageChoice::Execution, cx);
-            let verifier_name = value(&row_read.name, cx).trim().to_owned();
-            let short_description = value(&row_read.short_description, cx).trim().to_owned();
-            let op = selected_value(&row_read.operator, ComparisonOperatorChoice::Equal, cx);
-            let op_str = match op {
-                ComparisonOperatorChoice::Equal => "==",
-                ComparisonOperatorChoice::NotEqual => "!=",
-                ComparisonOperatorChoice::Less => "<",
-                ComparisonOperatorChoice::LessOrEqual => "<=",
-                ComparisonOperatorChoice::Greater => ">",
-                ComparisonOperatorChoice::GreaterOrEqual => ">=",
+            let mut alias_set = None;
+            row_read.alias_set.apply_to_option(&mut alias_set, cx);
+            let mut ancillary_data_set = None;
+            row_read
+                .ancillary_data_set
+                .apply_to_option(&mut ancillary_data_set, cx);
+            let condition = match selected_value(
+                &row_read.condition_kind,
+                VerifierConditionChoice::MatchCriteria,
+                cx,
+            ) {
+                VerifierConditionChoice::MatchCriteria => {
+                    VerifierCondition::MatchCriteria(row_read.criteria.read(cx).context_match(cx))
+                }
+                VerifierConditionChoice::ContainerRef => {
+                    VerifierCondition::ContainerRef(xtce::ContainerRefType {
+                        container_ref: value(&row_read.container_ref, cx).trim().to_owned(),
+                    })
+                }
+                VerifierConditionChoice::ParameterValueChange => {
+                    VerifierCondition::ParameterValueChange(xtce::ParameterValueChangeType {
+                        parameter_ref: xtce::ParameterRefType {
+                            parameter_ref: value(&row_read.change_parameter_ref, cx)
+                                .trim()
+                                .to_owned(),
+                        },
+                        change: xtce::ChangeValueType {
+                            value: value(&row_read.change_value, cx)
+                                .trim()
+                                .parse()
+                                .unwrap_or_default(),
+                        },
+                    })
+                }
             };
-            let val = value(&row_read.value, cx);
-            let time_to_stop = value(&row_read.time_to_stop, cx).trim().to_owned();
+            let window =
+                match selected_value(&row_read.window_kind, VerifierWindowChoice::Fixed, cx) {
+                    VerifierWindowChoice::Fixed => VerifierWindow::Fixed(xtce::CheckWindowType {
+                        time_to_start_checking: optional_value(
+                            value(&row_read.time_to_start, cx).trim().to_owned(),
+                        ),
+                        time_to_stop_checking: value(&row_read.time_to_stop, cx).trim().to_owned(),
+                        time_window_is_relative_to: match selected_value(
+                            &row_read.window_relative_to,
+                            WindowRelativeToChoice::LastVerifierPassed,
+                            cx,
+                        ) {
+                            WindowRelativeToChoice::CommandRelease => {
+                                xtce::TimeWindowIsRelativeToType::CommandRelease
+                            }
+                            WindowRelativeToChoice::LastVerifierPassed => {
+                                xtce::TimeWindowIsRelativeToType::TimeLastVerifierPassed
+                            }
+                        },
+                    }),
+                    VerifierWindowChoice::Algorithms => {
+                        VerifierWindow::Algorithms(xtce::CheckWindowAlgorithmsType {
+                            start_check: row_read.start_check_algorithm.read(cx).algorithm(cx),
+                            stop_time: row_read.stop_time_algorithm.read(cx).algorithm(cx),
+                        })
+                    }
+                };
+            let argument_restrictions =
+                decode_assignments(&value(&row_read.argument_restrictions, cx));
+            let common = VerifierCommon {
+                name: optional_value(value(&row_read.name, cx).trim().to_owned()),
+                short_description: optional_value(
+                    value(&row_read.short_description, cx).trim().to_owned(),
+                ),
+                long_description: optional_value(value(&row_read.long_description, cx)),
+                alias_set,
+                ancillary_data_set,
+                condition,
+                window,
+                argument_restrictions: (!argument_restrictions.is_empty()).then_some(
+                    xtce::ArgumentAssignmentListType {
+                        argument_assignment: argument_restrictions,
+                    },
+                ),
+            };
             let return_parameter = value(&row_read.return_parameter, cx).trim().to_owned();
             let percent_complete = match selected_value(
                 &row_read.percent_complete_kind,
@@ -5549,63 +5852,57 @@ impl VerifierListForm {
                 )),
             };
             match stage {
-                VerifierStageChoice::Release => {}
                 VerifierStageChoice::Received => {
-                    let mut verifier = build_received_verifier(param, op_str, val, time_to_stop);
-                    verifier.name = optional_value(verifier_name);
-                    verifier.short_description = optional_value(short_description);
-                    received = Some(verifier);
+                    received = Some(build_received_verifier_full(common));
                 }
                 VerifierStageChoice::Accepted => {
-                    let mut verifier = build_accepted_verifier(param, op_str, val, time_to_stop);
-                    verifier.name = optional_value(verifier_name);
-                    verifier.short_description = optional_value(short_description);
-                    accepted = Some(verifier);
+                    accepted = Some(build_accepted_verifier_full(common));
                 }
                 VerifierStageChoice::Queued => {
-                    let mut verifier = build_queued_verifier(param, op_str, val, time_to_stop);
-                    verifier.name = optional_value(verifier_name);
-                    verifier.short_description = optional_value(short_description);
-                    queued = Some(verifier);
+                    queued = Some(build_queued_verifier_full(common));
                 }
                 VerifierStageChoice::Execution => {
-                    let mut verifier = build_execution_verifier(
-                        param,
-                        op_str,
-                        val,
-                        time_to_stop,
-                        percent_complete,
-                    );
-                    verifier.name = optional_value(verifier_name);
-                    verifier.short_description = optional_value(short_description);
+                    let mut verifier = build_execution_verifier_full(common);
+                    if let Some(value) = percent_complete {
+                        verifier
+                            .content
+                            .push(xtce::ExecutionVerifierTypeContent::PercentComplete(value));
+                    }
                     execution.push(verifier);
                 }
                 VerifierStageChoice::Complete => {
-                    let mut verifier =
-                        build_complete_verifier(param, op_str, val, time_to_stop, return_parameter);
-                    verifier.name = optional_value(verifier_name);
-                    verifier.short_description = optional_value(short_description);
+                    let mut verifier = build_complete_verifier_full(common);
+                    if !return_parameter.is_empty() {
+                        verifier
+                            .content
+                            .push(xtce::CompleteVerifierTypeContent::ReturnParmRef(
+                                xtce::ParameterRefType {
+                                    parameter_ref: return_parameter,
+                                },
+                            ));
+                    }
                     complete.push(verifier);
                 }
                 VerifierStageChoice::Failed => {
-                    let mut verifier =
-                        build_failed_verifier(param, op_str, val, time_to_stop, return_parameter);
-                    verifier.name = optional_value(verifier_name);
-                    verifier.short_description = optional_value(short_description);
+                    let mut verifier = build_failed_verifier_full(common);
+                    if !return_parameter.is_empty() {
+                        verifier
+                            .content
+                            .push(xtce::FailedVerifierTypeContent::ReturnParmRef(
+                                xtce::ParameterRefType {
+                                    parameter_ref: return_parameter,
+                                },
+                            ));
+                    }
                     failed = Some(verifier);
                 }
                 VerifierStageChoice::TransferredToRange => {
-                    let mut verifier = build_transferred_verifier(param, op_str, val, time_to_stop);
-                    verifier.name = optional_value(verifier_name);
-                    verifier.short_description = optional_value(short_description);
-                    transferred = Some(verifier);
+                    transferred = Some(build_transferred_verifier_full(common));
                 }
                 VerifierStageChoice::SentFromRange => {
-                    let mut verifier = build_sent_verifier(param, op_str, val, time_to_stop);
-                    verifier.name = optional_value(verifier_name);
-                    verifier.short_description = optional_value(short_description);
-                    sent = Some(verifier);
+                    sent = Some(build_sent_verifier_full(common));
                 }
+                VerifierStageChoice::Release => unreachable!(),
             }
         }
 
@@ -5635,6 +5932,7 @@ impl VerifierListForm {
     }
 }
 
+#[cfg(test)]
 fn verifier_models(set: Option<&xtce::VerifierSetType>) -> Vec<VerifierModel> {
     let mut models = Vec::new();
     let Some(set) = set else { return models };
@@ -5822,6 +6120,7 @@ fn verifier_models(set: Option<&xtce::VerifierSetType>) -> Vec<VerifierModel> {
     models
 }
 
+#[cfg(test)]
 fn parse_verifier_items<T>(
     items: &[T],
     stage: VerifierStageChoice,
@@ -5861,6 +6160,7 @@ fn parse_verifier_items<T>(
     })
 }
 
+#[cfg(test)]
 fn copy_dynamic_value(value: &xtce::DynamicValueType) -> xtce::DynamicValueType {
     xtce::DynamicValueType {
         parameter_instance_ref: xtce::ParameterInstanceRefType {
@@ -5877,6 +6177,8 @@ fn copy_dynamic_value(value: &xtce::DynamicValueType) -> xtce::DynamicValueType 
     }
 }
 
+#[cfg(test)]
+#[allow(dead_code)]
 fn build_received_verifier(
     param: String,
     op: &str,
@@ -5909,6 +6211,8 @@ fn build_received_verifier(
     }
 }
 
+#[cfg(test)]
+#[allow(dead_code)]
 fn build_accepted_verifier(
     param: String,
     op: &str,
@@ -5941,6 +6245,8 @@ fn build_accepted_verifier(
     }
 }
 
+#[cfg(test)]
+#[allow(dead_code)]
 fn build_queued_verifier(
     param: String,
     op: &str,
@@ -5973,6 +6279,7 @@ fn build_queued_verifier(
     }
 }
 
+#[cfg(test)]
 fn build_execution_verifier(
     param: String,
     op: &str,
@@ -6011,6 +6318,8 @@ fn build_execution_verifier(
     }
 }
 
+#[cfg(test)]
+#[allow(dead_code)]
 fn build_complete_verifier(
     param: String,
     op: &str,
@@ -6051,6 +6360,8 @@ fn build_complete_verifier(
     }
 }
 
+#[cfg(test)]
+#[allow(dead_code)]
 fn build_failed_verifier(
     param: String,
     op: &str,
@@ -6091,6 +6402,8 @@ fn build_failed_verifier(
     }
 }
 
+#[cfg(test)]
+#[allow(dead_code)]
 fn build_transferred_verifier(
     param: String,
     op: &str,
@@ -6123,6 +6436,8 @@ fn build_transferred_verifier(
     }
 }
 
+#[cfg(test)]
+#[allow(dead_code)]
 fn build_sent_verifier(
     param: String,
     op: &str,
@@ -6155,58 +6470,348 @@ fn build_sent_verifier(
     }
 }
 
-fn verifier_entities(
-    models: Vec<VerifierModel>,
+fn verifier_entities_from_set(
+    set: Option<&xtce::VerifierSetType>,
     window: &mut Window,
     cx: &mut impl AppContext,
 ) -> Vec<Entity<VerifierRowForm>> {
-    models
-        .into_iter()
-        .map(|model| verifier_entity(model, window, cx))
-        .collect()
+    let mut rows = Vec::new();
+    let Some(set) = set else { return rows };
+    if let Some(value) = &set.transferred_to_range_verifier {
+        rows.push(verifier_entity_from_source(
+            verifier_source!(
+                value,
+                VerifierStageChoice::TransferredToRange,
+                TransferredToRangeVerifierTypeContent,
+                None,
+                None
+            ),
+            window,
+            cx,
+        ));
+    }
+    if let Some(value) = &set.sent_from_range_verifier {
+        rows.push(verifier_entity_from_source(
+            verifier_source!(
+                value,
+                VerifierStageChoice::SentFromRange,
+                SentFromRangeVerifierTypeContent,
+                None,
+                None
+            ),
+            window,
+            cx,
+        ));
+    }
+    if let Some(value) = &set.received_verifier {
+        rows.push(verifier_entity_from_source(
+            verifier_source!(
+                value,
+                VerifierStageChoice::Received,
+                ReceivedVerifierTypeContent,
+                None,
+                None
+            ),
+            window,
+            cx,
+        ));
+    }
+    if let Some(value) = &set.accepted_verifier {
+        rows.push(verifier_entity_from_source(
+            verifier_source!(
+                value,
+                VerifierStageChoice::Accepted,
+                AcceptedVerifierTypeContent,
+                None,
+                None
+            ),
+            window,
+            cx,
+        ));
+    }
+    if let Some(value) = &set.queued_verifier {
+        rows.push(verifier_entity_from_source(
+            verifier_source!(
+                value,
+                VerifierStageChoice::Queued,
+                QueuedVerifierTypeContent,
+                None,
+                None
+            ),
+            window,
+            cx,
+        ));
+    }
+    for value in &set.execution_verifier {
+        let percent_complete = value.content.iter().find_map(|item| match item {
+            xtce::ExecutionVerifierTypeContent::PercentComplete(value) => Some(value),
+            _ => None,
+        });
+        rows.push(verifier_entity_from_source(
+            verifier_source!(
+                value,
+                VerifierStageChoice::Execution,
+                ExecutionVerifierTypeContent,
+                percent_complete,
+                None
+            ),
+            window,
+            cx,
+        ));
+    }
+    for value in &set.complete_verifier {
+        let return_parameter = value.content.iter().find_map(|item| match item {
+            xtce::CompleteVerifierTypeContent::ReturnParmRef(value) => Some(value),
+            _ => None,
+        });
+        rows.push(verifier_entity_from_source(
+            verifier_source!(
+                value,
+                VerifierStageChoice::Complete,
+                CompleteVerifierTypeContent,
+                None,
+                return_parameter
+            ),
+            window,
+            cx,
+        ));
+    }
+    if let Some(value) = &set.failed_verifier {
+        let return_parameter = value.content.iter().find_map(|item| match item {
+            xtce::FailedVerifierTypeContent::ReturnParmRef(value) => Some(value),
+            _ => None,
+        });
+        rows.push(verifier_entity_from_source(
+            verifier_source!(
+                value,
+                VerifierStageChoice::Failed,
+                FailedVerifierTypeContent,
+                None,
+                return_parameter
+            ),
+            window,
+            cx,
+        ));
+    }
+    rows
 }
 
-fn verifier_entity(
-    model: VerifierModel,
+fn verifier_entity_from_source(
+    source: VerifierSource<'_>,
     window: &mut Window,
     cx: &mut impl AppContext,
 ) -> Entity<VerifierRowForm> {
-    let stage = select(VerifierStageChoice::VARIANTS, model.stage, window, cx);
-    let name = input(&model.name, false, window, cx);
-    let short_description = input(&model.short_description, false, window, cx);
-    let parameter = input(&model.parameter, false, window, cx);
-    let value_input = input(&model.value, false, window, cx);
-    let time_to_stop = input(&model.time_to_stop, false, window, cx);
-    let return_parameter = input(&model.return_parameter, false, window, cx);
+    let stage = select(VerifierStageChoice::VARIANTS, source.stage, window, cx);
+    let name = input(source.name.unwrap_or_default(), false, window, cx);
+    let short_description = input(
+        source.short_description.unwrap_or_default(),
+        false,
+        window,
+        cx,
+    );
+    let long_description = input(
+        source.long_description.unwrap_or_default(),
+        true,
+        window,
+        cx,
+    );
+    let alias_set = AliasSetForm::new(source.alias_set, window, cx);
+    let ancillary_data_set = AncillaryDataSetForm::new(source.ancillary_data_set, window, cx);
+    let (condition_kind_value, criteria_ref, container_ref_value, change_parameter, change_value) =
+        match source.condition {
+            Some(VerifierConditionRef::Comparison(value)) => (
+                VerifierConditionChoice::MatchCriteria,
+                Some(MessageCriteriaRef::Comparison(value)),
+                "",
+                "",
+                String::new(),
+            ),
+            Some(VerifierConditionRef::ComparisonList(value)) => (
+                VerifierConditionChoice::MatchCriteria,
+                Some(MessageCriteriaRef::ComparisonList(value)),
+                "",
+                "",
+                String::new(),
+            ),
+            Some(VerifierConditionRef::BooleanExpression(value)) => (
+                VerifierConditionChoice::MatchCriteria,
+                Some(MessageCriteriaRef::BooleanExpression(value)),
+                "",
+                "",
+                String::new(),
+            ),
+            Some(VerifierConditionRef::CustomAlgorithm(value)) => (
+                VerifierConditionChoice::MatchCriteria,
+                Some(MessageCriteriaRef::CustomAlgorithm(value)),
+                "",
+                "",
+                String::new(),
+            ),
+            Some(VerifierConditionRef::ContainerRef(value)) => (
+                VerifierConditionChoice::ContainerRef,
+                None,
+                value.container_ref.as_str(),
+                "",
+                String::new(),
+            ),
+            Some(VerifierConditionRef::ParameterValueChange(value)) => (
+                VerifierConditionChoice::ParameterValueChange,
+                None,
+                "",
+                value.parameter_ref.parameter_ref.as_str(),
+                value.change.value.to_string(),
+            ),
+            None => (
+                VerifierConditionChoice::MatchCriteria,
+                None,
+                "",
+                "",
+                String::new(),
+            ),
+        };
+    let condition_kind = select(
+        VerifierConditionChoice::VARIANTS,
+        condition_kind_value,
+        window,
+        cx,
+    );
+    let criteria = MessageCriteriaForm::new_ref(criteria_ref, window, cx);
+    let container_ref = input(container_ref_value, false, window, cx);
+    let change_parameter_ref = input(change_parameter, false, window, cx);
+    let change_value = input(&change_value, false, window, cx);
+    let window_kind_value = if source.check_window_algorithms.is_some() {
+        VerifierWindowChoice::Algorithms
+    } else {
+        VerifierWindowChoice::Fixed
+    };
+    let window_kind = select(
+        VerifierWindowChoice::VARIANTS,
+        window_kind_value,
+        window,
+        cx,
+    );
+    let time_to_start = input(
+        source
+            .check_window
+            .and_then(|value| value.time_to_start_checking.as_deref())
+            .unwrap_or_default(),
+        false,
+        window,
+        cx,
+    );
+    let time_to_stop = input(
+        source
+            .check_window
+            .map(|value| value.time_to_stop_checking.as_str())
+            .unwrap_or_default(),
+        false,
+        window,
+        cx,
+    );
+    let relative_to = match source
+        .check_window
+        .map(|value| &value.time_window_is_relative_to)
+    {
+        Some(xtce::TimeWindowIsRelativeToType::CommandRelease) => {
+            WindowRelativeToChoice::CommandRelease
+        }
+        _ => WindowRelativeToChoice::LastVerifierPassed,
+    };
+    let window_relative_to = select(WindowRelativeToChoice::VARIANTS, relative_to, window, cx);
+    let start_check_algorithm = InputAlgorithmForm::new(
+        source
+            .check_window_algorithms
+            .map(|value| &value.start_check),
+        window,
+        cx,
+    );
+    let stop_time_algorithm = InputAlgorithmForm::new(
+        source.check_window_algorithms.map(|value| &value.stop_time),
+        window,
+        cx,
+    );
+    let argument_restrictions = input(
+        &encode_assignments(source.argument_restrictions),
+        true,
+        window,
+        cx,
+    );
+    let return_parameter = input(
+        source
+            .return_parameter
+            .map(|value| value.parameter_ref.as_str())
+            .unwrap_or_default(),
+        false,
+        window,
+        cx,
+    );
+    let (percent_complete_kind_value, percent_complete_fixed_value, percent_dynamic) =
+        match source.percent_complete {
+            Some(xtce::PercentCompleteType::FixedValue(value)) => {
+                (PercentCompleteChoice::Fixed, value.to_string(), None)
+            }
+            Some(xtce::PercentCompleteType::DynamicValue(value)) => {
+                (PercentCompleteChoice::Dynamic, String::new(), Some(value))
+            }
+            None => (PercentCompleteChoice::None, String::new(), None),
+        };
     let percent_complete_kind = select(
         PercentCompleteChoice::VARIANTS,
-        model.percent_complete_kind,
+        percent_complete_kind_value,
         window,
         cx,
     );
-    let percent_complete_fixed = input(&model.percent_complete_fixed, false, window, cx);
-    let percent_complete_dynamic =
-        DynamicValueForm::new(model.percent_complete_dynamic.as_ref(), window, cx);
-    let operator = select(
-        ComparisonOperatorChoice::VARIANTS,
-        model.operator,
-        window,
-        cx,
-    );
+    let percent_complete_fixed = input(&percent_complete_fixed_value, false, window, cx);
+    let percent_complete_dynamic = DynamicValueForm::new(percent_dynamic, window, cx);
 
     cx.new(|_| VerifierRowForm {
         stage,
         name,
         short_description,
-        parameter,
-        operator,
-        value: value_input,
+        long_description,
+        alias_set,
+        ancillary_data_set,
+        condition_kind,
+        criteria,
+        container_ref,
+        change_parameter_ref,
+        change_value,
+        window_kind,
+        time_to_start,
         time_to_stop,
+        window_relative_to,
+        start_check_algorithm,
+        stop_time_algorithm,
+        argument_restrictions,
         return_parameter,
         percent_complete_kind,
         percent_complete_fixed,
         percent_complete_dynamic,
     })
+}
+
+fn default_verifier_entity(
+    window: &mut Window,
+    cx: &mut impl AppContext,
+) -> Entity<VerifierRowForm> {
+    verifier_entity_from_source(
+        VerifierSource {
+            stage: VerifierStageChoice::Execution,
+            name: None,
+            short_description: None,
+            long_description: None,
+            alias_set: None,
+            ancillary_data_set: None,
+            condition: None,
+            check_window: None,
+            check_window_algorithms: None,
+            argument_restrictions: None,
+            percent_complete: None,
+            return_parameter: None,
+        },
+        window,
+        cx,
+    )
 }
 
 pub(super) struct ParameterToSetListForm {
@@ -6832,89 +7437,184 @@ impl Render for VerifierListForm {
                             .icon(IconName::Plus)
                             .label("Add verifier")
                             .on_click(cx.listener(|this, _, window, cx| {
-                                this.rows.push(verifier_entity(
-                                    VerifierModel {
-                                        stage: VerifierStageChoice::Execution,
-                                        name: String::new(),
-                                        short_description: String::new(),
-                                        parameter: String::new(),
-                                        operator: ComparisonOperatorChoice::Equal,
-                                        value: String::new(),
-                                        time_to_stop: String::new(),
-                                        return_parameter: String::new(),
-                                        percent_complete_kind: PercentCompleteChoice::None,
-                                        percent_complete_fixed: String::new(),
-                                        percent_complete_dynamic: None,
-                                    },
-                                    window,
-                                    cx,
-                                ));
+                                this.rows.push(default_verifier_entity(window, cx));
                                 cx.notify();
                             })),
                     ),
             )
             .children(self.rows.iter().enumerate().map(|(index, row)| {
                 let row_read = row.read(cx);
-                h_flex()
+                let condition_kind = selected_value(
+                    &row_read.condition_kind,
+                    VerifierConditionChoice::MatchCriteria,
+                    cx,
+                );
+                let window_kind =
+                    selected_value(&row_read.window_kind, VerifierWindowChoice::Fixed, cx);
+                v_flex()
                     .w_full()
                     .p_3()
-                    .gap_3()
-                    .items_end()
+                    .gap_4()
                     .rounded_md()
                     .border_1()
                     .border_color(cx.theme().border)
                     .child(
-                        div()
-                            .w(px(140.))
-                            .child(select_field("Stage", "", &row_read.stage, cx)),
-                    )
-                    .child(
-                        div()
-                            .flex_1()
-                            .child(field("Parameter", "", &row_read.parameter, cx)),
-                    )
-                    .child(
-                        div()
-                            .w(px(100.))
-                            .child(select_field("Op", "", &row_read.operator, cx)),
-                    )
-                    .child(
-                        div()
-                            .flex_1()
-                            .child(field("Value", "", &row_read.value, cx)),
-                    )
-                    .child(div().w(px(140.)).child(field(
-                        "Timeout (e.g. PT10S)",
-                        "",
-                        &row_read.time_to_stop,
-                        cx,
-                    )))
-                    .child(
                         h_flex()
-                            .mb(px(6.))
-                            .gap_1()
+                            .w_full()
+                            .gap_3()
+                            .items_end()
+                            .child(div().w(px(180.)).child(select_field(
+                                "Stage",
+                                "Required",
+                                &row_read.stage,
+                                cx,
+                            )))
+                            .child(div().flex_1().child(field(
+                                "Name (optional)",
+                                "",
+                                &row_read.name,
+                                cx,
+                            )))
                             .child(
-                                Button::new(format!("verifier-options-{index}"))
-                                    .small()
-                                    .ghost()
-                                    .icon(IconName::Ellipsis)
-                                    .tooltip("Verifier options")
-                                    .on_click({
-                                        let row = row.clone();
-                                        move |_, window, cx| {
-                                            open_verifier_options(row.clone(), window, cx);
-                                        }
-                                    }),
-                            )
-                            .child(
-                                Button::new(format!("remove-verifier-{index}"))
-                                    .small()
-                                    .icon(IconName::Minus)
-                                    .on_click(cx.listener(move |this, _, _, cx| {
-                                        this.rows.remove(index);
-                                        cx.notify();
-                                    })),
+                                h_flex()
+                                    .mb(px(6.))
+                                    .gap_1()
+                                    .child(
+                                        Button::new(format!("verifier-options-{index}"))
+                                            .small()
+                                            .ghost()
+                                            .icon(IconName::Ellipsis)
+                                            .tooltip("Optional and stage-specific settings")
+                                            .on_click({
+                                                let row = row.clone();
+                                                move |_, window, cx| {
+                                                    open_verifier_options(row.clone(), window, cx);
+                                                }
+                                            }),
+                                    )
+                                    .child(
+                                        Button::new(format!("remove-verifier-{index}"))
+                                            .small()
+                                            .icon(IconName::Minus)
+                                            .on_click(cx.listener(move |this, _, _, cx| {
+                                                this.rows.remove(index);
+                                                cx.notify();
+                                            })),
+                                    ),
                             ),
+                    )
+                    .child(field(
+                        "Short description",
+                        "Optional",
+                        &row_read.short_description,
+                        cx,
+                    ))
+                    .child(
+                        v_flex()
+                            .w_full()
+                            .gap_3()
+                            .child(
+                                div()
+                                    .text_sm()
+                                    .font_medium()
+                                    .child("Verification condition"),
+                            )
+                            .child(select_field(
+                                "Condition type",
+                                "Required",
+                                &row_read.condition_kind,
+                                cx,
+                            ))
+                            .when(
+                                condition_kind == VerifierConditionChoice::MatchCriteria,
+                                |form| form.child(row_read.criteria.clone()),
+                            )
+                            .when(
+                                condition_kind == VerifierConditionChoice::ContainerRef,
+                                |form| {
+                                    form.child(field(
+                                        "Container reference",
+                                        "Required",
+                                        &row_read.container_ref,
+                                        cx,
+                                    ))
+                                },
+                            )
+                            .when(
+                                condition_kind == VerifierConditionChoice::ParameterValueChange,
+                                |form| {
+                                    form.child(field(
+                                        "Parameter reference",
+                                        "Required",
+                                        &row_read.change_parameter_ref,
+                                        cx,
+                                    ))
+                                    .child(field(
+                                        "Change value",
+                                        "Required; floating-point delta",
+                                        &row_read.change_value,
+                                        cx,
+                                    ))
+                                },
+                            ),
+                    )
+                    .child(
+                        v_flex()
+                            .w_full()
+                            .gap_3()
+                            .child(div().text_sm().font_medium().child("Check window"))
+                            .child(select_field(
+                                "Window type",
+                                "Required",
+                                &row_read.window_kind,
+                                cx,
+                            ))
+                            .when(window_kind == VerifierWindowChoice::Fixed, |form| {
+                                form.child(
+                                    h_flex()
+                                        .w_full()
+                                        .gap_3()
+                                        .items_end()
+                                        .child(div().flex_1().child(field(
+                                            "Start checking after (optional)",
+                                            "",
+                                            &row_read.time_to_start,
+                                            cx,
+                                        )))
+                                        .child(div().flex_1().child(field(
+                                            "Stop checking after",
+                                            "Required",
+                                            &row_read.time_to_stop,
+                                            cx,
+                                        )))
+                                        .child(div().w(px(200.)).child(select_field(
+                                            "Window relative to",
+                                            "Required",
+                                            &row_read.window_relative_to,
+                                            cx,
+                                        ))),
+                                )
+                            })
+                            .when(window_kind == VerifierWindowChoice::Algorithms, |form| {
+                                form.child(
+                                    v_flex()
+                                        .gap_3()
+                                        .child(
+                                            div()
+                                                .text_sm()
+                                                .font_medium()
+                                                .child("Start-check algorithm"),
+                                        )
+                                        .child(row_read.start_check_algorithm.clone())
+                                        .child(
+                                            div()
+                                                .text_sm()
+                                                .font_medium()
+                                                .child("Stop-time algorithm"),
+                                        )
+                                        .child(row_read.stop_time_algorithm.clone()),
+                                )
+                            }),
                     )
             }))
     }
@@ -6925,12 +7625,12 @@ fn open_verifier_options(editor: Entity<VerifierRowForm>, window: &mut Window, c
         let editor = editor.clone();
         dialog
             .title("Verifier options")
-            .w(px(520.))
+            .w(px(760.))
             .content(move |content, _, cx| {
                 let row = editor.read(cx);
                 let stage = selected_value(&row.stage, VerifierStageChoice::Execution, cx);
-                let name = row.name.clone();
-                let short_description = row.short_description.clone();
+                let long_description = row.long_description.clone();
+                let argument_restrictions = row.argument_restrictions.clone();
                 let return_parameter = row.return_parameter.clone();
                 let percent_complete_kind = row.percent_complete_kind.clone();
                 let percent_complete_fixed = row.percent_complete_fixed.clone();
@@ -6940,14 +7640,23 @@ fn open_verifier_options(editor: Entity<VerifierRowForm>, window: &mut Window, c
                 content.child(
                     v_flex()
                         .p_4()
-                        .gap_3()
-                        .child(field("Name", "Optional", &name, cx))
+                        .gap_4()
+                        .child(div().text_sm().font_medium().child("Optional metadata"))
+                        .child(field("Long description", "Optional", &long_description, cx))
+                        .child(row.alias_set.render(cx))
+                        .child(row.ancillary_data_set.render(cx))
                         .child(field(
-                            "Short description",
-                            "Optional",
-                            &short_description,
+                            "Argument restrictions",
+                            "Optional; one “argument = value” entry per line",
+                            &argument_restrictions,
                             cx,
                         ))
+                        .child(
+                            div()
+                                .text_sm()
+                                .font_medium()
+                                .child("Stage-specific options"),
+                        )
                         .when(stage == VerifierStageChoice::Execution, |form| {
                             form.child(select_field(
                                 "Percent complete source",
@@ -7586,11 +8295,10 @@ fn value(input: &Entity<InputState>, cx: &App) -> String {
 mod tests {
     use super::{
         ArgumentSpec, AssignmentContext, CommandArguments, CommandContainerValues,
-        ConsequenceLevelChoice, EditableContainerEntry, MetaCommandValues, SignificanceValues,
-        ValueRule, apply_arguments, apply_container_entries, apply_steps,
-        command_entry_bit_positions_from_sizes, command_packet_layout_from_sizes,
-        decode_assignments, default_command_container, default_meta_command,
-        matching_argument_names, swap_rows,
+        EditableContainerEntry, MetaCommandValues, SignificanceValues, ValueRule, apply_arguments,
+        apply_container_entries, apply_steps, command_entry_bit_positions_from_sizes,
+        command_packet_layout_from_sizes, decode_assignments, default_command_container,
+        default_meta_command, matching_argument_names, swap_rows,
     };
     use std::collections::HashMap;
 
@@ -8032,6 +8740,131 @@ mod tests {
             xtce::ExecutionVerifierTypeContent::PercentComplete(
                 xtce::PercentCompleteType::FixedValue(value)
             ) if *value == 42.5
+        )));
+    }
+
+    #[test]
+    fn command_verifier_full_content_is_preserved_in_schema_order() {
+        use super::{
+            VerifierCommon, VerifierCondition, VerifierWindow, build_received_verifier_full,
+        };
+
+        let verifier = build_received_verifier_full(VerifierCommon {
+            name: Some("received-check".to_owned()),
+            short_description: Some("Checks receipt".to_owned()),
+            long_description: Some("Detailed verifier documentation".to_owned()),
+            alias_set: Some(xtce::AliasSetType {
+                alias: vec![xtce::AliasType {
+                    name_space: "ops".to_owned(),
+                    alias: "RX".to_owned(),
+                }],
+            }),
+            ancillary_data_set: Some(xtce::AncillaryDataSetType {
+                ancillary_data: Vec::new(),
+            }),
+            condition: VerifierCondition::MatchCriteria(xtce::ContextMatchType::ComparisonList(
+                xtce::ComparisonListType {
+                    comparison: vec![xtce::ComparisonType {
+                        parameter_ref: "STATUS".to_owned(),
+                        instance: 1,
+                        use_calibrated_value: false,
+                        comparison_operator: "==".to_owned(),
+                        value: "RECEIVED".to_owned(),
+                    }],
+                },
+            )),
+            window: VerifierWindow::Fixed(xtce::CheckWindowType {
+                time_to_start_checking: Some("PT1S".to_owned()),
+                time_to_stop_checking: "PT10S".to_owned(),
+                time_window_is_relative_to: xtce::TimeWindowIsRelativeToType::CommandRelease,
+            }),
+            argument_restrictions: Some(xtce::ArgumentAssignmentListType {
+                argument_assignment: vec![xtce::ArgumentAssignmentType {
+                    argument_name: "mode".to_owned(),
+                    argument_value: "SAFE".to_owned(),
+                }],
+            }),
+        });
+
+        assert_eq!(verifier.name.as_deref(), Some("received-check"));
+        assert!(matches!(
+            verifier.content.as_slice(),
+            [
+                xtce::ReceivedVerifierTypeContent::LongDescription(_),
+                xtce::ReceivedVerifierTypeContent::AliasSet(_),
+                xtce::ReceivedVerifierTypeContent::AncillaryDataSet(_),
+                xtce::ReceivedVerifierTypeContent::ComparisonList(_),
+                xtce::ReceivedVerifierTypeContent::CheckWindow(_),
+                xtce::ReceivedVerifierTypeContent::ArgumentRestrictionList(_),
+            ]
+        ));
+    }
+
+    #[test]
+    fn command_verifier_supports_non_comparison_conditions_and_algorithmic_windows() {
+        use super::{
+            VerifierCommon, VerifierCondition, VerifierWindow, build_accepted_verifier_full,
+            build_queued_verifier_full,
+        };
+
+        let algorithm = || xtce::InputAlgorithmType {
+            short_description: None,
+            name: "window".to_owned(),
+            long_description: None,
+            alias_set: None,
+            ancillary_data_set: None,
+            algorithm_text: None,
+            external_algorithm_set: None,
+            input_set: None,
+        };
+        let common = |condition, window| VerifierCommon {
+            name: None,
+            short_description: None,
+            long_description: None,
+            alias_set: None,
+            ancillary_data_set: None,
+            condition,
+            window,
+            argument_restrictions: None,
+        };
+
+        let accepted = build_accepted_verifier_full(common(
+            VerifierCondition::ContainerRef(xtce::ContainerRefType {
+                container_ref: "ACK_PACKET".to_owned(),
+            }),
+            VerifierWindow::Algorithms(xtce::CheckWindowAlgorithmsType {
+                start_check: algorithm(),
+                stop_time: algorithm(),
+            }),
+        ));
+        assert!(
+            accepted
+                .content
+                .iter()
+                .any(|item| matches!(item, xtce::AcceptedVerifierTypeContent::ContainerRef(_)))
+        );
+        assert!(accepted.content.iter().any(|item| matches!(
+            item,
+            xtce::AcceptedVerifierTypeContent::CheckWindowAlgorithms(_)
+        )));
+
+        let queued = build_queued_verifier_full(common(
+            VerifierCondition::ParameterValueChange(xtce::ParameterValueChangeType {
+                parameter_ref: xtce::ParameterRefType {
+                    parameter_ref: "COUNTER".to_owned(),
+                },
+                change: xtce::ChangeValueType { value: 1.0 },
+            }),
+            VerifierWindow::Fixed(xtce::CheckWindowType {
+                time_to_start_checking: None,
+                time_to_stop_checking: "PT5S".to_owned(),
+                time_window_is_relative_to:
+                    xtce::TimeWindowIsRelativeToType::TimeLastVerifierPassed,
+            }),
+        ));
+        assert!(queued.content.iter().any(|item| matches!(
+            item,
+            xtce::QueuedVerifierTypeContent::ParameterValueChange(_)
         )));
     }
 
