@@ -16,6 +16,7 @@ use strum::{Display, EnumString, VariantArray};
 use super::{
     aggregate_member_list::AggregateMemberListForm,
     alias_set::AliasSetForm,
+    ancillary_data_set::AncillaryDataSetForm,
     data_encoding::{
         DataEncodingForm, find_data_encoding, find_data_encoding_mut, set_data_encoding_kind,
     },
@@ -159,6 +160,121 @@ fn set_parameter_type_alias_set(
     }
 }
 
+fn parameter_type_ancillary_data_set(
+    parameter_type: &xtce::ParameterTypeSetTypeContent,
+) -> Option<&xtce::AncillaryDataSetType> {
+    macro_rules! content_ancillary {
+        ($value:expr, $content:ident) => {
+            $value.content.iter().find_map(|item| match item {
+                xtce::$content::AncillaryDataSet(value) => Some(value),
+                _ => None,
+            })
+        };
+    }
+    match parameter_type {
+        xtce::ParameterTypeSetTypeContent::StringParameterType(value) => {
+            content_ancillary!(value, StringParameterTypeContent)
+        }
+        xtce::ParameterTypeSetTypeContent::EnumeratedParameterType(value) => {
+            content_ancillary!(value, EnumeratedParameterTypeContent)
+        }
+        xtce::ParameterTypeSetTypeContent::IntegerParameterType(value) => {
+            content_ancillary!(value, IntegerParameterTypeContent)
+        }
+        xtce::ParameterTypeSetTypeContent::BinaryParameterType(value) => {
+            content_ancillary!(value, BinaryParameterTypeContent)
+        }
+        xtce::ParameterTypeSetTypeContent::FloatParameterType(value) => {
+            content_ancillary!(value, FloatParameterTypeContent)
+        }
+        xtce::ParameterTypeSetTypeContent::BooleanParameterType(value) => {
+            content_ancillary!(value, BooleanParameterTypeContent)
+        }
+        xtce::ParameterTypeSetTypeContent::RelativeTimeParameterType(value) => {
+            value.ancillary_data_set.as_ref()
+        }
+        xtce::ParameterTypeSetTypeContent::AbsoluteTimeParameterType(value) => {
+            value.ancillary_data_set.as_ref()
+        }
+        xtce::ParameterTypeSetTypeContent::ArrayParameterType(value) => {
+            value.ancillary_data_set.as_ref()
+        }
+        xtce::ParameterTypeSetTypeContent::AggregateParameterType(value) => {
+            value.ancillary_data_set.as_ref()
+        }
+    }
+}
+
+fn set_parameter_type_ancillary_data_set(
+    parameter_type: &mut xtce::ParameterTypeSetTypeContent,
+    ancillary_data_set: Option<xtce::AncillaryDataSetType>,
+) {
+    macro_rules! set_content_ancillary {
+        ($value:expr, $content:ident, $ancillary_data_set:expr) => {{
+            let existing = $value
+                .content
+                .iter()
+                .position(|item| matches!(item, xtce::$content::AncillaryDataSet(_)));
+            match ($ancillary_data_set, existing) {
+                (Some(ancillary_data_set), Some(index)) => {
+                    $value.content[index] = xtce::$content::AncillaryDataSet(ancillary_data_set);
+                }
+                (Some(ancillary_data_set), None) => {
+                    let index = $value
+                        .content
+                        .iter()
+                        .position(|item| {
+                            !matches!(
+                                item,
+                                xtce::$content::LongDescription(_) | xtce::$content::AliasSet(_)
+                            )
+                        })
+                        .unwrap_or($value.content.len());
+                    $value
+                        .content
+                        .insert(index, xtce::$content::AncillaryDataSet(ancillary_data_set));
+                }
+                (None, Some(index)) => {
+                    $value.content.remove(index);
+                }
+                (None, None) => {}
+            }
+        }};
+    }
+    match parameter_type {
+        xtce::ParameterTypeSetTypeContent::StringParameterType(value) => {
+            set_content_ancillary!(value, StringParameterTypeContent, ancillary_data_set)
+        }
+        xtce::ParameterTypeSetTypeContent::EnumeratedParameterType(value) => {
+            set_content_ancillary!(value, EnumeratedParameterTypeContent, ancillary_data_set)
+        }
+        xtce::ParameterTypeSetTypeContent::IntegerParameterType(value) => {
+            set_content_ancillary!(value, IntegerParameterTypeContent, ancillary_data_set)
+        }
+        xtce::ParameterTypeSetTypeContent::BinaryParameterType(value) => {
+            set_content_ancillary!(value, BinaryParameterTypeContent, ancillary_data_set)
+        }
+        xtce::ParameterTypeSetTypeContent::FloatParameterType(value) => {
+            set_content_ancillary!(value, FloatParameterTypeContent, ancillary_data_set)
+        }
+        xtce::ParameterTypeSetTypeContent::BooleanParameterType(value) => {
+            set_content_ancillary!(value, BooleanParameterTypeContent, ancillary_data_set)
+        }
+        xtce::ParameterTypeSetTypeContent::RelativeTimeParameterType(value) => {
+            value.ancillary_data_set = ancillary_data_set
+        }
+        xtce::ParameterTypeSetTypeContent::AbsoluteTimeParameterType(value) => {
+            value.ancillary_data_set = ancillary_data_set
+        }
+        xtce::ParameterTypeSetTypeContent::ArrayParameterType(value) => {
+            value.ancillary_data_set = ancillary_data_set
+        }
+        xtce::ParameterTypeSetTypeContent::AggregateParameterType(value) => {
+            value.ancillary_data_set = ancillary_data_set
+        }
+    }
+}
+
 #[derive(Clone, Copy, Debug, Display, EnumString, VariantArray, PartialEq, Eq)]
 enum CharacterWidthChoice {
     Default,
@@ -201,6 +317,7 @@ pub(super) struct ParameterTypeForm {
     short_description_input: Entity<InputState>,
     long_description_input: Entity<InputState>,
     alias_set: AliasSetForm,
+    ancillary_data_set: AncillaryDataSetForm,
     extra_a_input: Entity<InputState>,
     extra_b_input: Entity<InputState>,
     character_width_select: Entity<SelectState<Vec<CharacterWidthChoice>>>,
@@ -241,6 +358,11 @@ impl ParameterTypeForm {
         let name_input = input(&values.name, false, window, cx);
         let alias_set = AliasSetForm::new(
             parameter_type.and_then(parameter_type_alias_set),
+            window,
+            cx,
+        );
+        let ancillary_data_set = AncillaryDataSetForm::new(
+            parameter_type.and_then(parameter_type_ancillary_data_set),
             window,
             cx,
         );
@@ -394,6 +516,7 @@ impl ParameterTypeForm {
                 short_description_input,
                 long_description_input,
                 alias_set,
+                ancillary_data_set,
                 extra_a_input,
                 extra_b_input,
                 character_width_select,
@@ -489,6 +612,11 @@ impl ParameterTypeForm {
             window,
             cx,
         );
+        self.ancillary_data_set.load(
+            parameter_type.and_then(parameter_type_ancillary_data_set),
+            window,
+            cx,
+        );
         cx.notify();
     }
 
@@ -544,6 +672,10 @@ impl ParameterTypeForm {
         set_parameter_type_alias_set(
             parameter_type,
             AliasSetForm::parse(&self.alias_set.text(cx)),
+        );
+        set_parameter_type_ancillary_data_set(
+            parameter_type,
+            AncillaryDataSetForm::parse(&self.ancillary_data_set.text(cx)),
         );
     }
 
@@ -761,7 +893,13 @@ impl ParameterTypeForm {
                         cx.notify();
                     })),
             )
-            .content(v_flex().pt_3().child(self.alias_set.render(cx)))
+            .content(
+                v_flex()
+                    .pt_3()
+                    .gap_4()
+                    .child(self.alias_set.render(cx))
+                    .child(self.ancillary_data_set.render(cx)),
+            )
     }
 }
 
@@ -1437,7 +1575,8 @@ fn value(input: &Entity<InputState>, cx: &App) -> String {
 mod tests {
     use super::{
         ParameterTypeKind, ParameterTypeValues, apply_nested_items, encode_nested_items,
-        parameter_type_alias_set, replace_parameter_type_kind, set_parameter_type_alias_set,
+        parameter_type_alias_set, parameter_type_ancillary_data_set, replace_parameter_type_kind,
+        set_parameter_type_alias_set, set_parameter_type_ancillary_data_set,
     };
 
     #[test]
@@ -1559,6 +1698,50 @@ mod tests {
 
         set_parameter_type_alias_set(&mut parameter_type, None);
         assert!(parameter_type_alias_set(&parameter_type).is_none());
+    }
+
+    #[test]
+    fn ancillary_data_set_is_editable_for_scalar_parameter_types() {
+        let mut parameter_type =
+            xtce::ParameterTypeSetTypeContent::StringParameterType(xtce::StringParameterType {
+                short_description: None,
+                name: "ModeType".to_owned(),
+                base_type: None,
+                initial_value: None,
+                restriction_pattern: None,
+                character_width: None,
+                content: vec![xtce::StringParameterTypeContent::AliasSet(
+                    xtce::AliasSetType { alias: Vec::new() },
+                )],
+            });
+        set_parameter_type_ancillary_data_set(
+            &mut parameter_type,
+            Some(xtce::AncillaryDataSetType {
+                ancillary_data: vec![xtce::AncillaryDataType {
+                    name: "guide".to_owned(),
+                    mime_type: "text/plain".to_owned(),
+                    href: None,
+                    content: "Mode guide".to_owned(),
+                }],
+            }),
+        );
+
+        let ancillary = parameter_type_ancillary_data_set(&parameter_type).expect("ancillary data");
+        assert_eq!(ancillary.ancillary_data[0].name, "guide");
+        let xtce::ParameterTypeSetTypeContent::StringParameterType(value) = &parameter_type else {
+            panic!("expected a StringParameterType");
+        };
+        assert!(matches!(
+            value.content[0],
+            xtce::StringParameterTypeContent::AliasSet(_)
+        ));
+        assert!(matches!(
+            value.content[1],
+            xtce::StringParameterTypeContent::AncillaryDataSet(_)
+        ));
+
+        set_parameter_type_ancillary_data_set(&mut parameter_type, None);
+        assert!(parameter_type_ancillary_data_set(&parameter_type).is_none());
     }
 
     #[test]
