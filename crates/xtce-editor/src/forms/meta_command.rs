@@ -100,8 +100,7 @@ pub(super) struct MetaCommandForm {
     reason_for_warning_input: Entity<InputState>,
     space_system_at_risk_input: Entity<InputState>,
     transmission_constraints: Entity<TransmissionConstraintListForm>,
-    execution_verifiers: Entity<VerifierListForm>,
-    complete_verifiers: Entity<VerifierListForm>,
+    verifiers: Entity<VerifierListForm>,
     interlock_verification_select: Entity<SelectState<Vec<VerificationToWaitForChoice>>>,
     interlock_scope_input: Entity<InputState>,
     interlock_progress_input: Entity<InputState>,
@@ -267,33 +266,13 @@ impl MetaCommandForm {
                     window,
                     cx,
                 ),
-                execution_verifiers: VerifierListForm::new(
-                    "Execution verifiers",
-                    "Add execution verifier",
-                    command
-                        .and_then(|cmd| match cmd {
-                            xtce::MetaCommandSetTypeContent::MetaCommand(cmd) => {
-                                cmd.verifier_set.as_ref()
-                            }
-                            _ => None,
-                        })
-                        .map(|v| execution_verifier_models(&v.execution_verifier))
-                        .unwrap_or_default(),
-                    window,
-                    cx,
-                ),
-                complete_verifiers: VerifierListForm::new(
-                    "Complete verifiers",
-                    "Add complete verifier",
-                    command
-                        .and_then(|cmd| match cmd {
-                            xtce::MetaCommandSetTypeContent::MetaCommand(cmd) => {
-                                cmd.verifier_set.as_ref()
-                            }
-                            _ => None,
-                        })
-                        .map(|v| complete_verifier_models(&v.complete_verifier))
-                        .unwrap_or_default(),
+                verifiers: VerifierListForm::new(
+                    command.and_then(|cmd| match cmd {
+                        xtce::MetaCommandSetTypeContent::MetaCommand(cmd) => {
+                            cmd.verifier_set.as_ref()
+                        }
+                        _ => None,
+                    }),
                     window,
                     cx,
                 ),
@@ -383,23 +362,8 @@ impl MetaCommandForm {
             xtce::MetaCommandSetTypeContent::MetaCommand(cmd) => cmd.verifier_set.as_ref(),
             _ => None,
         });
-        self.execution_verifiers.update(cx, |form, cx| {
-            form.load(
-                verifier_set
-                    .map(|v| execution_verifier_models(&v.execution_verifier))
-                    .unwrap_or_default(),
-                window,
-                cx,
-            );
-        });
-        self.complete_verifiers.update(cx, |form, cx| {
-            form.load(
-                verifier_set
-                    .map(|v| complete_verifier_models(&v.complete_verifier))
-                    .unwrap_or_default(),
-                window,
-                cx,
-            );
+        self.verifiers.update(cx, |form, cx| {
+            form.load(verifier_set, window, cx);
         });
         self.transmission_constraints.update(cx, |form, cx| {
             form.load(
@@ -554,37 +518,7 @@ impl MetaCommandForm {
         .apply_to(command);
         if let xtce::MetaCommandSetTypeContent::MetaCommand(cmd) = command {
             cmd.transmission_constraint_list = self.transmission_constraints.read(cx).to_list(cx);
-            let execs = self.execution_verifiers.read(cx).to_execution_verifiers(cx);
-            let comps = self.complete_verifiers.read(cx).to_complete_verifiers(cx);
-
-            if execs.is_empty() && comps.is_empty() {
-                if let Some(set) = &mut cmd.verifier_set {
-                    set.execution_verifier.clear();
-                    set.complete_verifier.clear();
-                    if set.transferred_to_range_verifier.is_none()
-                        && set.sent_from_range_verifier.is_none()
-                        && set.received_verifier.is_none()
-                        && set.accepted_verifier.is_none()
-                        && set.queued_verifier.is_none()
-                        && set.failed_verifier.is_none()
-                    {
-                        cmd.verifier_set = None;
-                    }
-                }
-            } else {
-                let set = cmd.verifier_set.get_or_insert_with(|| xtce::VerifierSetType {
-                    transferred_to_range_verifier: None,
-                    sent_from_range_verifier: None,
-                    received_verifier: None,
-                    accepted_verifier: None,
-                    queued_verifier: None,
-                    execution_verifier: Vec::new(),
-                    complete_verifier: Vec::new(),
-                    failed_verifier: None,
-                });
-                set.execution_verifier = execs;
-                set.complete_verifier = comps;
-            }
+            self.verifiers.read(cx).apply_to_verifier_set(&mut cmd.verifier_set, cx);
 
             let interlock_values = InterlockValues {
                 scope_to_space_system: value(&self.interlock_scope_input, cx),
@@ -833,9 +767,7 @@ impl MetaCommandForm {
             .content(
                 v_flex()
                     .pt_3()
-                    .gap_4()
-                    .child(self.execution_verifiers.clone())
-                    .child(self.complete_verifiers.clone()),
+                    .child(self.verifiers.clone()),
             )
     }
 
@@ -3979,228 +3911,599 @@ impl InterlockValues {
     }
 }
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(super) enum VerifierStageChoice {
+    Received,
+    Accepted,
+    Queued,
+    Execution,
+    Complete,
+    Failed,
+    TransferredToRange,
+    SentFromRange,
+}
+
+impl VerifierStageChoice {
+    const VARIANTS: &'static [Self] = &[
+        Self::Execution,
+        Self::Complete,
+        Self::Received,
+        Self::Accepted,
+        Self::Queued,
+        Self::Failed,
+        Self::TransferredToRange,
+        Self::SentFromRange,
+    ];
+}
+
+impl std::fmt::Display for VerifierStageChoice {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let s = match self {
+            Self::Received => "Received",
+            Self::Accepted => "Accepted",
+            Self::Queued => "Queued",
+            Self::Execution => "Execution",
+            Self::Complete => "Complete",
+            Self::Failed => "Failed",
+            Self::TransferredToRange => "Transferred to range",
+            Self::SentFromRange => "Sent from range",
+        };
+        write!(f, "{s}")
+    }
+}
+
+impl_select_item!(VerifierStageChoice);
+
 pub(super) struct VerifierListForm {
-    title: &'static str,
-    add_label: &'static str,
     rows: Vec<Entity<VerifierRowForm>>,
 }
 
 struct VerifierRowForm {
+    stage: Entity<SelectState<Vec<VerifierStageChoice>>>,
     parameter: Entity<InputState>,
     operator: Entity<SelectState<Vec<ComparisonOperatorChoice>>>,
     value: Entity<InputState>,
     time_to_stop: Entity<InputState>,
 }
 
-impl VerifierListForm {
-    pub(super) fn new(
-        title: &'static str,
-        add_label: &'static str,
-        models: Vec<VerifierModel>,
-        window: &mut Window,
-        cx: &mut impl AppContext,
-    ) -> Entity<Self> {
-        cx.new(move |cx| Self {
-            title,
-            add_label,
-            rows: verifier_entities(models, window, cx),
-        })
-    }
-
-    pub(super) fn load(
-        &mut self,
-        models: Vec<VerifierModel>,
-        window: &mut Window,
-        cx: &mut Context<Self>,
-    ) {
-        self.rows = verifier_entities(models, window, cx);
-        cx.notify();
-    }
-
-    pub(super) fn to_execution_verifiers(&self, cx: &App) -> Vec<xtce::ExecutionVerifierType> {
-        self.rows
-            .iter()
-            .filter_map(|row| {
-                let row = row.read(cx);
-                let param = value(&row.parameter, cx).trim().to_owned();
-                if param.is_empty() {
-                    return None;
-                }
-                let op = row
-                    .operator
-                    .read(cx)
-                    .selected_value()
-                    .copied()
-                    .unwrap_or(ComparisonOperatorChoice::Equal);
-                let op_str = match op {
-                    ComparisonOperatorChoice::Equal => "==",
-                    ComparisonOperatorChoice::NotEqual => "!=",
-                    ComparisonOperatorChoice::Less => "<",
-                    ComparisonOperatorChoice::LessOrEqual => "<=",
-                    ComparisonOperatorChoice::Greater => ">",
-                    ComparisonOperatorChoice::GreaterOrEqual => ">=",
-                };
-                let val = value(&row.value, cx);
-                let time_to_stop = value(&row.time_to_stop, cx).trim().to_owned();
-
-                let mut content = vec![xtce::ExecutionVerifierTypeContent::Comparison(
-                    xtce::ComparisonType {
-                        parameter_ref: param,
-                        instance: 0,
-                        use_calibrated_value: true,
-                        comparison_operator: op_str.to_owned(),
-                        value: val,
-                    },
-                )];
-
-                if !time_to_stop.is_empty() {
-                    content.push(xtce::ExecutionVerifierTypeContent::CheckWindow(
-                        xtce::CheckWindowType {
-                            time_to_start_checking: None,
-                            time_to_stop_checking: time_to_stop,
-                            time_window_is_relative_to:
-                                xtce::TimeWindowIsRelativeToType::TimeLastVerifierPassed,
-                        },
-                    ));
-                }
-
-                Some(xtce::ExecutionVerifierType {
-                    short_description: None,
-                    name: None,
-                    content,
-                })
-            })
-            .collect()
-    }
-
-    pub(super) fn to_complete_verifiers(&self, cx: &App) -> Vec<xtce::CompleteVerifierType> {
-        self.rows
-            .iter()
-            .filter_map(|row| {
-                let row = row.read(cx);
-                let param = value(&row.parameter, cx).trim().to_owned();
-                if param.is_empty() {
-                    return None;
-                }
-                let op = row
-                    .operator
-                    .read(cx)
-                    .selected_value()
-                    .copied()
-                    .unwrap_or(ComparisonOperatorChoice::Equal);
-                let op_str = match op {
-                    ComparisonOperatorChoice::Equal => "==",
-                    ComparisonOperatorChoice::NotEqual => "!=",
-                    ComparisonOperatorChoice::Less => "<",
-                    ComparisonOperatorChoice::LessOrEqual => "<=",
-                    ComparisonOperatorChoice::Greater => ">",
-                    ComparisonOperatorChoice::GreaterOrEqual => ">=",
-                };
-                let val = value(&row.value, cx);
-                let time_to_stop = value(&row.time_to_stop, cx).trim().to_owned();
-
-                let mut content = vec![xtce::CompleteVerifierTypeContent::Comparison(
-                    xtce::ComparisonType {
-                        parameter_ref: param,
-                        instance: 0,
-                        use_calibrated_value: true,
-                        comparison_operator: op_str.to_owned(),
-                        value: val,
-                    },
-                )];
-
-                if !time_to_stop.is_empty() {
-                    content.push(xtce::CompleteVerifierTypeContent::CheckWindow(
-                        xtce::CheckWindowType {
-                            time_to_start_checking: None,
-                            time_to_stop_checking: time_to_stop,
-                            time_window_is_relative_to:
-                                xtce::TimeWindowIsRelativeToType::TimeLastVerifierPassed,
-                        },
-                    ));
-                }
-
-                Some(xtce::CompleteVerifierType {
-                    short_description: None,
-                    name: None,
-                    content,
-                })
-            })
-            .collect()
-    }
-}
-
 pub(super) struct VerifierModel {
+    stage: VerifierStageChoice,
     parameter: String,
     operator: ComparisonOperatorChoice,
     value: String,
     time_to_stop: String,
 }
 
-fn execution_verifier_models(verifiers: &[xtce::ExecutionVerifierType]) -> Vec<VerifierModel> {
-    verifiers
-        .iter()
-        .map(|v| {
-            let mut param = String::new();
-            let mut op = ComparisonOperatorChoice::Equal;
-            let mut val = String::new();
-            let mut stop = String::new();
+impl VerifierListForm {
+    pub(super) fn new(
+        verifier_set: Option<&xtce::VerifierSetType>,
+        window: &mut Window,
+        cx: &mut impl AppContext,
+    ) -> Entity<Self> {
+        let models = verifier_models(verifier_set);
+        cx.new(move |cx| Self {
+            rows: verifier_entities(models, window, cx),
+        })
+    }
 
-            for item in &v.content {
-                match item {
-                    xtce::ExecutionVerifierTypeContent::Comparison(c) => {
-                        param = c.parameter_ref.clone();
-                        op = operator_choice_from_str(&c.comparison_operator);
-                        val = c.value.clone();
-                    }
-                    xtce::ExecutionVerifierTypeContent::CheckWindow(w) => {
-                        stop = w.time_to_stop_checking.clone();
-                    }
-                    _ => {}
+    pub(super) fn load(
+        &mut self,
+        verifier_set: Option<&xtce::VerifierSetType>,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        self.rows = verifier_entities(verifier_models(verifier_set), window, cx);
+        cx.notify();
+    }
+
+    pub(super) fn apply_to_verifier_set(
+        &self,
+        set: &mut Option<xtce::VerifierSetType>,
+        cx: &App,
+    ) {
+        let mut received = None;
+        let mut accepted = None;
+        let mut queued = None;
+        let mut execution = Vec::new();
+        let mut complete = Vec::new();
+        let mut failed = None;
+        let mut transferred = None;
+        let mut sent = None;
+
+        for row in &self.rows {
+            let row_read = row.read(cx);
+            let param = value(&row_read.parameter, cx).trim().to_owned();
+            if param.is_empty() {
+                continue;
+            }
+            let stage = selected_value(&row_read.stage, VerifierStageChoice::Execution, cx);
+            let op = selected_value(&row_read.operator, ComparisonOperatorChoice::Equal, cx);
+            let op_str = match op {
+                ComparisonOperatorChoice::Equal => "==",
+                ComparisonOperatorChoice::NotEqual => "!=",
+                ComparisonOperatorChoice::Less => "<",
+                ComparisonOperatorChoice::LessOrEqual => "<=",
+                ComparisonOperatorChoice::Greater => ">",
+                ComparisonOperatorChoice::GreaterOrEqual => ">=",
+            };
+            let val = value(&row_read.value, cx);
+            let time_to_stop = value(&row_read.time_to_stop, cx).trim().to_owned();
+
+            match stage {
+                VerifierStageChoice::Received => {
+                    received = Some(build_received_verifier(param, op_str, val, time_to_stop));
+                }
+                VerifierStageChoice::Accepted => {
+                    accepted = Some(build_accepted_verifier(param, op_str, val, time_to_stop));
+                }
+                VerifierStageChoice::Queued => {
+                    queued = Some(build_queued_verifier(param, op_str, val, time_to_stop));
+                }
+                VerifierStageChoice::Execution => {
+                    execution.push(build_execution_verifier(param, op_str, val, time_to_stop));
+                }
+                VerifierStageChoice::Complete => {
+                    complete.push(build_complete_verifier(param, op_str, val, time_to_stop));
+                }
+                VerifierStageChoice::Failed => {
+                    failed = Some(build_failed_verifier(param, op_str, val, time_to_stop));
+                }
+                VerifierStageChoice::TransferredToRange => {
+                    transferred = Some(build_transferred_verifier(param, op_str, val, time_to_stop));
+                }
+                VerifierStageChoice::SentFromRange => {
+                    sent = Some(build_sent_verifier(param, op_str, val, time_to_stop));
                 }
             }
+        }
 
-            VerifierModel {
-                parameter: param,
-                operator: op,
-                value: val,
-                time_to_stop: stop,
-            }
-        })
-        .collect()
+        let has_any = received.is_some()
+            || accepted.is_some()
+            || queued.is_some()
+            || !execution.is_empty()
+            || !complete.is_empty()
+            || failed.is_some()
+            || transferred.is_some()
+            || sent.is_some();
+
+        if has_any {
+            *set = Some(xtce::VerifierSetType {
+                transferred_to_range_verifier: transferred,
+                sent_from_range_verifier: sent,
+                received_verifier: received,
+                accepted_verifier: accepted,
+                queued_verifier: queued,
+                execution_verifier: execution,
+                complete_verifier: complete,
+                failed_verifier: failed,
+            });
+        } else {
+            *set = None;
+        }
+    }
 }
 
-fn complete_verifier_models(verifiers: &[xtce::CompleteVerifierType]) -> Vec<VerifierModel> {
-    verifiers
-        .iter()
-        .map(|v| {
-            let mut param = String::new();
-            let mut op = ComparisonOperatorChoice::Equal;
-            let mut val = String::new();
-            let mut stop = String::new();
+fn verifier_models(set: Option<&xtce::VerifierSetType>) -> Vec<VerifierModel> {
+    let mut models = Vec::new();
+    let Some(set) = set else { return models };
 
-            for item in &v.content {
-                match item {
-                    xtce::CompleteVerifierTypeContent::Comparison(c) => {
-                        param = c.parameter_ref.clone();
-                        op = operator_choice_from_str(&c.comparison_operator);
-                        val = c.value.clone();
-                    }
-                    xtce::CompleteVerifierTypeContent::CheckWindow(w) => {
-                        stop = w.time_to_stop_checking.clone();
-                    }
-                    _ => {}
-                }
-            }
+    if let Some(v) = &set.received_verifier {
+        if let Some(m) = parse_verifier_items(
+            &v.content,
+            VerifierStageChoice::Received,
+            |item| match item {
+                xtce::ReceivedVerifierTypeContent::Comparison(c) => Some(c),
+                _ => None,
+            },
+            |item| match item {
+                xtce::ReceivedVerifierTypeContent::CheckWindow(w) => Some(w),
+                _ => None,
+            },
+        ) {
+            models.push(m);
+        }
+    }
+    if let Some(v) = &set.accepted_verifier {
+        if let Some(m) = parse_verifier_items(
+            &v.content,
+            VerifierStageChoice::Accepted,
+            |item| match item {
+                xtce::AcceptedVerifierTypeContent::Comparison(c) => Some(c),
+                _ => None,
+            },
+            |item| match item {
+                xtce::AcceptedVerifierTypeContent::CheckWindow(w) => Some(w),
+                _ => None,
+            },
+        ) {
+            models.push(m);
+        }
+    }
+    if let Some(v) = &set.queued_verifier {
+        if let Some(m) = parse_verifier_items(
+            &v.content,
+            VerifierStageChoice::Queued,
+            |item| match item {
+                xtce::QueuedVerifierTypeContent::Comparison(c) => Some(c),
+                _ => None,
+            },
+            |item| match item {
+                xtce::QueuedVerifierTypeContent::CheckWindow(w) => Some(w),
+                _ => None,
+            },
+        ) {
+            models.push(m);
+        }
+    }
+    for v in &set.execution_verifier {
+        if let Some(m) = parse_verifier_items(
+            &v.content,
+            VerifierStageChoice::Execution,
+            |item| match item {
+                xtce::ExecutionVerifierTypeContent::Comparison(c) => Some(c),
+                _ => None,
+            },
+            |item| match item {
+                xtce::ExecutionVerifierTypeContent::CheckWindow(w) => Some(w),
+                _ => None,
+            },
+        ) {
+            models.push(m);
+        }
+    }
+    for v in &set.complete_verifier {
+        if let Some(m) = parse_verifier_items(
+            &v.content,
+            VerifierStageChoice::Complete,
+            |item| match item {
+                xtce::CompleteVerifierTypeContent::Comparison(c) => Some(c),
+                _ => None,
+            },
+            |item| match item {
+                xtce::CompleteVerifierTypeContent::CheckWindow(w) => Some(w),
+                _ => None,
+            },
+        ) {
+            models.push(m);
+        }
+    }
+    if let Some(v) = &set.failed_verifier {
+        if let Some(m) = parse_verifier_items(
+            &v.content,
+            VerifierStageChoice::Failed,
+            |item| match item {
+                xtce::FailedVerifierTypeContent::Comparison(c) => Some(c),
+                _ => None,
+            },
+            |item| match item {
+                xtce::FailedVerifierTypeContent::CheckWindow(w) => Some(w),
+                _ => None,
+            },
+        ) {
+            models.push(m);
+        }
+    }
+    if let Some(v) = &set.transferred_to_range_verifier {
+        if let Some(m) = parse_verifier_items(
+            &v.content,
+            VerifierStageChoice::TransferredToRange,
+            |item| match item {
+                xtce::TransferredToRangeVerifierTypeContent::Comparison(c) => Some(c),
+                _ => None,
+            },
+            |item| match item {
+                xtce::TransferredToRangeVerifierTypeContent::CheckWindow(w) => Some(w),
+                _ => None,
+            },
+        ) {
+            models.push(m);
+        }
+    }
+    if let Some(v) = &set.sent_from_range_verifier {
+        if let Some(m) = parse_verifier_items(
+            &v.content,
+            VerifierStageChoice::SentFromRange,
+            |item| match item {
+                xtce::SentFromRangeVerifierTypeContent::Comparison(c) => Some(c),
+                _ => None,
+            },
+            |item| match item {
+                xtce::SentFromRangeVerifierTypeContent::CheckWindow(w) => Some(w),
+                _ => None,
+            },
+        ) {
+            models.push(m);
+        }
+    }
 
-            VerifierModel {
-                parameter: param,
-                operator: op,
-                value: val,
-                time_to_stop: stop,
-            }
-        })
-        .collect()
+    models
+}
+
+fn parse_verifier_items<T>(
+    items: &[T],
+    stage: VerifierStageChoice,
+    get_comp: impl Fn(&T) -> Option<&xtce::ComparisonType>,
+    get_win: impl Fn(&T) -> Option<&xtce::CheckWindowType>,
+) -> Option<VerifierModel> {
+    let mut param = String::new();
+    let mut op = ComparisonOperatorChoice::Equal;
+    let mut val = String::new();
+    let mut stop = String::new();
+
+    for item in items {
+        if let Some(c) = get_comp(item) {
+            param = c.parameter_ref.clone();
+            op = operator_choice_from_str(&c.comparison_operator);
+            val = c.value.clone();
+        }
+        if let Some(w) = get_win(item) {
+            stop = w.time_to_stop_checking.clone();
+        }
+    }
+
+    (!param.is_empty()).then_some(VerifierModel {
+        stage,
+        parameter: param,
+        operator: op,
+        value: val,
+        time_to_stop: stop,
+    })
+}
+
+fn build_received_verifier(
+    param: String,
+    op: &str,
+    val: String,
+    time_to_stop: String,
+) -> xtce::ReceivedVerifierType {
+    let mut content = vec![xtce::ReceivedVerifierTypeContent::Comparison(
+        xtce::ComparisonType {
+            parameter_ref: param,
+            instance: 0,
+            use_calibrated_value: true,
+            comparison_operator: op.to_owned(),
+            value: val,
+        },
+    )];
+    if !time_to_stop.is_empty() {
+        content.push(xtce::ReceivedVerifierTypeContent::CheckWindow(
+            xtce::CheckWindowType {
+                time_to_start_checking: None,
+                time_to_stop_checking: time_to_stop,
+                time_window_is_relative_to:
+                    xtce::TimeWindowIsRelativeToType::TimeLastVerifierPassed,
+            },
+        ));
+    }
+    xtce::ReceivedVerifierType {
+        short_description: None,
+        name: None,
+        content,
+    }
+}
+
+fn build_accepted_verifier(
+    param: String,
+    op: &str,
+    val: String,
+    time_to_stop: String,
+) -> xtce::AcceptedVerifierType {
+    let mut content = vec![xtce::AcceptedVerifierTypeContent::Comparison(
+        xtce::ComparisonType {
+            parameter_ref: param,
+            instance: 0,
+            use_calibrated_value: true,
+            comparison_operator: op.to_owned(),
+            value: val,
+        },
+    )];
+    if !time_to_stop.is_empty() {
+        content.push(xtce::AcceptedVerifierTypeContent::CheckWindow(
+            xtce::CheckWindowType {
+                time_to_start_checking: None,
+                time_to_stop_checking: time_to_stop,
+                time_window_is_relative_to:
+                    xtce::TimeWindowIsRelativeToType::TimeLastVerifierPassed,
+            },
+        ));
+    }
+    xtce::AcceptedVerifierType {
+        short_description: None,
+        name: None,
+        content,
+    }
+}
+
+fn build_queued_verifier(
+    param: String,
+    op: &str,
+    val: String,
+    time_to_stop: String,
+) -> xtce::QueuedVerifierType {
+    let mut content = vec![xtce::QueuedVerifierTypeContent::Comparison(
+        xtce::ComparisonType {
+            parameter_ref: param,
+            instance: 0,
+            use_calibrated_value: true,
+            comparison_operator: op.to_owned(),
+            value: val,
+        },
+    )];
+    if !time_to_stop.is_empty() {
+        content.push(xtce::QueuedVerifierTypeContent::CheckWindow(
+            xtce::CheckWindowType {
+                time_to_start_checking: None,
+                time_to_stop_checking: time_to_stop,
+                time_window_is_relative_to:
+                    xtce::TimeWindowIsRelativeToType::TimeLastVerifierPassed,
+            },
+        ));
+    }
+    xtce::QueuedVerifierType {
+        short_description: None,
+        name: None,
+        content,
+    }
+}
+
+fn build_execution_verifier(
+    param: String,
+    op: &str,
+    val: String,
+    time_to_stop: String,
+) -> xtce::ExecutionVerifierType {
+    let mut content = vec![xtce::ExecutionVerifierTypeContent::Comparison(
+        xtce::ComparisonType {
+            parameter_ref: param,
+            instance: 0,
+            use_calibrated_value: true,
+            comparison_operator: op.to_owned(),
+            value: val,
+        },
+    )];
+    if !time_to_stop.is_empty() {
+        content.push(xtce::ExecutionVerifierTypeContent::CheckWindow(
+            xtce::CheckWindowType {
+                time_to_start_checking: None,
+                time_to_stop_checking: time_to_stop,
+                time_window_is_relative_to:
+                    xtce::TimeWindowIsRelativeToType::TimeLastVerifierPassed,
+            },
+        ));
+    }
+    xtce::ExecutionVerifierType {
+        short_description: None,
+        name: None,
+        content,
+    }
+}
+
+fn build_complete_verifier(
+    param: String,
+    op: &str,
+    val: String,
+    time_to_stop: String,
+) -> xtce::CompleteVerifierType {
+    let mut content = vec![xtce::CompleteVerifierTypeContent::Comparison(
+        xtce::ComparisonType {
+            parameter_ref: param,
+            instance: 0,
+            use_calibrated_value: true,
+            comparison_operator: op.to_owned(),
+            value: val,
+        },
+    )];
+    if !time_to_stop.is_empty() {
+        content.push(xtce::CompleteVerifierTypeContent::CheckWindow(
+            xtce::CheckWindowType {
+                time_to_start_checking: None,
+                time_to_stop_checking: time_to_stop,
+                time_window_is_relative_to:
+                    xtce::TimeWindowIsRelativeToType::TimeLastVerifierPassed,
+            },
+        ));
+    }
+    xtce::CompleteVerifierType {
+        short_description: None,
+        name: None,
+        content,
+    }
+}
+
+fn build_failed_verifier(
+    param: String,
+    op: &str,
+    val: String,
+    time_to_stop: String,
+) -> xtce::FailedVerifierType {
+    let mut content = vec![xtce::FailedVerifierTypeContent::Comparison(
+        xtce::ComparisonType {
+            parameter_ref: param,
+            instance: 0,
+            use_calibrated_value: true,
+            comparison_operator: op.to_owned(),
+            value: val,
+        },
+    )];
+    if !time_to_stop.is_empty() {
+        content.push(xtce::FailedVerifierTypeContent::CheckWindow(
+            xtce::CheckWindowType {
+                time_to_start_checking: None,
+                time_to_stop_checking: time_to_stop,
+                time_window_is_relative_to:
+                    xtce::TimeWindowIsRelativeToType::TimeLastVerifierPassed,
+            },
+        ));
+    }
+    xtce::FailedVerifierType {
+        short_description: None,
+        name: None,
+        content,
+    }
+}
+
+fn build_transferred_verifier(
+    param: String,
+    op: &str,
+    val: String,
+    time_to_stop: String,
+) -> xtce::TransferredToRangeVerifierType {
+    let mut content = vec![xtce::TransferredToRangeVerifierTypeContent::Comparison(
+        xtce::ComparisonType {
+            parameter_ref: param,
+            instance: 0,
+            use_calibrated_value: true,
+            comparison_operator: op.to_owned(),
+            value: val,
+        },
+    )];
+    if !time_to_stop.is_empty() {
+        content.push(xtce::TransferredToRangeVerifierTypeContent::CheckWindow(
+            xtce::CheckWindowType {
+                time_to_start_checking: None,
+                time_to_stop_checking: time_to_stop,
+                time_window_is_relative_to:
+                    xtce::TimeWindowIsRelativeToType::TimeLastVerifierPassed,
+            },
+        ));
+    }
+    xtce::TransferredToRangeVerifierType {
+        short_description: None,
+        name: None,
+        content,
+    }
+}
+
+fn build_sent_verifier(
+    param: String,
+    op: &str,
+    val: String,
+    time_to_stop: String,
+) -> xtce::SentFromRangeVerifierType {
+    let mut content = vec![xtce::SentFromRangeVerifierTypeContent::Comparison(
+        xtce::ComparisonType {
+            parameter_ref: param,
+            instance: 0,
+            use_calibrated_value: true,
+            comparison_operator: op.to_owned(),
+            value: val,
+        },
+    )];
+    if !time_to_stop.is_empty() {
+        content.push(xtce::SentFromRangeVerifierTypeContent::CheckWindow(
+            xtce::CheckWindowType {
+                time_to_start_checking: None,
+                time_to_stop_checking: time_to_stop,
+                time_window_is_relative_to:
+                    xtce::TimeWindowIsRelativeToType::TimeLastVerifierPassed,
+            },
+        ));
+    }
+    xtce::SentFromRangeVerifierType {
+        short_description: None,
+        name: None,
+        content,
+    }
 }
 
 fn verifier_entities(
@@ -4219,12 +4522,14 @@ fn verifier_entity(
     window: &mut Window,
     cx: &mut impl AppContext,
 ) -> Entity<VerifierRowForm> {
+    let stage = select(VerifierStageChoice::VARIANTS, model.stage, window, cx);
     let parameter = input(&model.parameter, false, window, cx);
     let value_input = input(&model.value, false, window, cx);
     let time_to_stop = input(&model.time_to_stop, false, window, cx);
     let operator = select(ComparisonOperatorChoice::VARIANTS, model.operator, window, cx);
 
     cx.new(|_| VerifierRowForm {
+        stage,
         parameter,
         operator,
         value: value_input,
@@ -4242,7 +4547,7 @@ impl Render for VerifierListForm {
                     .justify_between()
                     .child(
                         v_flex()
-                            .child(div().text_sm().font_medium().child(self.title))
+                            .child(div().text_sm().font_medium().child("Command verifiers"))
                             .child(
                                 div()
                                     .text_xs()
@@ -4251,13 +4556,14 @@ impl Render for VerifierListForm {
                             ),
                     )
                     .child(
-                        Button::new(format!("add-verifier-{}", self.title))
+                        Button::new("add-verifier")
                             .small()
                             .icon(IconName::Plus)
-                            .label(self.add_label)
+                            .label("Add verifier")
                             .on_click(cx.listener(|this, _, window, cx| {
                                 this.rows.push(verifier_entity(
                                     VerifierModel {
+                                        stage: VerifierStageChoice::Execution,
                                         parameter: String::new(),
                                         operator: ComparisonOperatorChoice::Equal,
                                         value: String::new(),
@@ -4280,6 +4586,12 @@ impl Render for VerifierListForm {
                     .rounded_md()
                     .border_1()
                     .border_color(cx.theme().border)
+                    .child(div().w(px(140.)).child(select_field(
+                        "Stage",
+                        "",
+                        &row_read.stage,
+                        cx,
+                    )))
                     .child(div().flex_1().child(field(
                         "Parameter",
                         "",
@@ -4308,7 +4620,7 @@ impl Render for VerifierListForm {
                         div()
                             .mb(px(6.))
                             .child(
-                                Button::new(format!("remove-verifier-{}-{index}", self.title))
+                                Button::new(format!("remove-verifier-{index}"))
                                     .small()
                                     .icon(IconName::Minus)
                                     .on_click(cx.listener(move |this, _, _, cx| {
@@ -5238,9 +5550,7 @@ mod tests {
 
     #[test]
     fn meta_command_verifiers_roundtrip() {
-        use super::{
-            ComparisonOperatorChoice, complete_verifier_models, execution_verifier_models,
-        };
+        use super::{ComparisonOperatorChoice, VerifierStageChoice, verifier_models};
 
         let exec = xtce::ExecutionVerifierType {
             short_description: None,
@@ -5282,19 +5592,30 @@ mod tests {
             ],
         };
 
-        let exec_models = execution_verifier_models(&[exec]);
-        assert_eq!(exec_models.len(), 1);
-        assert_eq!(exec_models[0].parameter, "EXEC_STATUS");
-        assert_eq!(exec_models[0].operator, ComparisonOperatorChoice::Equal);
-        assert_eq!(exec_models[0].value, "RUNNING");
-        assert_eq!(exec_models[0].time_to_stop, "PT5S");
+        let set = xtce::VerifierSetType {
+            transferred_to_range_verifier: None,
+            sent_from_range_verifier: None,
+            received_verifier: None,
+            accepted_verifier: None,
+            queued_verifier: None,
+            execution_verifier: vec![exec],
+            complete_verifier: vec![comp],
+            failed_verifier: None,
+        };
 
-        let comp_models = complete_verifier_models(&[comp]);
-        assert_eq!(comp_models.len(), 1);
-        assert_eq!(comp_models[0].parameter, "EXEC_STATUS");
-        assert_eq!(comp_models[0].operator, ComparisonOperatorChoice::Equal);
-        assert_eq!(comp_models[0].value, "COMPLETED");
-        assert_eq!(comp_models[0].time_to_stop, "PT30S");
+        let models = verifier_models(Some(&set));
+        assert_eq!(models.len(), 2);
+        assert_eq!(models[0].stage, VerifierStageChoice::Execution);
+        assert_eq!(models[0].parameter, "EXEC_STATUS");
+        assert_eq!(models[0].operator, ComparisonOperatorChoice::Equal);
+        assert_eq!(models[0].value, "RUNNING");
+        assert_eq!(models[0].time_to_stop, "PT5S");
+
+        assert_eq!(models[1].stage, VerifierStageChoice::Complete);
+        assert_eq!(models[1].parameter, "EXEC_STATUS");
+        assert_eq!(models[1].operator, ComparisonOperatorChoice::Equal);
+        assert_eq!(models[1].value, "COMPLETED");
+        assert_eq!(models[1].time_to_stop, "PT30S");
     }
 
     #[test]
