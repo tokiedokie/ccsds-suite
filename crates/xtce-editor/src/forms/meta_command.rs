@@ -5454,6 +5454,7 @@ pub(super) struct VerifierListForm {
 
 struct VerifierRowForm {
     stage: Entity<SelectState<Vec<VerifierStageChoice>>>,
+    name: Entity<InputState>,
     parameter: Entity<InputState>,
     operator: Entity<SelectState<Vec<ComparisonOperatorChoice>>>,
     value: Entity<InputState>,
@@ -5466,6 +5467,7 @@ struct VerifierRowForm {
 
 pub(super) struct VerifierModel {
     stage: VerifierStageChoice,
+    name: String,
     parameter: String,
     operator: ComparisonOperatorChoice,
     value: String,
@@ -5515,6 +5517,7 @@ impl VerifierListForm {
                 continue;
             }
             let stage = selected_value(&row_read.stage, VerifierStageChoice::Execution, cx);
+            let verifier_name = value(&row_read.name, cx).trim().to_owned();
             let op = selected_value(&row_read.operator, ComparisonOperatorChoice::Equal, cx);
             let op_str = match op {
                 ComparisonOperatorChoice::Equal => "==",
@@ -5545,47 +5548,52 @@ impl VerifierListForm {
             match stage {
                 VerifierStageChoice::Release => {}
                 VerifierStageChoice::Received => {
-                    received = Some(build_received_verifier(param, op_str, val, time_to_stop));
+                    let mut verifier = build_received_verifier(param, op_str, val, time_to_stop);
+                    verifier.name = optional_value(verifier_name);
+                    received = Some(verifier);
                 }
                 VerifierStageChoice::Accepted => {
-                    accepted = Some(build_accepted_verifier(param, op_str, val, time_to_stop));
+                    let mut verifier = build_accepted_verifier(param, op_str, val, time_to_stop);
+                    verifier.name = optional_value(verifier_name);
+                    accepted = Some(verifier);
                 }
                 VerifierStageChoice::Queued => {
-                    queued = Some(build_queued_verifier(param, op_str, val, time_to_stop));
+                    let mut verifier = build_queued_verifier(param, op_str, val, time_to_stop);
+                    verifier.name = optional_value(verifier_name);
+                    queued = Some(verifier);
                 }
                 VerifierStageChoice::Execution => {
-                    execution.push(build_execution_verifier(
+                    let mut verifier = build_execution_verifier(
                         param,
                         op_str,
                         val,
                         time_to_stop,
                         percent_complete,
-                    ));
+                    );
+                    verifier.name = optional_value(verifier_name);
+                    execution.push(verifier);
                 }
                 VerifierStageChoice::Complete => {
-                    complete.push(build_complete_verifier(
-                        param,
-                        op_str,
-                        val,
-                        time_to_stop,
-                        return_parameter,
-                    ));
+                    let mut verifier =
+                        build_complete_verifier(param, op_str, val, time_to_stop, return_parameter);
+                    verifier.name = optional_value(verifier_name);
+                    complete.push(verifier);
                 }
                 VerifierStageChoice::Failed => {
-                    failed = Some(build_failed_verifier(
-                        param,
-                        op_str,
-                        val,
-                        time_to_stop,
-                        return_parameter,
-                    ));
+                    let mut verifier =
+                        build_failed_verifier(param, op_str, val, time_to_stop, return_parameter);
+                    verifier.name = optional_value(verifier_name);
+                    failed = Some(verifier);
                 }
                 VerifierStageChoice::TransferredToRange => {
-                    transferred =
-                        Some(build_transferred_verifier(param, op_str, val, time_to_stop));
+                    let mut verifier = build_transferred_verifier(param, op_str, val, time_to_stop);
+                    verifier.name = optional_value(verifier_name);
+                    transferred = Some(verifier);
                 }
                 VerifierStageChoice::SentFromRange => {
-                    sent = Some(build_sent_verifier(param, op_str, val, time_to_stop));
+                    let mut verifier = build_sent_verifier(param, op_str, val, time_to_stop);
+                    verifier.name = optional_value(verifier_name);
+                    sent = Some(verifier);
                 }
             }
         }
@@ -5624,6 +5632,7 @@ fn verifier_models(set: Option<&xtce::VerifierSetType>) -> Vec<VerifierModel> {
         if let Some(m) = parse_verifier_items(
             &v.content,
             VerifierStageChoice::Received,
+            v.name.as_deref(),
             |item| match item {
                 xtce::ReceivedVerifierTypeContent::Comparison(c) => Some(c),
                 _ => None,
@@ -5640,6 +5649,7 @@ fn verifier_models(set: Option<&xtce::VerifierSetType>) -> Vec<VerifierModel> {
         if let Some(m) = parse_verifier_items(
             &v.content,
             VerifierStageChoice::Accepted,
+            v.name.as_deref(),
             |item| match item {
                 xtce::AcceptedVerifierTypeContent::Comparison(c) => Some(c),
                 _ => None,
@@ -5656,6 +5666,7 @@ fn verifier_models(set: Option<&xtce::VerifierSetType>) -> Vec<VerifierModel> {
         if let Some(m) = parse_verifier_items(
             &v.content,
             VerifierStageChoice::Queued,
+            v.name.as_deref(),
             |item| match item {
                 xtce::QueuedVerifierTypeContent::Comparison(c) => Some(c),
                 _ => None,
@@ -5672,6 +5683,7 @@ fn verifier_models(set: Option<&xtce::VerifierSetType>) -> Vec<VerifierModel> {
         if let Some(mut m) = parse_verifier_items(
             &v.content,
             VerifierStageChoice::Execution,
+            v.name.as_deref(),
             |item| match item {
                 xtce::ExecutionVerifierTypeContent::Comparison(c) => Some(c),
                 _ => None,
@@ -5703,6 +5715,7 @@ fn verifier_models(set: Option<&xtce::VerifierSetType>) -> Vec<VerifierModel> {
         if let Some(mut m) = parse_verifier_items(
             &v.content,
             VerifierStageChoice::Complete,
+            v.name.as_deref(),
             |item| match item {
                 xtce::CompleteVerifierTypeContent::Comparison(c) => Some(c),
                 _ => None,
@@ -5729,6 +5742,7 @@ fn verifier_models(set: Option<&xtce::VerifierSetType>) -> Vec<VerifierModel> {
         if let Some(mut m) = parse_verifier_items(
             &v.content,
             VerifierStageChoice::Failed,
+            v.name.as_deref(),
             |item| match item {
                 xtce::FailedVerifierTypeContent::Comparison(c) => Some(c),
                 _ => None,
@@ -5755,6 +5769,7 @@ fn verifier_models(set: Option<&xtce::VerifierSetType>) -> Vec<VerifierModel> {
         if let Some(m) = parse_verifier_items(
             &v.content,
             VerifierStageChoice::TransferredToRange,
+            v.name.as_deref(),
             |item| match item {
                 xtce::TransferredToRangeVerifierTypeContent::Comparison(c) => Some(c),
                 _ => None,
@@ -5771,6 +5786,7 @@ fn verifier_models(set: Option<&xtce::VerifierSetType>) -> Vec<VerifierModel> {
         if let Some(m) = parse_verifier_items(
             &v.content,
             VerifierStageChoice::SentFromRange,
+            v.name.as_deref(),
             |item| match item {
                 xtce::SentFromRangeVerifierTypeContent::Comparison(c) => Some(c),
                 _ => None,
@@ -5790,6 +5806,7 @@ fn verifier_models(set: Option<&xtce::VerifierSetType>) -> Vec<VerifierModel> {
 fn parse_verifier_items<T>(
     items: &[T],
     stage: VerifierStageChoice,
+    name: Option<&str>,
     get_comp: impl Fn(&T) -> Option<&xtce::ComparisonType>,
     get_win: impl Fn(&T) -> Option<&xtce::CheckWindowType>,
 ) -> Option<VerifierModel> {
@@ -5811,6 +5828,7 @@ fn parse_verifier_items<T>(
 
     (!param.is_empty()).then_some(VerifierModel {
         stage,
+        name: name.unwrap_or_default().to_owned(),
         parameter: param,
         operator: op,
         value: val,
@@ -6133,6 +6151,7 @@ fn verifier_entity(
     cx: &mut impl AppContext,
 ) -> Entity<VerifierRowForm> {
     let stage = select(VerifierStageChoice::VARIANTS, model.stage, window, cx);
+    let name = input(&model.name, false, window, cx);
     let parameter = input(&model.parameter, false, window, cx);
     let value_input = input(&model.value, false, window, cx);
     let time_to_stop = input(&model.time_to_stop, false, window, cx);
@@ -6155,6 +6174,7 @@ fn verifier_entity(
 
     cx.new(|_| VerifierRowForm {
         stage,
+        name,
         parameter,
         operator,
         value: value_input,
@@ -6792,6 +6812,7 @@ impl Render for VerifierListForm {
                                 this.rows.push(verifier_entity(
                                     VerifierModel {
                                         stage: VerifierStageChoice::Execution,
+                                        name: String::new(),
                                         parameter: String::new(),
                                         operator: ComparisonOperatorChoice::Equal,
                                         value: String::new(),
@@ -6884,6 +6905,7 @@ fn open_verifier_options(editor: Entity<VerifierRowForm>, window: &mut Window, c
             .content(move |content, _, cx| {
                 let row = editor.read(cx);
                 let stage = selected_value(&row.stage, VerifierStageChoice::Execution, cx);
+                let name = row.name.clone();
                 let return_parameter = row.return_parameter.clone();
                 let percent_complete_kind = row.percent_complete_kind.clone();
                 let percent_complete_fixed = row.percent_complete_fixed.clone();
@@ -6894,6 +6916,7 @@ fn open_verifier_options(editor: Entity<VerifierRowForm>, window: &mut Window, c
                     v_flex()
                         .p_4()
                         .gap_3()
+                        .child(field("Name", "Optional", &name, cx))
                         .when(stage == VerifierStageChoice::Execution, |form| {
                             form.child(select_field(
                                 "Percent complete source",
@@ -7889,7 +7912,7 @@ mod tests {
 
         let exec = xtce::ExecutionVerifierType {
             short_description: None,
-            name: None,
+            name: Some("execution-progress".to_owned()),
             content: vec![
                 xtce::ExecutionVerifierTypeContent::Comparison(xtce::ComparisonType {
                     parameter_ref: "EXEC_STATUS".to_owned(),
@@ -7947,6 +7970,7 @@ mod tests {
         let models = verifier_models(Some(&set));
         assert_eq!(models.len(), 2);
         assert_eq!(models[0].stage, VerifierStageChoice::Execution);
+        assert_eq!(models[0].name, "execution-progress");
         assert_eq!(models[0].parameter, "EXEC_STATUS");
         assert_eq!(models[0].operator, ComparisonOperatorChoice::Equal);
         assert_eq!(models[0].value, "RUNNING");
