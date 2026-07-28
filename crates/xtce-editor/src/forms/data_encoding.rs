@@ -591,7 +591,10 @@ impl DataEncodingForm {
                 .context_calibrators
                 .read(cx)
                 .apply_to(&mut value.context_calibrator_list, cx),
-            DataEncodingMut::Binary(_) | DataEncodingMut::String(_) => {}
+            DataEncodingMut::Binary(_)
+            | DataEncodingMut::ArgumentBinary(_)
+            | DataEncodingMut::String(_)
+            | DataEncodingMut::ArgumentString(_) => {}
         }
         apply_data_error_detect_correct(&mut encoding, self.error_detect_correct.read(cx), cx);
         if let DataEncodingMut::Binary(binary) = &mut encoding {
@@ -947,18 +950,20 @@ impl Render for DataEncodingForm {
 #[derive(Clone, Copy)]
 pub(super) enum DataEncodingRef<'a> {
     Binary(&'a xtce::BinaryDataEncodingType),
+    ArgumentBinary(&'a xtce::ArgumentBinaryDataEncodingType),
     Float(&'a xtce::FloatDataEncodingType),
     Integer(&'a xtce::IntegerDataEncodingType),
     String(&'a xtce::StringDataEncodingType),
+    ArgumentString(&'a xtce::ArgumentStringDataEncodingType),
 }
 
 impl<'a> DataEncodingRef<'a> {
-    fn kind(self) -> DataEncodingKind {
+    pub(super) fn kind(self) -> DataEncodingKind {
         match self {
-            Self::Binary(_) => DataEncodingKind::Binary,
+            Self::Binary(_) | Self::ArgumentBinary(_) => DataEncodingKind::Binary,
             Self::Float(_) => DataEncodingKind::Float,
             Self::Integer(_) => DataEncodingKind::Integer,
-            Self::String(_) => DataEncodingKind::String,
+            Self::String(_) | Self::ArgumentString(_) => DataEncodingKind::String,
         }
     }
 
@@ -966,7 +971,7 @@ impl<'a> DataEncodingRef<'a> {
         match self {
             Self::Float(value) => value.default_calibrator.as_ref(),
             Self::Integer(value) => value.default_calibrator.as_ref(),
-            Self::Binary(_) | Self::String(_) => None,
+            Self::Binary(_) | Self::ArgumentBinary(_) | Self::String(_) | Self::ArgumentString(_) => None,
         }
     }
 
@@ -974,7 +979,7 @@ impl<'a> DataEncodingRef<'a> {
         match self {
             Self::Float(value) => value.context_calibrator_list.as_ref(),
             Self::Integer(value) => value.context_calibrator_list.as_ref(),
-            Self::Binary(_) | Self::String(_) => None,
+            Self::Binary(_) | Self::ArgumentBinary(_) | Self::String(_) | Self::ArgumentString(_) => None,
         }
     }
 }
@@ -987,9 +992,17 @@ fn binary_size(encoding: Option<DataEncodingRef<'_>>) -> Option<&xtce::IntegerVa
 }
 
 fn binary_size_kind(encoding: Option<DataEncodingRef<'_>>) -> BinarySizeKind {
-    match binary_size(encoding) {
-        Some(xtce::IntegerValueType::DynamicValue(_)) => BinarySizeKind::Dynamic,
-        Some(xtce::IntegerValueType::DiscreteLookupList(_)) => BinarySizeKind::DiscreteLookup,
+    match encoding {
+        Some(DataEncodingRef::Binary(value)) => match &value.size_in_bits {
+            xtce::IntegerValueType::DynamicValue(_) => BinarySizeKind::Dynamic,
+            xtce::IntegerValueType::DiscreteLookupList(_) => BinarySizeKind::DiscreteLookup,
+            _ => BinarySizeKind::Fixed,
+        },
+        Some(DataEncodingRef::ArgumentBinary(value)) => match &value.size_in_bits {
+            xtce::ArgumentIntegerValueType::DynamicValue(_) => BinarySizeKind::Dynamic,
+            xtce::ArgumentIntegerValueType::DiscreteLookupList(_) => BinarySizeKind::DiscreteLookup,
+            _ => BinarySizeKind::Fixed,
+        },
         _ => BinarySizeKind::Fixed,
     }
 }
@@ -1030,6 +1043,10 @@ fn string_fixed_size(encoding: Option<DataEncodingRef<'_>>) -> Option<&xtce::Siz
     match encoding {
         Some(DataEncodingRef::String(value)) => value.content.iter().find_map(|item| match item {
             xtce::StringDataEncodingTypeContent::SizeInBits(value) => Some(value),
+            _ => None,
+        }),
+        Some(DataEncodingRef::ArgumentString(value)) => value.content.iter().find_map(|item| match item {
+            xtce::ArgumentStringDataEncodingTypeContent::SizeInBits(value) => Some(value),
             _ => None,
         }),
         _ => None,
@@ -1123,10 +1140,15 @@ fn data_error_detect_correct(
 ) -> Option<&xtce::ErrorDetectCorrectType> {
     match encoding {
         Some(DataEncodingRef::Binary(value)) => value.error_detect_correct.as_ref(),
+        Some(DataEncodingRef::ArgumentBinary(value)) => value.error_detect_correct.as_ref(),
         Some(DataEncodingRef::Float(value)) => value.error_detect_correct.as_ref(),
         Some(DataEncodingRef::Integer(value)) => value.error_detect_correct.as_ref(),
         Some(DataEncodingRef::String(value)) => value.content.iter().find_map(|item| match item {
             xtce::StringDataEncodingTypeContent::ErrorDetectCorrect(value) => Some(value),
+            _ => None,
+        }),
+        Some(DataEncodingRef::ArgumentString(value)) => value.content.iter().find_map(|item| match item {
+            xtce::ArgumentStringDataEncodingTypeContent::ErrorDetectCorrect(value) => Some(value),
             _ => None,
         }),
         None => None,
@@ -1142,6 +1164,7 @@ fn apply_data_error_detect_correct(
     form.apply_to(&mut error_detect_correct, cx);
     match encoding {
         DataEncodingMut::Binary(value) => value.error_detect_correct = error_detect_correct,
+        DataEncodingMut::ArgumentBinary(value) => value.error_detect_correct = error_detect_correct,
         DataEncodingMut::Float(value) => value.error_detect_correct = error_detect_correct,
         DataEncodingMut::Integer(value) => value.error_detect_correct = error_detect_correct,
         DataEncodingMut::String(string) => {
@@ -1166,14 +1189,38 @@ fn apply_data_error_detect_correct(
                 (None, None) => {}
             }
         }
+        DataEncodingMut::ArgumentString(string) => {
+            let current = string.content.iter().position(|item| {
+                matches!(
+                    item,
+                    xtce::ArgumentStringDataEncodingTypeContent::ErrorDetectCorrect(_)
+                )
+            });
+            match (current, error_detect_correct) {
+                (Some(index), Some(error)) => {
+                    string.content[index] =
+                        xtce::ArgumentStringDataEncodingTypeContent::ErrorDetectCorrect(error);
+                }
+                (None, Some(error)) => string.content.insert(
+                    0,
+                    xtce::ArgumentStringDataEncodingTypeContent::ErrorDetectCorrect(error),
+                ),
+                (Some(index), None) => {
+                    string.content.remove(index);
+                }
+                (None, None) => {}
+            }
+        }
     }
 }
 
 pub(super) enum DataEncodingMut<'a> {
     Binary(&'a mut xtce::BinaryDataEncodingType),
+    ArgumentBinary(&'a mut xtce::ArgumentBinaryDataEncodingType),
     Float(&'a mut xtce::FloatDataEncodingType),
     Integer(&'a mut xtce::IntegerDataEncodingType),
     String(&'a mut xtce::StringDataEncodingType),
+    ArgumentString(&'a mut xtce::ArgumentStringDataEncodingType),
 }
 
 impl DataEncodingMut<'_> {
@@ -1181,7 +1228,7 @@ impl DataEncodingMut<'_> {
         match self {
             Self::Float(value) => Some(&mut value.default_calibrator),
             Self::Integer(value) => Some(&mut value.default_calibrator),
-            Self::Binary(_) | Self::String(_) => None,
+            Self::Binary(_) | Self::ArgumentBinary(_) | Self::String(_) | Self::ArgumentString(_) => None,
         }
     }
 }
@@ -1225,6 +1272,45 @@ pub(super) fn find_data_encoding(
     }
 }
 
+pub(super) fn find_argument_data_encoding(
+    argument_type: &xtce::ArgumentTypeSetTypeContent,
+) -> Option<DataEncodingRef<'_>> {
+    macro_rules! find {
+        ($content:expr, $enum_type:ident) => {
+            $content.iter().find_map(|item| match item {
+                xtce::$enum_type::BinaryDataEncoding(value) => Some(DataEncodingRef::ArgumentBinary(value)),
+                xtce::$enum_type::FloatDataEncoding(value) => Some(DataEncodingRef::Float(value)),
+                xtce::$enum_type::IntegerDataEncoding(value) => {
+                    Some(DataEncodingRef::Integer(value))
+                }
+                xtce::$enum_type::StringDataEncoding(value) => Some(DataEncodingRef::ArgumentString(value)),
+                _ => None,
+            })
+        };
+    }
+    match argument_type {
+        xtce::ArgumentTypeSetTypeContent::StringArgumentType(value) => {
+            find!(value.content, StringArgumentTypeContent)
+        }
+        xtce::ArgumentTypeSetTypeContent::EnumeratedArgumentType(value) => {
+            find!(value.content, EnumeratedArgumentTypeContent)
+        }
+        xtce::ArgumentTypeSetTypeContent::IntegerArgumentType(value) => {
+            find!(value.content, IntegerArgumentTypeContent)
+        }
+        xtce::ArgumentTypeSetTypeContent::BinaryArgumentType(value) => {
+            find!(value.content, BinaryArgumentTypeContent)
+        }
+        xtce::ArgumentTypeSetTypeContent::FloatArgumentType(value) => {
+            find!(value.content, FloatArgumentTypeContent)
+        }
+        xtce::ArgumentTypeSetTypeContent::BooleanArgumentType(value) => {
+            find!(value.content, BooleanArgumentTypeContent)
+        }
+        _ => None,
+    }
+}
+
 pub(super) fn find_data_encoding_mut(
     parameter_type: &mut xtce::ParameterTypeSetTypeContent,
 ) -> Option<DataEncodingMut<'_>> {
@@ -1259,6 +1345,45 @@ pub(super) fn find_data_encoding_mut(
         }
         xtce::ParameterTypeSetTypeContent::BooleanParameterType(value) => {
             find!(value.content, BooleanParameterTypeContent)
+        }
+        _ => None,
+    }
+}
+
+pub(super) fn find_argument_data_encoding_mut(
+    argument_type: &mut xtce::ArgumentTypeSetTypeContent,
+) -> Option<DataEncodingMut<'_>> {
+    macro_rules! find {
+        ($content:expr, $enum_type:ident) => {
+            $content.iter_mut().find_map(|item| match item {
+                xtce::$enum_type::BinaryDataEncoding(value) => Some(DataEncodingMut::ArgumentBinary(value)),
+                xtce::$enum_type::FloatDataEncoding(value) => Some(DataEncodingMut::Float(value)),
+                xtce::$enum_type::IntegerDataEncoding(value) => {
+                    Some(DataEncodingMut::Integer(value))
+                }
+                xtce::$enum_type::StringDataEncoding(value) => Some(DataEncodingMut::ArgumentString(value)),
+                _ => None,
+            })
+        };
+    }
+    match argument_type {
+        xtce::ArgumentTypeSetTypeContent::StringArgumentType(value) => {
+            find!(value.content, StringArgumentTypeContent)
+        }
+        xtce::ArgumentTypeSetTypeContent::EnumeratedArgumentType(value) => {
+            find!(value.content, EnumeratedArgumentTypeContent)
+        }
+        xtce::ArgumentTypeSetTypeContent::IntegerArgumentType(value) => {
+            find!(value.content, IntegerArgumentTypeContent)
+        }
+        xtce::ArgumentTypeSetTypeContent::BinaryArgumentType(value) => {
+            find!(value.content, BinaryArgumentTypeContent)
+        }
+        xtce::ArgumentTypeSetTypeContent::FloatArgumentType(value) => {
+            find!(value.content, FloatArgumentTypeContent)
+        }
+        xtce::ArgumentTypeSetTypeContent::BooleanArgumentType(value) => {
+            find!(value.content, BooleanArgumentTypeContent)
         }
         _ => None,
     }
@@ -1340,6 +1465,105 @@ pub(super) fn set_data_encoding_kind(
             set_kind!(value.content, BooleanParameterTypeContent);
         }
         _ => {}
+    }
+}
+
+pub(super) fn set_argument_data_encoding_kind(
+    argument_type: &mut xtce::ArgumentTypeSetTypeContent,
+    kind: Option<DataEncodingKind>,
+) {
+    macro_rules! set_kind {
+        ($content:expr, $enum_type:ident) => {{
+            let current_kind = $content.iter().find_map(|item| match item {
+                xtce::$enum_type::BinaryDataEncoding(_) => Some(DataEncodingKind::Binary),
+                xtce::$enum_type::FloatDataEncoding(_) => Some(DataEncodingKind::Float),
+                xtce::$enum_type::IntegerDataEncoding(_) => Some(DataEncodingKind::Integer),
+                xtce::$enum_type::StringDataEncoding(_) => Some(DataEncodingKind::String),
+                _ => None,
+            });
+            if current_kind != kind {
+                $content.retain(|item| {
+                    !matches!(
+                        item,
+                        xtce::$enum_type::BinaryDataEncoding(_)
+                            | xtce::$enum_type::FloatDataEncoding(_)
+                            | xtce::$enum_type::IntegerDataEncoding(_)
+                            | xtce::$enum_type::StringDataEncoding(_)
+                    )
+                });
+                if let Some(kind) = kind {
+                    let index = $content
+                        .iter()
+                        .position(|item| {
+                            !matches!(
+                                item,
+                                xtce::$enum_type::LongDescription(_)
+                                    | xtce::$enum_type::AliasSet(_)
+                                    | xtce::$enum_type::AncillaryDataSet(_)
+                                    | xtce::$enum_type::UnitSet(_)
+                            )
+                        })
+                        .unwrap_or($content.len());
+                    let encoding = match kind {
+                        DataEncodingKind::Binary => {
+                            xtce::$enum_type::BinaryDataEncoding(default_argument_binary_encoding())
+                        }
+                        DataEncodingKind::Float => {
+                            xtce::$enum_type::FloatDataEncoding(default_float_encoding())
+                        }
+                        DataEncodingKind::Integer => {
+                            xtce::$enum_type::IntegerDataEncoding(default_integer_encoding())
+                        }
+                        DataEncodingKind::String => {
+                            xtce::$enum_type::StringDataEncoding(default_argument_string_encoding())
+                        }
+                    };
+                    $content.insert(index, encoding);
+                }
+            }
+        }};
+    }
+
+    match argument_type {
+        xtce::ArgumentTypeSetTypeContent::StringArgumentType(value) => {
+            set_kind!(value.content, StringArgumentTypeContent);
+        }
+        xtce::ArgumentTypeSetTypeContent::EnumeratedArgumentType(value) => {
+            set_kind!(value.content, EnumeratedArgumentTypeContent);
+        }
+        xtce::ArgumentTypeSetTypeContent::IntegerArgumentType(value) => {
+            set_kind!(value.content, IntegerArgumentTypeContent);
+        }
+        xtce::ArgumentTypeSetTypeContent::BinaryArgumentType(value) => {
+            set_kind!(value.content, BinaryArgumentTypeContent);
+        }
+        xtce::ArgumentTypeSetTypeContent::FloatArgumentType(value) => {
+            set_kind!(value.content, FloatArgumentTypeContent);
+        }
+        xtce::ArgumentTypeSetTypeContent::BooleanArgumentType(value) => {
+            set_kind!(value.content, BooleanArgumentTypeContent);
+        }
+        _ => {}
+    }
+}
+
+fn default_argument_binary_encoding() -> xtce::ArgumentBinaryDataEncodingType {
+    xtce::ArgumentBinaryDataEncodingType {
+        bit_order: xtce::BitOrderType::MostSignificantBitFirst,
+        byte_order: xtce::ByteOrderType::MostSignificantByteFirst,
+        error_detect_correct: None,
+        size_in_bits: xtce::ArgumentIntegerValueType::FixedValue(8),
+        from_binary_transform_algorithm: None,
+        to_binary_transform_algorithm: None,
+    }
+}
+
+fn default_argument_string_encoding() -> xtce::ArgumentStringDataEncodingType {
+    xtce::ArgumentStringDataEncodingType {
+        bit_order: xtce::BitOrderType::MostSignificantBitFirst,
+        byte_order: xtce::ByteOrderType::MostSignificantByteFirst,
+        encoding: xtce::StringEncodingType::Utf8,
+        content: Vec::new(),
     }
 }
 
@@ -1435,6 +1659,13 @@ impl DataEncodingValues {
                 &integer_value_label(&value.size_in_bits),
                 "",
             ),
+            Some(DataEncodingRef::ArgumentBinary(value)) => Self::new(
+                &value.bit_order,
+                &value.byte_order,
+                "",
+                &argument_integer_value_label(&value.size_in_bits),
+                "",
+            ),
             Some(DataEncodingRef::Float(value)) => Self::new(
                 &value.bit_order,
                 &value.byte_order,
@@ -1466,6 +1697,22 @@ impl DataEncodingValues {
                     .iter()
                     .find_map(|item| match item {
                         xtce::StringDataEncodingTypeContent::SizeInBits(size) => {
+                            Some(size.fixed.fixed_value.to_string())
+                        }
+                        _ => None,
+                    })
+                    .unwrap_or_default(),
+                "",
+            ),
+            Some(DataEncodingRef::ArgumentString(value)) => Self::new(
+                &value.bit_order,
+                &value.byte_order,
+                string_encoding_label(&value.encoding),
+                &value
+                    .content
+                    .iter()
+                    .find_map(|item| match item {
+                        xtce::ArgumentStringDataEncodingTypeContent::SizeInBits(size) => {
                             Some(size.fixed.fixed_value.to_string())
                         }
                         _ => None,
@@ -1509,6 +1756,14 @@ impl DataEncodingValues {
                     *size = new_size;
                 }
             }
+            DataEncodingMut::ArgumentBinary(value) => {
+                apply_orders(&mut value.bit_order, &mut value.byte_order, self);
+                if let (xtce::ArgumentIntegerValueType::FixedValue(size), Ok(new_size)) =
+                    (&mut value.size_in_bits, self.size_in_bits.parse())
+                {
+                    *size = new_size;
+                }
+            }
             DataEncodingMut::Float(value) => {
                 apply_orders(&mut value.bit_order, &mut value.byte_order, self);
                 if let Some(encoding) = float_encoding_from_str(&self.encoding) {
@@ -1537,6 +1792,20 @@ impl DataEncodingValues {
                 if let Ok(size_in_bits) = self.size_in_bits.parse()
                     && let Some(size) = value.content.iter_mut().find_map(|item| match item {
                         xtce::StringDataEncodingTypeContent::SizeInBits(size) => Some(size),
+                        _ => None,
+                    })
+                {
+                    size.fixed.fixed_value = size_in_bits;
+                }
+            }
+            DataEncodingMut::ArgumentString(value) => {
+                apply_orders(&mut value.bit_order, &mut value.byte_order, self);
+                if let Some(encoding) = string_encoding_from_str(&self.encoding) {
+                    value.encoding = encoding;
+                }
+                if let Ok(size_in_bits) = self.size_in_bits.parse()
+                    && let Some(size) = value.content.iter_mut().find_map(|item| match item {
+                        xtce::ArgumentStringDataEncodingTypeContent::SizeInBits(size) => Some(size),
                         _ => None,
                     })
                 {
@@ -1594,6 +1863,14 @@ fn integer_value_label(value: &xtce::IntegerValueType) -> String {
         xtce::IntegerValueType::FixedValue(value) => value.to_string(),
         xtce::IntegerValueType::DynamicValue(_) => "<dynamic>".to_owned(),
         xtce::IntegerValueType::DiscreteLookupList(_) => "<lookup>".to_owned(),
+    }
+}
+
+fn argument_integer_value_label(value: &xtce::ArgumentIntegerValueType) -> String {
+    match value {
+        xtce::ArgumentIntegerValueType::FixedValue(value) => value.to_string(),
+        xtce::ArgumentIntegerValueType::DynamicValue(_) => "<dynamic>".to_owned(),
+        xtce::ArgumentIntegerValueType::DiscreteLookupList(_) => "<lookup>".to_owned(),
     }
 }
 

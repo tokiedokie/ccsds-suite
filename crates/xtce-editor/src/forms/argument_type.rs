@@ -13,7 +13,13 @@ use gpui_component::{
 };
 use strum::{Display, EnumString, VariantArray};
 
-use super::{field, impl_select_item, optional_value};
+use super::{
+    data_encoding::{
+        DataEncodingForm, find_argument_data_encoding, find_argument_data_encoding_mut,
+        set_argument_data_encoding_kind,
+    },
+    field, impl_select_item, optional_value,
+};
 use crate::XtceEditor;
 
 macro_rules! long_description {
@@ -115,6 +121,7 @@ pub(super) struct ArgumentTypeForm {
     character_width_select: Entity<SelectState<Vec<CharacterWidthChoice>>>,
     signed_select: Entity<SelectState<Vec<SignedChoice>>>,
     float_size_select: Entity<SelectState<Vec<FloatSizeChoice>>>,
+    data_encoding: Entity<DataEncodingForm>,
     base_defaults_open: bool,
     documentation_open: bool,
     type_options_open: bool,
@@ -175,6 +182,11 @@ impl ArgumentTypeForm {
                     window,
                     cx,
                 ),
+                data_encoding: DataEncodingForm::new(
+                    argument_type.and_then(find_argument_data_encoding),
+                    window,
+                    cx,
+                ),
                 base_defaults_open: false,
                 documentation_open: false,
                 type_options_open: false,
@@ -222,6 +234,13 @@ impl ArgumentTypeForm {
         sync_select(&self.character_width_select, character_width, window, cx);
         sync_select(&self.signed_select, signed, window, cx);
         sync_select(&self.float_size_select, float_size, window, cx);
+        self.data_encoding.update(cx, |form, cx| {
+            form.load(
+                argument_type.and_then(find_argument_data_encoding),
+                window,
+                cx,
+            );
+        });
         cx.notify();
     }
 
@@ -274,6 +293,10 @@ impl ArgumentTypeForm {
         }
         .apply_to(argument_type);
         apply_nested_items(argument_type, &value(&self.nested_items_input, cx));
+        set_argument_data_encoding_kind(argument_type, self.data_encoding.read(cx).selected_kind(cx));
+        if let Some(encoding) = find_argument_data_encoding_mut(argument_type) {
+            self.data_encoding.read(cx).apply_to(encoding, cx);
+        }
     }
 
     fn render_form(&self, cx: &mut Context<Self>) -> Div {
@@ -349,6 +372,9 @@ impl ArgumentTypeForm {
                 ));
             }
             _ => {}
+        }
+        if kind != ArgumentKind::Aggregate && kind != ArgumentKind::Array {
+            form = form.child(self.data_encoding.clone());
         }
         form.child(self.base_defaults(cx))
             .child(self.documentation(cx))
@@ -1086,5 +1112,22 @@ mod tests {
         assert_eq!(value.name, "CounterArgument");
         assert_eq!(value.size_in_bits, 16);
         assert!(!value.signed);
+    }
+
+    #[test]
+    fn argument_data_encoding_round_trip() {
+        use super::super::data_encoding::{
+            DataEncodingKind, find_argument_data_encoding, find_argument_data_encoding_mut,
+            set_argument_data_encoding_kind,
+        };
+
+        let mut value = default_argument_type(ArgumentKind::Integer);
+        set_argument_data_encoding_kind(&mut value, Some(DataEncodingKind::Integer));
+
+        let encoding = find_argument_data_encoding(&value).expect("data encoding present");
+        assert_eq!(encoding.kind(), DataEncodingKind::Integer);
+
+        let mut_encoding = find_argument_data_encoding_mut(&mut value).expect("mut encoding present");
+        assert!(matches!(mut_encoding, super::super::data_encoding::DataEncodingMut::Integer(_)));
     }
 }
