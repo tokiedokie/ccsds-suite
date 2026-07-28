@@ -27,8 +27,8 @@ use lsp_types::{
 use strum::{Display, EnumString, VariantArray};
 
 use super::{
-    container_binary_encoding::ContainerBinaryEncodingForm, container_rate::ContainerRateForm,
-    field, impl_select_item, optional_value,
+    alias_set::AliasSetForm, container_binary_encoding::ContainerBinaryEncodingForm,
+    container_rate::ContainerRateForm, field, impl_select_item, optional_value,
 };
 use crate::XtceEditor;
 
@@ -144,6 +144,7 @@ pub(super) struct MetaCommandForm {
     container_short_description_input: Entity<InputState>,
     container_long_description_input: Entity<InputState>,
     container_base_ref_input: Entity<InputState>,
+    container_alias_set: AliasSetForm,
     container_rate: Entity<ContainerRateForm>,
     container_binary_encoding: Entity<ContainerBinaryEncodingForm>,
     entry_list: Entity<EntryListView>,
@@ -168,6 +169,7 @@ pub(super) struct MetaCommandForm {
     parameter_to_set_list_open: bool,
     parameters_to_suspend_alarms_open: bool,
     container_details_open: bool,
+    container_metadata_open: bool,
     container_rate_open: bool,
     container_binary_encoding_open: bool,
     _subscriptions: Vec<Subscription>,
@@ -188,6 +190,11 @@ impl MetaCommandForm {
             }
             _ => None,
         });
+        let container_alias_set = AliasSetForm::new(
+            command_container.and_then(|container| container.alias_set.as_ref()),
+            window,
+            cx,
+        );
         let container_rate = ContainerRateForm::new(
             command_container.and_then(|container| container.default_rate_in_stream.as_ref()),
             command_container.and_then(|container| container.rate_in_stream_set.as_ref()),
@@ -309,6 +316,7 @@ impl MetaCommandForm {
                     window,
                     cx,
                 ),
+                container_alias_set,
                 container_rate,
                 container_binary_encoding,
                 entry_list,
@@ -404,6 +412,7 @@ impl MetaCommandForm {
                 parameter_to_set_list_open: false,
                 parameters_to_suspend_alarms_open: false,
                 container_details_open: false,
+                container_metadata_open: false,
                 container_rate_open: false,
                 container_binary_encoding_open: false,
                 _subscriptions: vec![name_subscription, kind_subscription, base_ref_subscription],
@@ -434,6 +443,7 @@ impl MetaCommandForm {
         self.parameter_to_set_list_open = false;
         self.parameters_to_suspend_alarms_open = false;
         self.container_details_open = false;
+        self.container_metadata_open = false;
         self.container_rate_open = false;
         self.container_binary_encoding_open = false;
         let command_container = command.and_then(|command| match command {
@@ -442,6 +452,11 @@ impl MetaCommandForm {
             }
             _ => None,
         });
+        self.container_alias_set.load(
+            command_container.and_then(|container| container.alias_set.as_ref()),
+            window,
+            cx,
+        );
         self.container_rate.update(cx, |form, cx| {
             form.load(
                 command_container.and_then(|container| container.default_rate_in_stream.as_ref()),
@@ -663,6 +678,8 @@ impl MetaCommandForm {
         .apply_to(command);
         if let xtce::MetaCommandSetTypeContent::MetaCommand(cmd) = command {
             if let Some(container) = cmd.command_container.as_mut() {
+                self.container_alias_set
+                    .apply_to_option(&mut container.alias_set, cx);
                 self.container_rate.read(cx).apply_to(
                     &mut container.default_rate_in_stream,
                     &mut container.rate_in_stream_set,
@@ -1087,6 +1104,31 @@ impl MetaCommandForm {
                                 this.command_container_present.set(false);
                                 cx.notify();
                             })),
+                    ),
+            )
+            .child(
+                Collapsible::new()
+                    .open(self.container_metadata_open)
+                    .child(
+                        Button::new("toggle-command-container-metadata")
+                            .small()
+                            .link()
+                            .icon(if self.container_metadata_open {
+                                IconName::ChevronDown
+                            } else {
+                                IconName::ChevronRight
+                            })
+                            .label("Metadata")
+                            .on_click(cx.listener(|this, _, _, cx| {
+                                this.container_metadata_open = !this.container_metadata_open;
+                                cx.notify();
+                            })),
+                    )
+                    .content(
+                        v_flex()
+                            .pt_3()
+                            .gap_4()
+                            .child(self.container_alias_set.render(cx)),
                     ),
             )
             .child(
