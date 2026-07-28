@@ -16,11 +16,11 @@ const ROW_HEIGHT: f32 = 52.;
 const EDITOR_CACHE_SIZE: usize = 24;
 
 #[derive(Clone)]
-struct EnumerationRowData {
-    value: String,
-    max_value: String,
-    label: String,
-    description: String,
+pub(super) struct EnumerationRowData {
+    pub(super) value: String,
+    pub(super) max_value: String,
+    pub(super) label: String,
+    pub(super) description: String,
 }
 
 impl EnumerationRowData {
@@ -58,6 +58,15 @@ impl EnumerationListForm {
         cx.new(|_| Self::from_rows(rows))
     }
 
+    pub(super) fn new_argument_type(
+        argument_type: Option<&xtce::ArgumentTypeSetTypeContent>,
+        _: &mut Window,
+        cx: &mut impl AppContext,
+    ) -> Entity<Self> {
+        let rows = rows_from_argument_type(argument_type);
+        cx.new(|_| Self::from_rows(rows))
+    }
+
     fn from_rows(mut rows: Vec<EnumerationRowData>) -> Self {
         if rows.is_empty() {
             rows.push(EnumerationRowData::default_row());
@@ -77,6 +86,23 @@ impl EnumerationListForm {
         cx: &mut Context<Self>,
     ) {
         let mut rows = rows_from_parameter_type(parameter_type);
+        if rows.is_empty() {
+            rows.push(EnumerationRowData::default_row());
+        }
+        self.rows = rows;
+        self.editors.clear();
+        self.cache_order.clear();
+        self.list_state
+            .reset_with_uniform_height(self.rows.len(), px(ROW_HEIGHT));
+        cx.notify();
+    }
+
+    pub(super) fn load_argument_type(
+        &mut self,
+        argument_type: Option<&xtce::ArgumentTypeSetTypeContent>,
+        cx: &mut Context<Self>,
+    ) {
+        let mut rows = rows_from_argument_type(argument_type);
         if rows.is_empty() {
             rows.push(EnumerationRowData::default_row());
         }
@@ -126,6 +152,74 @@ impl EnumerationListForm {
                 ));
             let Some(xtce::EnumeratedParameterTypeContent::EnumerationList(list)) =
                 parameter_type.content.last_mut()
+            else {
+                unreachable!()
+            };
+            list
+        };
+        let mut existing = std::mem::take(&mut list.enumeration).into_iter();
+        list.enumeration = rows
+            .into_iter()
+            .filter_map(|row| {
+                let value = row.value.trim().parse::<i64>().ok()?;
+                let label = row.label.trim();
+                if label.is_empty() {
+                    return None;
+                }
+                let mut enumeration = existing.next().unwrap_or(xtce::ValueEnumerationType {
+                    value: 0,
+                    max_value: None,
+                    label: String::new(),
+                    short_description: None,
+                });
+                enumeration.value = value;
+                enumeration.max_value = row.max_value.trim().parse().ok();
+                enumeration.label = label.to_owned();
+                enumeration.short_description =
+                    (!row.description.trim().is_empty()).then(|| row.description.trim().to_owned());
+                Some(enumeration)
+            })
+            .collect();
+        if list.enumeration.is_empty() {
+            list.enumeration.push(xtce::ValueEnumerationType {
+                value: 0,
+                max_value: None,
+                label: "VALUE".to_owned(),
+                short_description: None,
+            });
+        }
+    }
+
+    pub(super) fn apply_to_argument_type(
+        &self,
+        argument_type: &mut xtce::ArgumentTypeSetTypeContent,
+        cx: &App,
+    ) {
+        let xtce::ArgumentTypeSetTypeContent::EnumeratedArgumentType(argument_type) =
+            argument_type
+        else {
+            return;
+        };
+        let rows = self.current_rows(cx);
+        let list = if let Some(list) =
+            argument_type
+                .content
+                .iter_mut()
+                .find_map(|content| match content {
+                    xtce::EnumeratedArgumentTypeContent::EnumerationList(list) => Some(list),
+                    _ => None,
+                }) {
+            list
+        } else {
+            argument_type
+                .content
+                .push(xtce::EnumeratedArgumentTypeContent::EnumerationList(
+                    xtce::EnumerationListType {
+                        enumeration: Vec::new(),
+                    },
+                ));
+            let Some(xtce::EnumeratedArgumentTypeContent::EnumerationList(list)) =
+                argument_type.content.last_mut()
             else {
                 unreachable!()
             };
@@ -429,6 +523,35 @@ fn rows_from_parameter_type(
         .iter()
         .find_map(|content| match content {
             xtce::EnumeratedParameterTypeContent::EnumerationList(list) => Some(list),
+            _ => None,
+        })
+        .into_iter()
+        .flat_map(|list| &list.enumeration)
+        .map(|enumeration| EnumerationRowData {
+            value: enumeration.value.to_string(),
+            max_value: enumeration
+                .max_value
+                .map(|value| value.to_string())
+                .unwrap_or_default(),
+            label: enumeration.label.clone(),
+            description: enumeration.short_description.clone().unwrap_or_default(),
+        })
+        .collect()
+}
+
+pub(super) fn rows_from_argument_type(
+    argument_type: Option<&xtce::ArgumentTypeSetTypeContent>,
+) -> Vec<EnumerationRowData> {
+    let Some(xtce::ArgumentTypeSetTypeContent::EnumeratedArgumentType(argument_type)) =
+        argument_type
+    else {
+        return Vec::new();
+    };
+    argument_type
+        .content
+        .iter()
+        .find_map(|content| match content {
+            xtce::EnumeratedArgumentTypeContent::EnumerationList(list) => Some(list),
             _ => None,
         })
         .into_iter()

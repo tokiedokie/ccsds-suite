@@ -18,6 +18,7 @@ use super::{
         DataEncodingForm, find_argument_data_encoding, find_argument_data_encoding_mut,
         set_argument_data_encoding_kind,
     },
+    enumeration_list::EnumerationListForm,
     field, impl_select_item, optional_value,
 };
 use crate::XtceEditor;
@@ -121,6 +122,7 @@ pub(super) struct ArgumentTypeForm {
     character_width_select: Entity<SelectState<Vec<CharacterWidthChoice>>>,
     signed_select: Entity<SelectState<Vec<SignedChoice>>>,
     float_size_select: Entity<SelectState<Vec<FloatSizeChoice>>>,
+    enumeration_list: Entity<EnumerationListForm>,
     data_encoding: Entity<DataEncodingForm>,
     base_defaults_open: bool,
     documentation_open: bool,
@@ -182,6 +184,11 @@ impl ArgumentTypeForm {
                     window,
                     cx,
                 ),
+                enumeration_list: EnumerationListForm::new_argument_type(
+                    argument_type,
+                    window,
+                    cx,
+                ),
                 data_encoding: DataEncodingForm::new(
                     argument_type.and_then(find_argument_data_encoding),
                     window,
@@ -234,6 +241,9 @@ impl ArgumentTypeForm {
         sync_select(&self.character_width_select, character_width, window, cx);
         sync_select(&self.signed_select, signed, window, cx);
         sync_select(&self.float_size_select, float_size, window, cx);
+        self.enumeration_list.update(cx, |form, cx| {
+            form.load_argument_type(argument_type, cx);
+        });
         self.data_encoding.update(cx, |form, cx| {
             form.load(
                 argument_type.and_then(find_argument_data_encoding),
@@ -293,6 +303,7 @@ impl ArgumentTypeForm {
         }
         .apply_to(argument_type);
         apply_nested_items(argument_type, &value(&self.nested_items_input, cx));
+        self.enumeration_list.read(cx).apply_to_argument_type(argument_type, cx);
         set_argument_data_encoding_kind(argument_type, self.data_encoding.read(cx).selected_kind(cx));
         if let Some(encoding) = find_argument_data_encoding_mut(argument_type) {
             self.data_encoding.read(cx).apply_to(encoding, cx);
@@ -354,6 +365,9 @@ impl ArgumentTypeForm {
                             cx,
                         )),
                 );
+            }
+            ArgumentKind::Enumerated => {
+                form = form.child(self.enumeration_list.clone());
             }
             ArgumentKind::Array => {
                 form = form.child(field(
@@ -1129,5 +1143,28 @@ mod tests {
 
         let mut_encoding = find_argument_data_encoding_mut(&mut value).expect("mut encoding present");
         assert!(matches!(mut_encoding, super::super::data_encoding::DataEncodingMut::Integer(_)));
+    }
+
+    #[test]
+    fn argument_enumeration_list_round_trip() {
+        let mut value = default_argument_type(ArgumentKind::Enumerated);
+        let xtce::ArgumentTypeSetTypeContent::EnumeratedArgumentType(enum_type) = &mut value else {
+            panic!("expected enumerated argument")
+        };
+        enum_type.content.push(xtce::EnumeratedArgumentTypeContent::EnumerationList(
+            xtce::EnumerationListType {
+                enumeration: vec![xtce::ValueEnumerationType {
+                    value: 1,
+                    max_value: None,
+                    label: "STATUS_OK".to_string(),
+                    short_description: Some("Ok".to_string()),
+                }],
+            },
+        ));
+
+        let rows = super::super::enumeration_list::rows_from_argument_type(Some(&value));
+        assert_eq!(rows.len(), 1);
+        assert_eq!(rows[0].label, "STATUS_OK");
+        assert_eq!(rows[0].value, "1");
     }
 }
