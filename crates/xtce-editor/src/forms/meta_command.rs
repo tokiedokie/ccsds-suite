@@ -58,6 +58,8 @@ enum CommandContainerEntryKind {
     ContainerRef,
     #[strum(serialize = "ContainerSegmentRefEntry")]
     ContainerSegmentRef,
+    #[strum(serialize = "StreamSegmentEntry")]
+    StreamSegment,
     #[strum(serialize = "FixedValueEntry")]
     FixedValue,
 }
@@ -70,6 +72,7 @@ fn command_entry_placeholder(kind: CommandContainerEntryKind) -> &'static str {
         | CommandContainerEntryKind::ParameterSegmentRef => "Select a parameter...",
         CommandContainerEntryKind::ContainerRef => "Select a container...",
         CommandContainerEntryKind::ContainerSegmentRef => "Select a container...",
+        CommandContainerEntryKind::StreamSegment => "Select a stream...",
         CommandContainerEntryKind::FixedValue => "Optional entry name",
     }
 }
@@ -1196,6 +1199,13 @@ fn container_entry_data(
                 description: optional_value(description),
             }
         }
+        CommandContainerEntryKind::StreamSegment => EditableContainerEntry::StreamSegment {
+            reference: primary,
+            size_in_bits: tertiary.trim().parse().unwrap_or(i64::MIN),
+            order: order.trim().parse().ok(),
+            offset: secondary.trim().parse().ok(),
+            description: optional_value(description),
+        },
         CommandContainerEntryKind::FixedValue => EditableContainerEntry::FixedValue {
             name: optional_value(primary),
             binary_value: secondary,
@@ -2023,6 +2033,7 @@ fn open_command_entry_details(
                     kind,
                     CommandContainerEntryKind::ParameterSegmentRef
                         | CommandContainerEntryKind::ContainerSegmentRef
+                        | CommandContainerEntryKind::StreamSegment
                 );
                 content.child(
                     v_flex()
@@ -2907,6 +2918,20 @@ fn new_command_container_entry_row(
             order.map(|value| value.to_string()).unwrap_or_default(),
             description.unwrap_or_default(),
         ),
+        EditableContainerEntry::StreamSegment {
+            reference,
+            size_in_bits,
+            order,
+            offset,
+            description,
+        } => (
+            CommandContainerEntryKind::StreamSegment,
+            reference,
+            offset.map(|value| value.to_string()).unwrap_or_default(),
+            size_in_bits.to_string(),
+            order.map(|value| value.to_string()).unwrap_or_default(),
+            description.unwrap_or_default(),
+        ),
         EditableContainerEntry::FixedValue {
             name,
             binary_value,
@@ -2979,6 +3004,25 @@ fn command_container_entry_rows_value(rows: &Entity<EntryListView>, cx: &App) ->
 }
 
 fn encode_editable_entry(entry: &EditableContainerEntry) -> Option<String> {
+    if let EditableContainerEntry::StreamSegment {
+        reference,
+        size_in_bits,
+        order,
+        offset,
+        description,
+    } = entry
+    {
+        return (!reference.trim().is_empty() && *size_in_bits != i64::MIN).then(|| {
+            format!(
+                "StreamSegmentEntry | {} | {} | {} | {} | {}",
+                reference.trim(),
+                size_in_bits,
+                order.map(|value| value.to_string()).unwrap_or_default(),
+                offset.map(|value| value.to_string()).unwrap_or_default(),
+                description.as_deref().unwrap_or_default()
+            )
+        });
+    }
     if let EditableContainerEntry::ContainerSegmentRef {
         reference,
         size_in_bits,
@@ -3065,6 +3109,7 @@ fn encode_editable_entry(entry: &EditableContainerEntry) -> Option<String> {
         }
         EditableContainerEntry::ParameterSegmentRef { .. } => unreachable!(),
         EditableContainerEntry::ContainerSegmentRef { .. } => unreachable!(),
+        EditableContainerEntry::StreamSegment { .. } => unreachable!(),
     };
     if primary.trim().is_empty() && kind != CommandContainerEntryKind::FixedValue {
         return None;
@@ -3391,6 +3436,13 @@ enum EditableContainerEntry {
         offset: Option<i64>,
         description: Option<String>,
     },
+    StreamSegment {
+        reference: String,
+        size_in_bits: i64,
+        order: Option<i64>,
+        offset: Option<i64>,
+        description: Option<String>,
+    },
     FixedValue {
         name: Option<String>,
         binary_value: String,
@@ -3490,6 +3542,11 @@ fn command_entry_bit_positions_from_sizes(
                     ..
                 }
                 | EditableContainerEntry::ContainerSegmentRef {
+                    offset,
+                    size_in_bits,
+                    ..
+                }
+                | EditableContainerEntry::StreamSegment {
                     offset,
                     size_in_bits,
                     ..
@@ -3632,6 +3689,20 @@ fn append_command_packet_entries(
                 u64::try_from(*size_in_bits).ok().filter(|size| *size > 0),
             ),
             EditableContainerEntry::ContainerSegmentRef {
+                reference,
+                offset,
+                size_in_bits,
+                ..
+            } => (
+                reference.clone(),
+                cursor.and_then(|cursor| {
+                    u64::try_from(offset.unwrap_or_default())
+                        .ok()
+                        .and_then(|offset| cursor.checked_add(offset))
+                }),
+                u64::try_from(*size_in_bits).ok().filter(|size| *size > 0),
+            ),
+            EditableContainerEntry::StreamSegment {
                 reference,
                 offset,
                 size_in_bits,
@@ -3892,6 +3963,17 @@ fn encode_container_entries(list: &xtce::CommandContainerEntryListType) -> Strin
                     entry.short_description.as_deref().unwrap_or_default()
                 ))
             }
+            xtce::CommandContainerEntryListTypeContent::StreamSegmentEntry(entry) => Some(format!(
+                "StreamSegmentEntry | {} | {} | {} | {} | {}",
+                entry.stream_ref,
+                entry.size_in_bits,
+                entry
+                    .order
+                    .map(|value| value.to_string())
+                    .unwrap_or_default(),
+                fixed_entry_offset(entry.location_in_container_in_bits.as_ref()),
+                entry.short_description.as_deref().unwrap_or_default()
+            )),
             xtce::CommandContainerEntryListTypeContent::FixedValueEntry(entry) => Some(format!(
                 "FixedValueEntry | {} | {} | {}",
                 entry.name.as_deref().unwrap_or_default(),
@@ -3948,6 +4030,13 @@ fn decode_container_entries(value: &str) -> Vec<EditableContainerEntry> {
                     offset: numeric_field(&fields, 4),
                     description: optional_field(&fields, 5),
                 }),
+                "StreamSegmentEntry" => Some(EditableContainerEntry::StreamSegment {
+                    reference: nonempty_field(&fields, 1)?,
+                    size_in_bits: fields.get(2)?.parse().ok()?,
+                    order: numeric_field(&fields, 3),
+                    offset: numeric_field(&fields, 4),
+                    description: optional_field(&fields, 5),
+                }),
                 "FixedValueEntry" => Some(EditableContainerEntry::FixedValue {
                     name: optional_field(&fields, 1),
                     binary_value: nonempty_field(&fields, 2)?,
@@ -3980,6 +4069,7 @@ fn apply_container_entries(list: &mut xtce::CommandContainerEntryListType, value
     let mut parameter_segment_entries = VecDeque::new();
     let mut container_entries = VecDeque::new();
     let mut container_segment_entries = VecDeque::new();
+    let mut stream_segment_entries = VecDeque::new();
     let mut fixed_entries = VecDeque::new();
     let mut unsupported_entries = Vec::new();
 
@@ -3999,6 +4089,9 @@ fn apply_container_entries(list: &mut xtce::CommandContainerEntryListType, value
             }
             xtce::CommandContainerEntryListTypeContent::ContainerSegmentRefEntry(entry) => {
                 container_segment_entries.push_back(entry);
+            }
+            xtce::CommandContainerEntryListTypeContent::StreamSegmentEntry(entry) => {
+                stream_segment_entries.push_back(entry);
             }
             xtce::CommandContainerEntryListTypeContent::FixedValueEntry(entry) => {
                 fixed_entries.push_back(entry);
@@ -4122,6 +4215,32 @@ fn apply_container_entries(list: &mut xtce::CommandContainerEntryListType, value
                     entry.short_description = description;
                     apply_fixed_entry_offset(&mut entry.location_in_container_in_bits, offset);
                     xtce::CommandContainerEntryListTypeContent::ContainerSegmentRefEntry(entry)
+                }
+                EditableContainerEntry::StreamSegment {
+                    reference,
+                    size_in_bits,
+                    order,
+                    offset,
+                    description,
+                } => {
+                    let mut entry = stream_segment_entries.pop_front().unwrap_or(
+                        xtce::ArgumentStreamSegmentEntryType {
+                            short_description: None,
+                            stream_ref: String::new(),
+                            order: None,
+                            size_in_bits: 0,
+                            location_in_container_in_bits: None,
+                            repeat_entry: None,
+                            include_condition: None,
+                            ancillary_data_set: None,
+                        },
+                    );
+                    entry.stream_ref = reference;
+                    entry.size_in_bits = size_in_bits;
+                    entry.order = order;
+                    entry.short_description = description;
+                    apply_fixed_entry_offset(&mut entry.location_in_container_in_bits, offset);
+                    xtce::CommandContainerEntryListTypeContent::StreamSegmentEntry(entry)
                 }
                 EditableContainerEntry::FixedValue {
                     name,
@@ -6562,7 +6681,7 @@ mod tests {
     }
 
     #[test]
-    fn editing_entries_preserves_entry_types_not_exposed_by_the_form() {
+    fn stream_segment_entry_round_trips_through_the_form() {
         let mut container = default_command_container();
         container.entry_list.content.push(
             xtce::CommandContainerEntryListTypeContent::StreamSegmentEntry(
@@ -6579,14 +6698,12 @@ mod tests {
             ),
         );
 
-        apply_container_entries(
-            &mut container.entry_list,
-            "ArgumentRefEntry | mode | 0 | Mode argument",
-        );
+        let encoded = super::encode_container_entries(&container.entry_list);
+        apply_container_entries(&mut container.entry_list, &encoded);
 
-        assert_eq!(container.entry_list.content.len(), 2);
+        assert_eq!(container.entry_list.content.len(), 1);
         assert!(matches!(
-            &container.entry_list.content[1],
+            &container.entry_list.content[0],
             xtce::CommandContainerEntryListTypeContent::StreamSegmentEntry(entry)
                 if entry.stream_ref == "CommandStream"
         ));
