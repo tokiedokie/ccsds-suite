@@ -105,6 +105,8 @@ pub(super) struct MetaCommandForm {
     interlock_scope_input: Entity<InputState>,
     interlock_progress_input: Entity<InputState>,
     interlock_suspendable_select: Entity<SelectState<Vec<SuspendableChoice>>>,
+    parameter_to_set_list: Entity<ParameterToSetListForm>,
+    parameters_to_suspend_alarms: Entity<ParametersToSuspendAlarmsOnSetForm>,
     documentation_open: bool,
     inheritance_open: bool,
     identification_open: bool,
@@ -112,6 +114,8 @@ pub(super) struct MetaCommandForm {
     transmission_constraints_open: bool,
     verifiers_open: bool,
     interlock_open: bool,
+    parameter_to_set_list_open: bool,
+    parameters_to_suspend_alarms_open: bool,
     container_details_open: bool,
     _subscriptions: Vec<Subscription>,
 }
@@ -300,6 +304,26 @@ impl MetaCommandForm {
                     window,
                     cx,
                 ),
+                parameter_to_set_list: ParameterToSetListForm::new(
+                    command.and_then(|cmd| match cmd {
+                        xtce::MetaCommandSetTypeContent::MetaCommand(cmd) => {
+                            cmd.parameter_to_set_list.as_ref()
+                        }
+                        _ => None,
+                    }),
+                    window,
+                    cx,
+                ),
+                parameters_to_suspend_alarms: ParametersToSuspendAlarmsOnSetForm::new(
+                    command.and_then(|cmd| match cmd {
+                        xtce::MetaCommandSetTypeContent::MetaCommand(cmd) => {
+                            cmd.parameters_to_suspend_alarms_on_set.as_ref()
+                        }
+                        _ => None,
+                    }),
+                    window,
+                    cx,
+                ),
                 documentation_open: false,
                 inheritance_open: false,
                 identification_open: false,
@@ -307,6 +331,8 @@ impl MetaCommandForm {
                 transmission_constraints_open: false,
                 verifiers_open: false,
                 interlock_open: false,
+                parameter_to_set_list_open: false,
+                parameters_to_suspend_alarms_open: false,
                 container_details_open: false,
                 _subscriptions: vec![name_subscription, kind_subscription, base_ref_subscription],
             }
@@ -335,7 +361,33 @@ impl MetaCommandForm {
         self.transmission_constraints_open = false;
         self.verifiers_open = false;
         self.interlock_open = false;
+        self.parameter_to_set_list_open = false;
+        self.parameters_to_suspend_alarms_open = false;
         self.container_details_open = false;
+        self.parameter_to_set_list.update(cx, |form, cx| {
+            form.load(
+                command.and_then(|cmd| match cmd {
+                    xtce::MetaCommandSetTypeContent::MetaCommand(cmd) => {
+                        cmd.parameter_to_set_list.as_ref()
+                    }
+                    _ => None,
+                }),
+                window,
+                cx,
+            );
+        });
+        self.parameters_to_suspend_alarms.update(cx, |form, cx| {
+            form.load(
+                command.and_then(|cmd| match cmd {
+                    xtce::MetaCommandSetTypeContent::MetaCommand(cmd) => {
+                        cmd.parameters_to_suspend_alarms_on_set.as_ref()
+                    }
+                    _ => None,
+                }),
+                window,
+                cx,
+            );
+        });
         self.interlock_scope_input.update(cx, |input, cx| {
             input.set_value(interlock_values.scope_to_space_system, window, cx);
         });
@@ -535,6 +587,10 @@ impl MetaCommandForm {
                 ),
             };
             interlock_values.apply_to(&mut cmd.interlock);
+
+            cmd.parameter_to_set_list = self.parameter_to_set_list.read(cx).to_list(cx);
+            cmd.parameters_to_suspend_alarms_on_set =
+                self.parameters_to_suspend_alarms.read(cx).to_list(cx);
         }
     }
 
@@ -570,6 +626,8 @@ impl MetaCommandForm {
                 .child(self.render_transmission_constraints(cx))
                 .child(self.render_verifiers(cx))
                 .child(self.render_interlock(cx))
+                .child(self.render_parameter_to_set_list(cx))
+                .child(self.render_parameters_to_suspend_alarms(cx))
                 .child(self.render_command_container(cx)),
             MetaCommandKind::BlockMetaCommand => form
                 .child(field(
@@ -827,6 +885,57 @@ impl MetaCommandForm {
                                 cx,
                             ))),
                     ),
+            )
+    }
+
+    fn render_parameter_to_set_list(&self, cx: &mut Context<Self>) -> Collapsible {
+        Collapsible::new()
+            .open(self.parameter_to_set_list_open)
+            .child(
+                Button::new("toggle-meta-command-parameter-to-set-list")
+                    .small()
+                    .link()
+                    .icon(if self.parameter_to_set_list_open {
+                        IconName::ChevronDown
+                    } else {
+                        IconName::ChevronRight
+                    })
+                    .label("Parameter to set list")
+                    .on_click(cx.listener(|this, _, _, cx| {
+                        this.parameter_to_set_list_open = !this.parameter_to_set_list_open;
+                        cx.notify();
+                    })),
+            )
+            .content(
+                v_flex()
+                    .pt_3()
+                    .child(self.parameter_to_set_list.clone()),
+            )
+    }
+
+    fn render_parameters_to_suspend_alarms(&self, cx: &mut Context<Self>) -> Collapsible {
+        Collapsible::new()
+            .open(self.parameters_to_suspend_alarms_open)
+            .child(
+                Button::new("toggle-meta-command-parameters-to-suspend-alarms")
+                    .small()
+                    .link()
+                    .icon(if self.parameters_to_suspend_alarms_open {
+                        IconName::ChevronDown
+                    } else {
+                        IconName::ChevronRight
+                    })
+                    .label("Parameters to suspend alarms on set")
+                    .on_click(cx.listener(|this, _, _, cx| {
+                        this.parameters_to_suspend_alarms_open =
+                            !this.parameters_to_suspend_alarms_open;
+                        cx.notify();
+                    })),
+            )
+            .content(
+                v_flex()
+                    .pt_3()
+                    .child(self.parameters_to_suspend_alarms.clone()),
             )
     }
 
@@ -3913,6 +4022,7 @@ impl InterlockValues {
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(super) enum VerifierStageChoice {
+    Release,
     Received,
     Accepted,
     Queued,
@@ -3925,6 +4035,7 @@ pub(super) enum VerifierStageChoice {
 
 impl VerifierStageChoice {
     const VARIANTS: &'static [Self] = &[
+        Self::Release,
         Self::Execution,
         Self::Complete,
         Self::Received,
@@ -3939,6 +4050,7 @@ impl VerifierStageChoice {
 impl std::fmt::Display for VerifierStageChoice {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         let s = match self {
+            Self::Release => "Release",
             Self::Received => "Received",
             Self::Accepted => "Accepted",
             Self::Queued => "Queued",
@@ -4028,8 +4140,8 @@ impl VerifierListForm {
             };
             let val = value(&row_read.value, cx);
             let time_to_stop = value(&row_read.time_to_stop, cx).trim().to_owned();
-
             match stage {
+                VerifierStageChoice::Release => {}
                 VerifierStageChoice::Received => {
                     received = Some(build_received_verifier(param, op_str, val, time_to_stop));
                 }
@@ -4535,6 +4647,423 @@ fn verifier_entity(
         value: value_input,
         time_to_stop,
     })
+}
+
+pub(super) struct ParameterToSetListForm {
+    rows: Vec<Entity<ParameterToSetRowForm>>,
+}
+
+struct ParameterToSetRowForm {
+    parameter: Entity<InputState>,
+    value: Entity<InputState>,
+    trigger: Entity<SelectState<Vec<VerifierStageChoice>>>,
+}
+
+struct ParameterToSetModel {
+    parameter: String,
+    value: String,
+    trigger: VerifierStageChoice,
+}
+
+impl ParameterToSetListForm {
+    pub(super) fn new(
+        list: Option<&xtce::ParameterToSetListType>,
+        window: &mut Window,
+        cx: &mut impl AppContext,
+    ) -> Entity<Self> {
+        let models = parameter_to_set_models(list);
+        cx.new(move |cx| Self {
+            rows: parameter_to_set_entities(models, window, cx),
+        })
+    }
+
+    pub(super) fn load(
+        &mut self,
+        list: Option<&xtce::ParameterToSetListType>,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        self.rows = parameter_to_set_entities(parameter_to_set_models(list), window, cx);
+        cx.notify();
+    }
+
+    pub(super) fn to_list(&self, cx: &App) -> Option<xtce::ParameterToSetListType> {
+        let items = self
+            .rows
+            .iter()
+            .filter_map(|row| {
+                let row_read = row.read(cx);
+                let param = value(&row_read.parameter, cx).trim().to_owned();
+                if param.is_empty() {
+                    return None;
+                }
+                let val = value(&row_read.value, cx);
+                let trigger = selected_value(&row_read.trigger, VerifierStageChoice::Complete, cx);
+                Some(xtce::ParameterToSetType {
+                    parameter_ref: param,
+                    set_on_verification: stage_choice_to_verifier(trigger),
+                    content: xtce::ParameterToSetTypeContent::NewValue(val),
+                })
+            })
+            .collect::<Vec<_>>();
+
+        (!items.is_empty()).then_some(xtce::ParameterToSetListType {
+            parameter_to_set: items,
+        })
+    }
+}
+
+fn parameter_to_set_models(
+    list: Option<&xtce::ParameterToSetListType>,
+) -> Vec<ParameterToSetModel> {
+    list.map(|l| {
+        l.parameter_to_set
+            .iter()
+            .map(|item| {
+                let new_value = match &item.content {
+                    xtce::ParameterToSetTypeContent::NewValue(val) => val.clone(),
+                    _ => String::new(),
+                };
+                ParameterToSetModel {
+                    parameter: item.parameter_ref.clone(),
+                    value: new_value,
+                    trigger: stage_choice_from_verifier(&item.set_on_verification),
+                }
+            })
+            .collect()
+    })
+    .unwrap_or_default()
+}
+
+fn parameter_to_set_entities(
+    models: Vec<ParameterToSetModel>,
+    window: &mut Window,
+    cx: &mut impl AppContext,
+) -> Vec<Entity<ParameterToSetRowForm>> {
+    models
+        .into_iter()
+        .map(|model| {
+            let parameter = input(&model.parameter, false, window, cx);
+            let value_input = input(&model.value, false, window, cx);
+            let trigger = select(VerifierStageChoice::VARIANTS, model.trigger, window, cx);
+
+            cx.new(|_| ParameterToSetRowForm {
+                parameter,
+                value: value_input,
+                trigger,
+            })
+        })
+        .collect()
+}
+
+impl Render for ParameterToSetListForm {
+    fn render(&mut self, _: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+        v_flex()
+            .w_full()
+            .gap_3()
+            .child(
+                h_flex()
+                    .justify_between()
+                    .child(
+                        v_flex()
+                            .child(div().text_sm().font_medium().child("Parameter to set list"))
+                            .child(
+                                div()
+                                    .text_xs()
+                                    .text_color(cx.theme().muted_foreground)
+                                    .child(format!("{} entry(ies)", self.rows.len())),
+                            ),
+                    )
+                    .child(
+                        Button::new("add-parameter-to-set")
+                            .small()
+                            .icon(IconName::Plus)
+                            .label("Add parameter to set")
+                            .on_click(cx.listener(|this, _, window, cx| {
+                                let parameter = input("", false, window, cx);
+                                let value_input = input("", false, window, cx);
+                                let trigger = select(
+                                    VerifierStageChoice::VARIANTS,
+                                    VerifierStageChoice::Complete,
+                                    window,
+                                    cx,
+                                );
+                                this.rows.push(cx.new(|_| ParameterToSetRowForm {
+                                    parameter,
+                                    value: value_input,
+                                    trigger,
+                                }));
+                                cx.notify();
+                            })),
+                    ),
+            )
+            .children(self.rows.iter().enumerate().map(|(index, row)| {
+                let row_read = row.read(cx);
+                h_flex()
+                    .w_full()
+                    .p_3()
+                    .gap_3()
+                    .items_end()
+                    .rounded_md()
+                    .border_1()
+                    .border_color(cx.theme().border)
+                    .child(div().flex_1().child(field(
+                        "Parameter",
+                        "",
+                        &row_read.parameter,
+                        cx,
+                    )))
+                    .child(div().flex_1().child(field(
+                        "New value",
+                        "",
+                        &row_read.value,
+                        cx,
+                    )))
+                    .child(div().w(px(140.)).child(select_field(
+                        "Verification trigger",
+                        "",
+                        &row_read.trigger,
+                        cx,
+                    )))
+                    .child(
+                        div()
+                            .mb(px(6.))
+                            .child(
+                                Button::new(format!("remove-parameter-to-set-{index}"))
+                                    .small()
+                                    .icon(IconName::Minus)
+                                    .on_click(cx.listener(move |this, _, _, cx| {
+                                        this.rows.remove(index);
+                                        cx.notify();
+                                    })),
+                            ),
+                    )
+            }))
+    }
+}
+
+pub(super) struct ParametersToSuspendAlarmsOnSetForm {
+    rows: Vec<Entity<ParameterToSuspendAlarmsOnRowForm>>,
+}
+
+struct ParameterToSuspendAlarmsOnRowForm {
+    parameter: Entity<InputState>,
+    suspense_time: Entity<InputState>,
+    trigger: Entity<SelectState<Vec<VerifierStageChoice>>>,
+}
+
+struct ParameterToSuspendAlarmsOnModel {
+    parameter: String,
+    suspense_time: String,
+    trigger: VerifierStageChoice,
+}
+
+impl ParametersToSuspendAlarmsOnSetForm {
+    pub(super) fn new(
+        list: Option<&xtce::ParametersToSuspendAlarmsOnSetType>,
+        window: &mut Window,
+        cx: &mut impl AppContext,
+    ) -> Entity<Self> {
+        let models = parameter_to_suspend_alarms_on_models(list);
+        cx.new(move |cx| Self {
+            rows: parameter_to_suspend_alarms_on_entities(models, window, cx),
+        })
+    }
+
+    pub(super) fn load(
+        &mut self,
+        list: Option<&xtce::ParametersToSuspendAlarmsOnSetType>,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        self.rows = parameter_to_suspend_alarms_on_entities(
+            parameter_to_suspend_alarms_on_models(list),
+            window,
+            cx,
+        );
+        cx.notify();
+    }
+
+    pub(super) fn to_list(&self, cx: &App) -> Option<xtce::ParametersToSuspendAlarmsOnSetType> {
+        let items = self
+            .rows
+            .iter()
+            .filter_map(|row| {
+                let row_read = row.read(cx);
+                let param = value(&row_read.parameter, cx).trim().to_owned();
+                if param.is_empty() {
+                    return None;
+                }
+                let suspense_time = value(&row_read.suspense_time, cx).trim().to_owned();
+                let trigger = selected_value(&row_read.trigger, VerifierStageChoice::Release, cx);
+                Some(xtce::ParameterToSuspendAlarmsOnType {
+                    parameter_ref: param,
+                    suspense_time,
+                    verifier_to_trigger_on: stage_choice_to_verifier(trigger),
+                })
+            })
+            .collect::<Vec<_>>();
+
+        (!items.is_empty()).then_some(xtce::ParametersToSuspendAlarmsOnSetType {
+            parameter_to_suspend_alarms_on: items,
+        })
+    }
+}
+
+fn parameter_to_suspend_alarms_on_models(
+    list: Option<&xtce::ParametersToSuspendAlarmsOnSetType>,
+) -> Vec<ParameterToSuspendAlarmsOnModel> {
+    list.map(|l| {
+        l.parameter_to_suspend_alarms_on
+            .iter()
+            .map(|item| ParameterToSuspendAlarmsOnModel {
+                parameter: item.parameter_ref.clone(),
+                suspense_time: item.suspense_time.clone(),
+                trigger: stage_choice_from_verifier(&item.verifier_to_trigger_on),
+            })
+            .collect()
+    })
+    .unwrap_or_default()
+}
+
+fn parameter_to_suspend_alarms_on_entities(
+    models: Vec<ParameterToSuspendAlarmsOnModel>,
+    window: &mut Window,
+    cx: &mut impl AppContext,
+) -> Vec<Entity<ParameterToSuspendAlarmsOnRowForm>> {
+    models
+        .into_iter()
+        .map(|model| {
+            let parameter = input(&model.parameter, false, window, cx);
+            let suspense_time = input(&model.suspense_time, false, window, cx);
+            let trigger = select(VerifierStageChoice::VARIANTS, model.trigger, window, cx);
+
+            cx.new(|_| ParameterToSuspendAlarmsOnRowForm {
+                parameter,
+                suspense_time,
+                trigger,
+            })
+        })
+        .collect()
+}
+
+impl Render for ParametersToSuspendAlarmsOnSetForm {
+    fn render(&mut self, _: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+        v_flex()
+            .w_full()
+            .gap_3()
+            .child(
+                h_flex()
+                    .justify_between()
+                    .child(
+                        v_flex()
+                            .child(
+                                div()
+                                    .text_sm()
+                                    .font_medium()
+                                    .child("Parameters to suspend alarms on set"),
+                            )
+                            .child(
+                                div()
+                                    .text_xs()
+                                    .text_color(cx.theme().muted_foreground)
+                                    .child(format!("{} entry(ies)", self.rows.len())),
+                            ),
+                    )
+                    .child(
+                        Button::new("add-parameter-to-suspend-alarm")
+                            .small()
+                            .icon(IconName::Plus)
+                            .label("Add alarm suspension")
+                            .on_click(cx.listener(|this, _, window, cx| {
+                                let parameter = input("", false, window, cx);
+                                let suspense_time = input("", false, window, cx);
+                                let trigger = select(
+                                    VerifierStageChoice::VARIANTS,
+                                    VerifierStageChoice::Release,
+                                    window,
+                                    cx,
+                                );
+                                this.rows.push(cx.new(|_| ParameterToSuspendAlarmsOnRowForm {
+                                    parameter,
+                                    suspense_time,
+                                    trigger,
+                                }));
+                                cx.notify();
+                            })),
+                    ),
+            )
+            .children(self.rows.iter().enumerate().map(|(index, row)| {
+                let row_read = row.read(cx);
+                h_flex()
+                    .w_full()
+                    .p_3()
+                    .gap_3()
+                    .items_end()
+                    .rounded_md()
+                    .border_1()
+                    .border_color(cx.theme().border)
+                    .child(div().flex_1().child(field(
+                        "Parameter",
+                        "",
+                        &row_read.parameter,
+                        cx,
+                    )))
+                    .child(div().w(px(140.)).child(field(
+                        "Suspense time (e.g. PT30S)",
+                        "",
+                        &row_read.suspense_time,
+                        cx,
+                    )))
+                    .child(div().w(px(140.)).child(select_field(
+                        "Verification trigger",
+                        "",
+                        &row_read.trigger,
+                        cx,
+                    )))
+                    .child(
+                        div()
+                            .mb(px(6.))
+                            .child(
+                                Button::new(format!("remove-suspend-alarm-{index}"))
+                                    .small()
+                                    .icon(IconName::Minus)
+                                    .on_click(cx.listener(move |this, _, _, cx| {
+                                        this.rows.remove(index);
+                                        cx.notify();
+                                    })),
+                            ),
+                    )
+            }))
+    }
+}
+
+fn stage_choice_from_verifier(v: &xtce::VerifierEnumerationType) -> VerifierStageChoice {
+    match v {
+        xtce::VerifierEnumerationType::Release => VerifierStageChoice::Release,
+        xtce::VerifierEnumerationType::TransferredToRange => VerifierStageChoice::TransferredToRange,
+        xtce::VerifierEnumerationType::SentFromRange => VerifierStageChoice::SentFromRange,
+        xtce::VerifierEnumerationType::Received => VerifierStageChoice::Received,
+        xtce::VerifierEnumerationType::Accepted => VerifierStageChoice::Accepted,
+        xtce::VerifierEnumerationType::Queued => VerifierStageChoice::Queued,
+        xtce::VerifierEnumerationType::Executing => VerifierStageChoice::Execution,
+        xtce::VerifierEnumerationType::Complete => VerifierStageChoice::Complete,
+        xtce::VerifierEnumerationType::Failed => VerifierStageChoice::Failed,
+    }
+}
+
+fn stage_choice_to_verifier(v: VerifierStageChoice) -> xtce::VerifierEnumerationType {
+    match v {
+        VerifierStageChoice::Release => xtce::VerifierEnumerationType::Release,
+        VerifierStageChoice::TransferredToRange => xtce::VerifierEnumerationType::TransferredToRange,
+        VerifierStageChoice::SentFromRange => xtce::VerifierEnumerationType::SentFromRange,
+        VerifierStageChoice::Received => xtce::VerifierEnumerationType::Received,
+        VerifierStageChoice::Accepted => xtce::VerifierEnumerationType::Accepted,
+        VerifierStageChoice::Queued => xtce::VerifierEnumerationType::Queued,
+        VerifierStageChoice::Execution => xtce::VerifierEnumerationType::Executing,
+        VerifierStageChoice::Complete => xtce::VerifierEnumerationType::Complete,
+        VerifierStageChoice::Failed => xtce::VerifierEnumerationType::Failed,
+    }
 }
 
 impl Render for VerifierListForm {
@@ -5770,5 +6299,53 @@ mod tests {
             "NewBase"
         );
         assert!(container.alias_set.is_some());
+    }
+
+    #[test]
+    fn meta_command_parameter_to_set_roundtrip() {
+        use super::{VerifierStageChoice, parameter_to_set_models, stage_choice_to_verifier};
+
+        let list = xtce::ParameterToSetListType {
+            parameter_to_set: vec![xtce::ParameterToSetType {
+                parameter_ref: "MODE_PARAM".to_owned(),
+                set_on_verification: xtce::VerifierEnumerationType::Complete,
+                content: xtce::ParameterToSetTypeContent::NewValue("ACTIVE".to_owned()),
+            }],
+        };
+
+        let models = parameter_to_set_models(Some(&list));
+        assert_eq!(models.len(), 1);
+        assert_eq!(models[0].parameter, "MODE_PARAM");
+        assert_eq!(models[0].value, "ACTIVE");
+        assert_eq!(models[0].trigger, VerifierStageChoice::Complete);
+
+        assert!(matches!(
+            stage_choice_to_verifier(models[0].trigger),
+            xtce::VerifierEnumerationType::Complete
+        ));
+    }
+
+    #[test]
+    fn meta_command_parameters_to_suspend_alarms_roundtrip() {
+        use super::{VerifierStageChoice, parameter_to_suspend_alarms_on_models, stage_choice_to_verifier};
+
+        let list = xtce::ParametersToSuspendAlarmsOnSetType {
+            parameter_to_suspend_alarms_on: vec![xtce::ParameterToSuspendAlarmsOnType {
+                parameter_ref: "TEMP_PARAM".to_owned(),
+                suspense_time: "PT30S".to_owned(),
+                verifier_to_trigger_on: xtce::VerifierEnumerationType::Release,
+            }],
+        };
+
+        let models = parameter_to_suspend_alarms_on_models(Some(&list));
+        assert_eq!(models.len(), 1);
+        assert_eq!(models[0].parameter, "TEMP_PARAM");
+        assert_eq!(models[0].suspense_time, "PT30S");
+        assert_eq!(models[0].trigger, VerifierStageChoice::Release);
+
+        assert!(matches!(
+            stage_choice_to_verifier(models[0].trigger),
+            xtce::VerifierEnumerationType::Release
+        ));
     }
 }
