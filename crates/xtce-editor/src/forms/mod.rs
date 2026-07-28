@@ -33,6 +33,7 @@ mod space_system;
 mod space_system_description;
 mod space_system_identity;
 mod telemetry_metadata;
+mod time_encoding;
 mod to_string;
 mod unit_set;
 mod valid_range;

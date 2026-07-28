@@ -22,6 +22,7 @@ use super::{
     },
     enumeration_list::EnumerationListForm,
     field, impl_select_item, optional_value,
+    time_encoding::TimeEncodingForm,
     to_string::ToStringForm,
     unit_set::UnitSetForm,
     valid_range::{ValidRangeForm, ValidRangeKind, ValidRangeValue},
@@ -592,6 +593,35 @@ fn valid_range_kind(kind: ParameterTypeKind) -> ValidRangeKind {
     }
 }
 
+fn parameter_type_time_encoding(
+    parameter_type: &xtce::ParameterTypeSetTypeContent,
+) -> Option<&xtce::EncodingType> {
+    match parameter_type {
+        xtce::ParameterTypeSetTypeContent::RelativeTimeParameterType(value) => {
+            value.encoding.as_ref()
+        }
+        xtce::ParameterTypeSetTypeContent::AbsoluteTimeParameterType(value) => {
+            value.encoding.as_ref()
+        }
+        _ => None,
+    }
+}
+
+fn set_parameter_type_time_encoding(
+    parameter_type: &mut xtce::ParameterTypeSetTypeContent,
+    encoding: Option<xtce::EncodingType>,
+) {
+    match parameter_type {
+        xtce::ParameterTypeSetTypeContent::RelativeTimeParameterType(value) => {
+            value.encoding = encoding;
+        }
+        xtce::ParameterTypeSetTypeContent::AbsoluteTimeParameterType(value) => {
+            value.encoding = encoding;
+        }
+        _ => {}
+    }
+}
+
 #[derive(Clone, Copy, Debug, Display, EnumString, VariantArray, PartialEq, Eq)]
 enum CharacterWidthChoice {
     Default,
@@ -636,6 +666,7 @@ pub(super) struct ParameterTypeForm {
     alias_set: AliasSetForm,
     ancillary_data_set: AncillaryDataSetForm,
     unit_set: Entity<UnitSetForm>,
+    time_encoding: Entity<TimeEncodingForm>,
     to_string: Entity<ToStringForm>,
     valid_range: Entity<ValidRangeForm>,
     size_range_min_input: Entity<InputState>,
@@ -690,6 +721,11 @@ impl ParameterTypeForm {
         );
         let unit_set =
             UnitSetForm::new(parameter_type.and_then(parameter_type_unit_set), window, cx);
+        let time_encoding = TimeEncodingForm::new(
+            parameter_type.and_then(parameter_type_time_encoding),
+            window,
+            cx,
+        );
         let to_string = ToStringForm::new(
             parameter_type.and_then(parameter_type_to_string),
             window,
@@ -778,6 +814,7 @@ impl ParameterTypeForm {
             let kind_nested_items = nested_items_input.clone();
             let kind_enumeration_list = enumeration_list.clone();
             let kind_aggregate_members = aggregate_members.clone();
+            let kind_time_encoding = time_encoding.clone();
             let kind_to_string = to_string.clone();
             let kind_valid_range = valid_range.clone();
             let kind_size_range_min = size_range_min_input.clone();
@@ -859,6 +896,9 @@ impl ParameterTypeForm {
                     kind_to_string.update(cx, |form, cx| {
                         form.load(None, window, cx);
                     });
+                    kind_time_encoding.update(cx, |form, cx| {
+                        form.load(None, window, cx);
+                    });
                     kind_valid_range.update(cx, |form, cx| {
                         form.reset(valid_range_kind(selected_kind), window, cx);
                     });
@@ -888,6 +928,7 @@ impl ParameterTypeForm {
                 alias_set,
                 ancillary_data_set,
                 unit_set,
+                time_encoding,
                 to_string,
                 valid_range,
                 size_range_min_input,
@@ -995,6 +1036,13 @@ impl ParameterTypeForm {
         self.unit_set.update(cx, |form, cx| {
             form.load(parameter_type.and_then(parameter_type_unit_set), window, cx);
         });
+        self.time_encoding.update(cx, |form, cx| {
+            form.load(
+                parameter_type.and_then(parameter_type_time_encoding),
+                window,
+                cx,
+            );
+        });
         self.to_string.update(cx, |form, cx| {
             form.load(
                 parameter_type.and_then(parameter_type_to_string),
@@ -1091,6 +1139,7 @@ impl ParameterTypeForm {
             AncillaryDataSetForm::parse(&self.ancillary_data_set.text(cx)),
         );
         set_parameter_type_unit_set(parameter_type, self.unit_set.read(cx).to_set(cx));
+        set_parameter_type_time_encoding(parameter_type, self.time_encoding.read(cx).to_value(cx));
         set_parameter_type_to_string(parameter_type, self.to_string.read(cx).to_value(cx));
         set_parameter_type_valid_range(parameter_type, self.valid_range.read(cx).to_value(cx));
         set_string_size_range(
@@ -1187,6 +1236,12 @@ impl ParameterTypeForm {
             form = form
                 .child(self.to_string.clone())
                 .child(self.valid_range.clone());
+        }
+        if matches!(
+            kind,
+            ParameterTypeKind::RelativeTime | ParameterTypeKind::AbsoluteTime
+        ) {
+            form = form.child(self.time_encoding.clone());
         }
         if kind == ParameterTypeKind::String {
             form = form.child(
@@ -2047,11 +2102,11 @@ mod tests {
     use super::{
         ParameterTypeKind, ParameterTypeValues, ValidRangeValue, apply_nested_items,
         encode_nested_items, float_valid_range, integer_valid_range, parameter_type_alias_set,
-        parameter_type_ancillary_data_set, parameter_type_to_string, parameter_type_unit_set,
-        replace_parameter_type_kind, set_parameter_type_alias_set,
-        set_parameter_type_ancillary_data_set, set_parameter_type_to_string,
-        set_parameter_type_unit_set, set_parameter_type_valid_range, set_string_size_range,
-        string_size_range,
+        parameter_type_ancillary_data_set, parameter_type_time_encoding, parameter_type_to_string,
+        parameter_type_unit_set, replace_parameter_type_kind, set_parameter_type_alias_set,
+        set_parameter_type_ancillary_data_set, set_parameter_type_time_encoding,
+        set_parameter_type_to_string, set_parameter_type_unit_set, set_parameter_type_valid_range,
+        set_string_size_range, string_size_range,
     };
 
     #[test]
@@ -2407,6 +2462,51 @@ mod tests {
         set_parameter_type_valid_range(&mut parameter_type, None);
         assert!(float_valid_range(&parameter_type).is_none());
         assert!(integer_valid_range(&parameter_type).is_none());
+    }
+
+    #[test]
+    fn time_encoding_is_editable_for_time_parameter_types() {
+        let mut parameter_type = xtce::ParameterTypeSetTypeContent::AbsoluteTimeParameterType(
+            xtce::AbsoluteTimeParameterType {
+                short_description: None,
+                name: "TimestampType".to_owned(),
+                base_type: None,
+                initial_value: None,
+                long_description: None,
+                alias_set: None,
+                ancillary_data_set: None,
+                encoding: None,
+                reference_time: None,
+            },
+        );
+        set_parameter_type_time_encoding(
+            &mut parameter_type,
+            Some(xtce::EncodingType {
+                units: xtce::TimeUnitsType::Milliseconds,
+                scale: 0.25,
+                offset: 10.0,
+                content: xtce::EncodingTypeContent::IntegerDataEncoding(
+                    xtce::IntegerDataEncodingType {
+                        bit_order: xtce::IntegerDataEncodingType::default_bit_order(),
+                        byte_order: xtce::IntegerDataEncodingType::default_byte_order(),
+                        encoding: xtce::IntegerDataEncodingType::default_encoding(),
+                        size_in_bits: 32,
+                        change_threshold: None,
+                        error_detect_correct: None,
+                        default_calibrator: None,
+                        context_calibrator_list: None,
+                    },
+                ),
+            }),
+        );
+
+        let encoding = parameter_type_time_encoding(&parameter_type).expect("time encoding");
+        assert!(matches!(encoding.units, xtce::TimeUnitsType::Milliseconds));
+        assert_eq!(encoding.scale, 0.25);
+        assert_eq!(encoding.offset, 10.0);
+
+        set_parameter_type_time_encoding(&mut parameter_type, None);
+        assert!(parameter_type_time_encoding(&parameter_type).is_none());
     }
 
     #[test]
