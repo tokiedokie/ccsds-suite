@@ -26,6 +26,7 @@ pub(super) mod message_set;
 mod meta_command;
 mod parameter;
 mod parameter_type;
+mod reference_time;
 mod rpn_operation;
 mod sequence_container;
 mod service_set;

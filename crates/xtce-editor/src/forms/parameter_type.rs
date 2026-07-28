@@ -22,6 +22,7 @@ use super::{
     },
     enumeration_list::EnumerationListForm,
     field, impl_select_item, optional_value,
+    reference_time::ReferenceTimeForm,
     time_encoding::TimeEncodingForm,
     to_string::ToStringForm,
     unit_set::UnitSetForm,
@@ -622,6 +623,35 @@ fn set_parameter_type_time_encoding(
     }
 }
 
+fn parameter_type_reference_time(
+    parameter_type: &xtce::ParameterTypeSetTypeContent,
+) -> Option<&xtce::ReferenceTimeType> {
+    match parameter_type {
+        xtce::ParameterTypeSetTypeContent::RelativeTimeParameterType(value) => {
+            value.reference_time.as_ref()
+        }
+        xtce::ParameterTypeSetTypeContent::AbsoluteTimeParameterType(value) => {
+            value.reference_time.as_ref()
+        }
+        _ => None,
+    }
+}
+
+fn set_parameter_type_reference_time(
+    parameter_type: &mut xtce::ParameterTypeSetTypeContent,
+    reference_time: Option<xtce::ReferenceTimeType>,
+) {
+    match parameter_type {
+        xtce::ParameterTypeSetTypeContent::RelativeTimeParameterType(value) => {
+            value.reference_time = reference_time;
+        }
+        xtce::ParameterTypeSetTypeContent::AbsoluteTimeParameterType(value) => {
+            value.reference_time = reference_time;
+        }
+        _ => {}
+    }
+}
+
 #[derive(Clone, Copy, Debug, Display, EnumString, VariantArray, PartialEq, Eq)]
 enum CharacterWidthChoice {
     Default,
@@ -667,6 +697,7 @@ pub(super) struct ParameterTypeForm {
     ancillary_data_set: AncillaryDataSetForm,
     unit_set: Entity<UnitSetForm>,
     time_encoding: Entity<TimeEncodingForm>,
+    reference_time: Entity<ReferenceTimeForm>,
     to_string: Entity<ToStringForm>,
     valid_range: Entity<ValidRangeForm>,
     size_range_min_input: Entity<InputState>,
@@ -723,6 +754,11 @@ impl ParameterTypeForm {
             UnitSetForm::new(parameter_type.and_then(parameter_type_unit_set), window, cx);
         let time_encoding = TimeEncodingForm::new(
             parameter_type.and_then(parameter_type_time_encoding),
+            window,
+            cx,
+        );
+        let reference_time = ReferenceTimeForm::new(
+            parameter_type.and_then(parameter_type_reference_time),
             window,
             cx,
         );
@@ -815,6 +851,7 @@ impl ParameterTypeForm {
             let kind_enumeration_list = enumeration_list.clone();
             let kind_aggregate_members = aggregate_members.clone();
             let kind_time_encoding = time_encoding.clone();
+            let kind_reference_time = reference_time.clone();
             let kind_to_string = to_string.clone();
             let kind_valid_range = valid_range.clone();
             let kind_size_range_min = size_range_min_input.clone();
@@ -899,6 +936,9 @@ impl ParameterTypeForm {
                     kind_time_encoding.update(cx, |form, cx| {
                         form.load(None, window, cx);
                     });
+                    kind_reference_time.update(cx, |form, cx| {
+                        form.load(None, window, cx);
+                    });
                     kind_valid_range.update(cx, |form, cx| {
                         form.reset(valid_range_kind(selected_kind), window, cx);
                     });
@@ -929,6 +969,7 @@ impl ParameterTypeForm {
                 ancillary_data_set,
                 unit_set,
                 time_encoding,
+                reference_time,
                 to_string,
                 valid_range,
                 size_range_min_input,
@@ -1043,6 +1084,13 @@ impl ParameterTypeForm {
                 cx,
             );
         });
+        self.reference_time.update(cx, |form, cx| {
+            form.load(
+                parameter_type.and_then(parameter_type_reference_time),
+                window,
+                cx,
+            );
+        });
         self.to_string.update(cx, |form, cx| {
             form.load(
                 parameter_type.and_then(parameter_type_to_string),
@@ -1140,6 +1188,10 @@ impl ParameterTypeForm {
         );
         set_parameter_type_unit_set(parameter_type, self.unit_set.read(cx).to_set(cx));
         set_parameter_type_time_encoding(parameter_type, self.time_encoding.read(cx).to_value(cx));
+        set_parameter_type_reference_time(
+            parameter_type,
+            self.reference_time.read(cx).to_value(cx),
+        );
         set_parameter_type_to_string(parameter_type, self.to_string.read(cx).to_value(cx));
         set_parameter_type_valid_range(parameter_type, self.valid_range.read(cx).to_value(cx));
         set_string_size_range(
@@ -1241,7 +1293,9 @@ impl ParameterTypeForm {
             kind,
             ParameterTypeKind::RelativeTime | ParameterTypeKind::AbsoluteTime
         ) {
-            form = form.child(self.time_encoding.clone());
+            form = form
+                .child(self.time_encoding.clone())
+                .child(self.reference_time.clone());
         }
         if kind == ParameterTypeKind::String {
             form = form.child(
