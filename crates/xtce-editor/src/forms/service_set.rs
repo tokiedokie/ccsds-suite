@@ -132,7 +132,7 @@ impl Render for ServiceForm {
         let reference_count = self.references.len();
         v_flex()
             .w_full()
-            .gap_4()
+            .gap_5()
             .child(
                 h_flex()
                     .gap_4()

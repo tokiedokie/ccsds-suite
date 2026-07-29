@@ -232,7 +232,7 @@ impl Render for ContainerBinaryEncodingForm {
     fn render(&mut self, _: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         v_flex()
             .w_full()
-            .gap_4()
+            .gap_3()
             .child(
                 h_flex()
                     .justify_between()

@@ -2293,7 +2293,7 @@ impl Render for EntryListView {
             );
         v_flex()
             .w_full()
-            .gap_4()
+            .gap_3()
             .child(
                 h_flex()
                     .justify_between()
@@ -8038,7 +8038,7 @@ impl Render for TransmissionConstraintListForm {
     fn render(&mut self, _: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         v_flex()
             .w_full()
-            .gap_4()
+            .gap_3()
             .child(
                 h_flex()
                     .justify_between()
