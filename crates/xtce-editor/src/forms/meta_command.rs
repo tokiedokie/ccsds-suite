@@ -2177,6 +2177,7 @@ impl EntryListView {
                         })),
                 ),
             )
+            .child(div().flex_1().min_w_0().child(editor))
             .child(
                 h_flex()
                     .w(px(160.))
@@ -2225,7 +2226,6 @@ impl EntryListView {
                         })),
                     ),
             )
-            .child(editor)
             .into_any_element()
     }
 }
@@ -2239,55 +2239,36 @@ impl Render for EntryListView {
         let packet_layout = self
             .packet_layout_open
             .then(|| command_packet_layout(&rows, &self.arguments, &command_name, cx));
-        let entry_table = div()
-            .id("entry-table-scroll-boundary")
-            .w_full()
-            .on_scroll_wheel(|_, _, cx| {
-                cx.stop_propagation();
-            })
+        let entry_table = super::list_table_frame(cx)
+            .child(
+                h_flex()
+                    .h(px(34.))
+                    .px_2()
+                    .gap_2()
+                    .bg(cx.theme().muted.opacity(0.5))
+                    .text_xs()
+                    .font_medium()
+                    .child(div().w(px(52.)).flex_none().child("Bit"))
+                    .child(div().w(px(190.)).flex_none().child("Type"))
+                    .child(div().flex_1().min_w_0().child("Entry"))
+                    .child(div().w(px(160.)).flex_none().child("Actions")),
+            )
             .child(
                 div()
-                    .id("entry-table-horizontal-scroll")
-                    .w_full()
-                    .overflow_x_scroll()
+                    .id("entry-list-scroll-boundary")
+                    .on_scroll_wheel(|event, _, cx| {
+                        let delta = event.delta.pixel_delta(px(20.));
+                        if delta.y.abs() >= delta.x.abs() {
+                            cx.stop_propagation();
+                        }
+                    })
                     .child(
-                        v_flex()
-                            .w_full()
-                            .min_w(px(700.))
-                            .rounded_md()
-                            .border_1()
-                            .border_color(cx.theme().border)
-                            .child(
-                                h_flex()
-                                    .h(px(34.))
-                                    .px_2()
-                                    .gap_2()
-                                    .bg(cx.theme().muted.opacity(0.5))
-                                    .text_xs()
-                                    .font_medium()
-                                    .child(div().w(px(52.)).child("Bit"))
-                                    .child(div().w(px(160.)).child("Actions"))
-                                    .child(div().w(px(130.)).child("Type"))
-                                    .child(div().flex_1().child("Entry")),
-                            )
-                            .child(
-                                div()
-                                    .id("entry-list-scroll-boundary")
-                                    .on_scroll_wheel(|event, _, cx| {
-                                        let delta = event.delta.pixel_delta(px(20.));
-                                        if delta.y.abs() >= delta.x.abs() {
-                                            cx.stop_propagation();
-                                        }
-                                    })
-                                    .child(
-                                        list(
-                                            self.list_state.clone(),
-                                            cx.processor(EntryListView::render_list_item),
-                                        )
-                                        .w_full()
-                                        .h(px(if row_count == 0 { 0. } else { 352. })),
-                                    ),
-                            ),
+                        list(
+                            self.list_state.clone(),
+                            cx.processor(EntryListView::render_list_item),
+                        )
+                        .w_full()
+                        .h(px(if row_count == 0 { 0. } else { 352. })),
                     ),
             );
         v_flex()
@@ -2408,6 +2389,7 @@ impl Render for CommandContainerEntryRow {
             });
         }
         h_flex()
+            .w_full()
             .flex_1()
             .min_w_0()
             .gap_2()

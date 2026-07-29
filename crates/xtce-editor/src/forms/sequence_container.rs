@@ -1166,7 +1166,7 @@ impl TelemetryEntryListView {
                         this.remove_entry(index, cx);
                     })),
             );
-        let content = editor.into_any_element();
+        let content = div().flex_1().min_w_0().child(editor);
         h_flex()
             .w_full()
             .h(px(54.))
@@ -1183,8 +1183,8 @@ impl TelemetryEntryListView {
                         .map_or_else(|| "—".to_owned(), |position| position.to_string()),
                 ),
             )
-            .child(controls)
             .child(content)
+            .child(controls)
             .into_any_element()
     }
 }
@@ -1265,42 +1265,40 @@ impl Render for TelemetryEntryListView {
                     ),
             )
             .child(
-                div()
-                    .id("telemetry-entry-table-scroll-boundary")
-                    .w_full()
-                    .on_scroll_wheel(|_, _, cx| cx.stop_propagation())
+                super::list_table_frame(cx)
+                    .child(
+                        h_flex()
+                            .h(px(34.))
+                            .px_2()
+                            .gap_2()
+                            .bg(cx.theme().muted.opacity(0.5))
+                            .text_xs()
+                            .font_medium()
+                            .child(div().w(px(72.)).flex_none().child("Bit position"))
+                            .child(div().w(px(170.)).flex_none().child("Type"))
+                            .child(div().flex_1().min_w_0().child("Reference target"))
+                            .child(div().w(px(160.)).flex_none().child("Actions")),
+                    )
                     .child(
                         div()
-                            .id("telemetry-entry-table-horizontal-scroll")
-                            .w_full()
-                            .overflow_x_scroll()
+                            .id("telemetry-entry-list-scroll-boundary")
+                            .on_scroll_wheel(|event, _, cx| {
+                                let delta = event.delta.pixel_delta(px(20.));
+                                if delta.y.abs() >= delta.x.abs() {
+                                    cx.stop_propagation();
+                                }
+                            })
                             .child(
-                                v_flex()
-                                    .min_w(px(700.))
-                                    .rounded_md()
-                                    .border_1()
-                                    .border_color(cx.theme().border)
-                                    .child(
-                                        h_flex()
-                                            .h(px(34.))
-                                            .px_2()
-                                            .gap_2()
-                                            .bg(cx.theme().muted.opacity(0.5))
-                                            .text_xs()
-                                            .font_medium()
-                                            .child(div().w(px(72.)).child("Bit position"))
-                                            .child(div().w(px(160.)).child("Actions"))
-                                            .child(div().w(px(170.)).child("Type"))
-                                            .child(div().flex_1().child("Reference target")),
-                                    )
-                                    .child(
-                                        list(
-                                            self.list_state.clone(),
-                                            cx.processor(TelemetryEntryListView::render_list_item),
-                                        )
-                                        .w_full()
-                                        .h(px(if row_count == 0 { 0. } else { 352. })),
-                                    ),
+                                list(
+                                    self.list_state.clone(),
+                                    cx.processor(TelemetryEntryListView::render_list_item),
+                                )
+                                .w_full()
+                                .h(px(if row_count == 0 {
+                                    0.
+                                } else {
+                                    352.
+                                })),
                             ),
                     ),
             )
@@ -1769,6 +1767,7 @@ impl Render for TelemetryEntryRow {
             });
         }
         h_flex()
+            .w_full()
             .flex_1()
             .min_w_0()
             .gap_2()
