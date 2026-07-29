@@ -5,6 +5,15 @@ XTCE Editor is a native desktop application for creating and editing
 documents. It uses the XTCE 1.3 data model provided by the workspace's `xtce`
 crate and is built with Rust, GPUI, and GPUI Component.
 
+## Downloading
+
+Prebuilt releases for Linux, Windows, and macOS are available from the
+[ccsds-suite GitHub Releases](https://github.com/tokiedokie/ccsds-suite/releases)
+page. XTCE Editor releases use tags such as `xtce-editor-v0.1.0`.
+
+Each release archive contains the executable, this README, the GPL license,
+and a third-party license report generated with `cargo-about`.
+
 ## Features
 
 - Create, open, edit, and save XTCE XML documents.

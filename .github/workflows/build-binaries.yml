@@ -1,11 +1,11 @@
-name: Build executables
+name: Build XTCE Editor
 
 on:
   push:
     branches:
       - main
     tags:
-      - "v*"
+      - "xtce-editor-v*"
   pull_request:
     branches:
       - main
@@ -18,19 +18,51 @@ concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
 
+env:
+  CARGO_ABOUT_VERSION: "0.9.1"
+
 jobs:
   prepare:
     name: Determine build matrix
     runs-on: ubuntu-24.04
     outputs:
       matrix: ${{ steps.set-matrix.outputs.matrix }}
+      version: ${{ steps.release-version.outputs.version }}
     steps:
-      - id: set-matrix
+      - name: Check out repository
+        uses: actions/checkout@v5
+
+      - id: release-version
+        name: Validate release version
+        shell: bash
         run: |
-          if [[ "${GITHUB_REF}" == refs/tags/v* ]]; then
-            echo 'matrix={"include":[{"runner":"ubuntu-24.04","target":"x86_64-unknown-linux-gnu","artifact":"xtce-editor-linux-x86_64","archive":"xtce-editor-linux-x86_64.tar.gz"},{"runner":"windows-2025","target":"x86_64-pc-windows-msvc","artifact":"xtce-editor-windows-x86_64","archive":"xtce-editor-windows-x86_64.zip"},{"runner":"macos-15","target":"aarch64-apple-darwin","artifact":"xtce-editor-macos-aarch64","archive":"xtce-editor-macos-aarch64.tar.gz"}]}' >> "$GITHUB_OUTPUT"
+          manifest_version="$(
+            sed -n 's/^version = "\([^"]*\)"/\1/p' crates/xtce-editor/Cargo.toml |
+              head -n 1
+          )"
+          if [[ -z "${manifest_version}" ]]; then
+            echo "Could not read the xtce-editor package version." >&2
+            exit 1
+          fi
+
+          if [[ "${GITHUB_REF}" == refs/tags/xtce-editor-v* ]]; then
+            tag_version="${GITHUB_REF_NAME#xtce-editor-v}"
+            if [[ "${tag_version}" != "${manifest_version}" ]]; then
+              echo "Tag version ${tag_version} does not match Cargo version ${manifest_version}." >&2
+              exit 1
+            fi
+          fi
+
+          echo "version=${manifest_version}" >> "$GITHUB_OUTPUT"
+
+      - id: set-matrix
+        name: Select release targets
+        shell: bash
+        run: |
+          if [[ "${GITHUB_REF}" == refs/tags/xtce-editor-v* ]]; then
+            echo 'matrix={"include":[{"runner":"ubuntu-24.04","target":"x86_64-unknown-linux-gnu","artifact":"xtce-editor-linux-x86_64","executable":"xtce-editor"},{"runner":"windows-2025","target":"x86_64-pc-windows-msvc","artifact":"xtce-editor-windows-x86_64","executable":"xtce-editor.exe"},{"runner":"macos-15","target":"aarch64-apple-darwin","artifact":"xtce-editor-macos-aarch64","executable":"xtce-editor"}]}' >> "$GITHUB_OUTPUT"
           else
-            echo 'matrix={"include":[{"runner":"ubuntu-24.04","target":"x86_64-unknown-linux-gnu","artifact":"xtce-editor-linux-x86_64","archive":"xtce-editor-linux-x86_64.tar.gz"}]}' >> "$GITHUB_OUTPUT"
+            echo 'matrix={"include":[{"runner":"ubuntu-24.04","target":"x86_64-unknown-linux-gnu","artifact":"xtce-editor-linux-x86_64","executable":"xtce-editor"}]}' >> "$GITHUB_OUTPUT"
           fi
 
   build:
@@ -77,59 +109,175 @@ jobs:
       - name: Build release executable
         run: cargo build --locked --release --package xtce-editor --target ${{ matrix.target }}
 
-      - name: Package executable
-        if: runner.os != 'Windows'
+      - name: Stage executable
         shell: bash
         run: |
-          mkdir -p dist/package
-          cp "target/${{ matrix.target }}/release/xtce-editor" dist/package/xtce-editor
-          tar -C dist/package -czf "dist/${{ matrix.archive }}" xtce-editor
-
-      - name: Package executable
-        if: runner.os == 'Windows'
-        shell: pwsh
-        run: |
-          New-Item -ItemType Directory -Force "dist/package" | Out-Null
-          Copy-Item `
-            "target/${{ matrix.target }}/release/xtce-editor.exe" `
-            "dist/package/xtce-editor.exe"
-          Compress-Archive `
-            -Path "dist/package/xtce-editor.exe" `
-            -DestinationPath "dist/${{ matrix.archive }}"
+          mkdir -p dist
+          cp \
+            "target/${{ matrix.target }}/release/${{ matrix.executable }}" \
+            "dist/${{ matrix.executable }}"
 
       - name: Upload executable
         uses: actions/upload-artifact@v6
         with:
           name: ${{ matrix.artifact }}
-          path: dist/${{ matrix.archive }}
+          path: dist/${{ matrix.executable }}
+          if-no-files-found: error
+          retention-days: 14
+
+  licenses:
+    name: Generate third-party licenses
+    if: startsWith(github.ref, 'refs/tags/xtce-editor-v')
+    runs-on: ubuntu-24.04
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v5
+
+      - name: Cache Cargo dependencies and cargo-about
+        uses: actions/cache@v5
+        with:
+          path: |
+            ~/.cargo/bin/cargo-about
+            ~/.cargo/git/db
+            ~/.cargo/registry/cache
+            ~/.cargo/registry/index
+          key: cargo-about-${{ runner.os }}-${{ env.CARGO_ABOUT_VERSION }}-${{ hashFiles('Cargo.lock', 'about.toml', 'about.hbs') }}
+          restore-keys: |
+            cargo-about-${{ runner.os }}-${{ env.CARGO_ABOUT_VERSION }}-
+
+      - name: Install cargo-about
+        shell: bash
+        run: |
+          if ! command -v cargo-about >/dev/null 2>&1 ||
+             [[ "$(cargo-about --version)" != "cargo-about ${CARGO_ABOUT_VERSION}" ]]; then
+            cargo install cargo-about \
+              --version "${CARGO_ABOUT_VERSION}" \
+              --locked \
+              --features cli
+          fi
+
+      - name: Generate third-party license report
+        shell: bash
+        run: |
+          mkdir -p dist
+          cargo about generate \
+            --config about.toml \
+            --locked \
+            --fail \
+            --output-file dist/THIRD_PARTY_LICENSES.md \
+            about.hbs
+
+      - name: Upload third-party license report
+        uses: actions/upload-artifact@v6
+        with:
+          name: xtce-editor-third-party-licenses
+          path: dist/THIRD_PARTY_LICENSES.md
           if-no-files-found: error
           retention-days: 14
 
   release:
-    name: Attach executables to release
-    if: startsWith(github.ref, 'refs/tags/v')
-    needs: build
+    name: Publish XTCE Editor release
+    if: startsWith(github.ref, 'refs/tags/xtce-editor-v')
+    needs:
+      - prepare
+      - build
+      - licenses
     runs-on: ubuntu-24.04
     permissions:
       contents: write
 
     steps:
-      - name: Download executables
+      - name: Check out repository
+        uses: actions/checkout@v5
+
+      - name: Download executables and licenses
         uses: actions/download-artifact@v7
         with:
           path: dist
-          merge-multiple: true
+
+      - name: Create release archives
+        env:
+          VERSION: ${{ needs.prepare.outputs.version }}
+        shell: bash
+        run: |
+          release_dir="release"
+          linux_package="xtce-editor-${VERSION}-linux-x86_64"
+          windows_package="xtce-editor-${VERSION}-windows-x86_64"
+          macos_package="xtce-editor-${VERSION}-macos-aarch64"
+
+          mkdir -p \
+            "${release_dir}/${linux_package}" \
+            "${release_dir}/${windows_package}" \
+            "${release_dir}/${macos_package}"
+
+          install -m 0755 \
+            dist/xtce-editor-linux-x86_64/xtce-editor \
+            "${release_dir}/${linux_package}/xtce-editor"
+          install -m 0644 \
+            dist/xtce-editor-windows-x86_64/xtce-editor.exe \
+            "${release_dir}/${windows_package}/xtce-editor.exe"
+          install -m 0755 \
+            dist/xtce-editor-macos-aarch64/xtce-editor \
+            "${release_dir}/${macos_package}/xtce-editor"
+
+          for package in \
+            "${linux_package}" \
+            "${windows_package}" \
+            "${macos_package}"; do
+            install -m 0644 LICENSE "${release_dir}/${package}/LICENSE"
+            install -m 0644 \
+              crates/xtce-editor/README.md \
+              "${release_dir}/${package}/README.md"
+            install -m 0644 \
+              dist/xtce-editor-third-party-licenses/THIRD_PARTY_LICENSES.md \
+              "${release_dir}/${package}/THIRD_PARTY_LICENSES.md"
+          done
+
+          tar -C "${release_dir}" -czf \
+            "${release_dir}/${linux_package}.tar.gz" \
+            "${linux_package}"
+          tar -C "${release_dir}" -czf \
+            "${release_dir}/${macos_package}.tar.gz" \
+            "${macos_package}"
+          (
+            cd "${release_dir}"
+            zip -qr "${windows_package}.zip" "${windows_package}"
+          )
 
       - name: Create or update GitHub Release
         env:
           GH_TOKEN: ${{ github.token }}
           GH_REPO: ${{ github.repository }}
+          VERSION: ${{ needs.prepare.outputs.version }}
         shell: bash
         run: |
           if gh release view "$GITHUB_REF_NAME" >/dev/null 2>&1; then
-            gh release upload "$GITHUB_REF_NAME" dist/* --clobber
-          else
-            gh release create "$GITHUB_REF_NAME" dist/* \
-              --title "$GITHUB_REF_NAME" \
-              --generate-notes
+            gh release upload "$GITHUB_REF_NAME" \
+              release/*.tar.gz \
+              release/*.zip \
+              --clobber
+            exit 0
           fi
+
+          previous_tag="$(
+            gh release list \
+              --exclude-drafts \
+              --exclude-pre-releases \
+              --limit 100 \
+              --json tagName \
+              --jq 'map(select(.tagName | startswith("xtce-editor-v")))[0].tagName // ""'
+          )"
+          notes_args=(--generate-notes)
+          if [[ -n "${previous_tag}" ]]; then
+            notes_args+=(--notes-start-tag "${previous_tag}")
+          fi
+
+          gh release create "$GITHUB_REF_NAME" \
+            release/*.tar.gz \
+            release/*.zip \
+            --title "XTCE Editor v${VERSION}" \
+            --notes "Distributed under GPL-3.0-or-later. Each archive includes the application license, README, and third-party license report." \
+            --verify-tag \
+            --latest=false \
+            "${notes_args[@]}"

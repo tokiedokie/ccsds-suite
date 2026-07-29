@@ -1,0 +1,51 @@
+ignore-dev-dependencies = true
+targets = [
+    "x86_64-unknown-linux-gnu",
+    "x86_64-pc-windows-msvc",
+    "aarch64-apple-darwin",
+]
+workarounds = [
+    "ring",
+    "rustls",
+]
+
+accepted = [
+    "0BSD",
+    "Apache-2.0",
+    "Apache-2.0 WITH LLVM-exception",
+    "BSD-2-Clause",
+    "BSD-3-Clause",
+    "BSL-1.0",
+    "bzip2-1.0.6",
+    "CC0-1.0",
+    "CDLA-Permissive-2.0",
+    "GPL-3.0-or-later",
+    "ISC",
+    "MIT",
+    "MIT-0",
+    "MPL-2.0",
+    "NCSA",
+    "OpenSSL",
+    "Unicode-3.0",
+    "Unlicense",
+    "Zlib",
+]
+
+# These crates do not declare a license in their Cargo manifests. The Zed
+# repository states that unmarked source is GPL-3.0-or-later, while
+# Apache-2.0 components are marked explicitly.
+[gpui_shared_string.clarify]
+license = "GPL-3.0-or-later"
+override-git-commit = "a50a292fd179f5a4391ee1442b00741a9925cc0f"
+
+[[gpui_shared_string.clarify.git]]
+path = "LICENSE-GPL"
+checksum = "0aa0322ea494da441088e4d9144c6720bf99d9e2e1eefcd29d1f58b19b5c4246"
+
+[gpui_util.clarify]
+license = "GPL-3.0-or-later"
+override-git-commit = "a50a292fd179f5a4391ee1442b00741a9925cc0f"
+
+[[gpui_util.clarify.git]]
+path = "LICENSE-GPL"
+checksum = "0aa0322ea494da441088e4d9144c6720bf99d9e2e1eefcd29d1f58b19b5c4246"
