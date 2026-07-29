@@ -3,7 +3,7 @@ use gpui::{
     div, prelude::FluentBuilder,
 };
 use gpui_component::{
-    ActiveTheme, IndexPath, StyledExt, h_flex,
+    ActiveTheme, IndexPath, h_flex,
     input::{InputEvent, InputState},
     select::{SelectEvent, SelectState},
     v_flex,
@@ -303,7 +303,7 @@ impl VariableFrameStreamForm {
             .child(
                 v_flex()
                     .gap_3()
-                    .child(div().text_sm().font_medium().child("Frame source"))
+                    .child(super::section_title("Frame source"))
                     .child(select_field(
                         "Reference target type",
                         "Required",
@@ -328,7 +328,7 @@ impl VariableFrameStreamForm {
             .child(
                 v_flex()
                     .gap_3()
-                    .child(div().text_sm().font_medium().child("Synchronization"))
+                    .child(super::section_title("Synchronization"))
                     .child(
                         h_flex()
                             .gap_4()
@@ -375,7 +375,7 @@ impl VariableFrameStreamForm {
                     .child(
                         h_flex()
                             .justify_between()
-                            .child(div().text_sm().font_medium().child("Auto invert"))
+                            .child(super::section_title("Auto invert"))
                             .child(if self.auto_invert_present {
                                 super::section_remove_button("remove-variable-frame-auto-invert")
                                     .on_click(cx.listener(|this, _, _, cx| {
@@ -404,12 +404,7 @@ impl VariableFrameStreamForm {
                                     .child(
                                         h_flex()
                                             .justify_between()
-                                            .child(
-                                                div()
-                                                    .text_sm()
-                                                    .font_medium()
-                                                    .child("Invert algorithm"),
-                                            )
+                                            .child(super::section_title("Invert algorithm"))
                                             .child(if self.invert_algorithm_present {
                                                 super::section_remove_button(
                                                     "remove-variable-frame-invert-algorithm",

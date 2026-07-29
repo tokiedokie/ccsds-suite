@@ -190,12 +190,7 @@ impl Render for ErrorDetectCorrectForm {
             .child(
                 h_flex()
                     .justify_between()
-                    .child(
-                        div()
-                            .text_sm()
-                            .font_medium()
-                            .child("Error detection/correction"),
-                    )
+                    .child(super::section_title("Error detection/correction"))
                     .child(if self.present {
                         super::section_remove_button("remove-error-detect-correct").on_click(
                             cx.listener(|this, _, _, cx| {
@@ -342,7 +337,7 @@ impl Render for ErrorRow {
                 .child(
                     h_flex()
                         .justify_between()
-                        .child(div().text_sm().font_medium().child("Input algorithm"))
+                        .child(super::section_title("Input algorithm"))
                         .child(if self.input_algorithm_present {
                             super::section_remove_button("remove-checksum-input-algorithm")
                                 .on_click(cx.listener(|this, _, _, cx| {

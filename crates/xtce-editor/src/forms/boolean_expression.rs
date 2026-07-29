@@ -336,7 +336,7 @@ impl BooleanExpressionForm {
             .child(
                 h_flex()
                     .justify_between()
-                    .child(div().text_sm().font_medium().child("Condition"))
+                    .child(super::section_title("Condition"))
                     .when_some(parent_count, |header, count| {
                         header.child(
                             super::row_remove_button(

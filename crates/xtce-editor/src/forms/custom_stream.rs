@@ -2,7 +2,7 @@ use gpui::{
     App, AppContext, Context, Div, Entity, ParentElement, Render, Styled, Subscription, Window, div,
 };
 use gpui_component::{
-    ActiveTheme, IndexPath, StyledExt, h_flex,
+    ActiveTheme, IndexPath, h_flex,
     input::{InputEvent, InputState},
     select::SelectState,
     v_flex,
@@ -307,7 +307,7 @@ impl CustomStreamForm {
             .child(
                 v_flex()
                     .gap_3()
-                    .child(div().text_sm().font_medium().child("Encoding algorithm"))
+                    .child(super::section_title("Encoding algorithm"))
                     .child(field("Name", "Required", &self.encoding_name_input, cx))
                     .child(field(
                         "Short description",
@@ -342,7 +342,7 @@ impl CustomStreamForm {
             .child(
                 v_flex()
                     .gap_3()
-                    .child(div().text_sm().font_medium().child("Decoding algorithm"))
+                    .child(super::section_title("Decoding algorithm"))
                     .child(
                         h_flex()
                             .gap_4()

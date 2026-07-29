@@ -3,7 +3,7 @@ use gpui::{
     prelude::FluentBuilder, px,
 };
 use gpui_component::{
-    ActiveTheme, IconName, IndexPath, Sizable, StyledExt, WindowExt,
+    ActiveTheme, IconName, IndexPath, Sizable, WindowExt,
     button::{Button, ButtonVariants},
     h_flex,
     input::InputState,
@@ -161,7 +161,7 @@ impl Render for ToStringForm {
             .justify_between()
             .child(
                 v_flex()
-                    .child(div().text_sm().font_medium().child("Number formatting"))
+                    .child(super::section_title("Number formatting"))
                     .child(
                         div()
                             .text_xs()

@@ -1703,10 +1703,7 @@ impl Render for BaseAssignmentListView {
                     .child(
                         v_flex()
                             .child(
-                                div()
-                                    .text_sm()
-                                    .font_medium()
-                                    .child("Base argument assignments"),
+                                super::section_title("Base argument assignments"),
                             )
                             .child(
                                 div()
@@ -1867,14 +1864,12 @@ impl Render for ArgumentListView {
                 h_flex()
                     .justify_between()
                     .child(
-                        v_flex()
-                            .child(div().text_sm().font_medium().child("Arguments"))
-                            .child(
-                                div()
-                                    .text_xs()
-                                    .text_color(cx.theme().muted_foreground)
-                                    .child("Arguments declared by this MetaCommand"),
-                            ),
+                        v_flex().child(super::section_title("Arguments")).child(
+                            div()
+                                .text_xs()
+                                .text_color(cx.theme().muted_foreground)
+                                .child("Arguments declared by this MetaCommand"),
+                        ),
                     )
                     .child(
                         h_flex()
@@ -7035,7 +7030,7 @@ impl Render for ParameterToSetListForm {
                     .justify_between()
                     .child(
                         v_flex()
-                            .child(div().text_sm().font_medium().child("Parameter to set list"))
+                            .child(super::section_title("Parameter to set list"))
                             .child(
                                 div()
                                     .text_xs()
@@ -7363,12 +7358,7 @@ impl Render for ParametersToSuspendAlarmsOnSetForm {
                     .justify_between()
                     .child(
                         v_flex()
-                            .child(
-                                div()
-                                    .text_sm()
-                                    .font_medium()
-                                    .child("Parameters to suspend alarms on set"),
-                            )
+                            .child(super::section_title("Parameters to suspend alarms on set"))
                             .child(
                                 div()
                                     .text_xs()
@@ -7485,7 +7475,7 @@ impl Render for VerifierListForm {
                     .justify_between()
                     .child(
                         v_flex()
-                            .child(div().text_sm().font_medium().child("Command verifiers"))
+                            .child(super::section_title("Command verifiers"))
                             .child(
                                 div()
                                     .text_xs()
@@ -7586,12 +7576,7 @@ impl Render for VerifierListForm {
                         v_flex()
                             .w_full()
                             .gap_3()
-                            .child(
-                                div()
-                                    .text_sm()
-                                    .font_medium()
-                                    .child("Verification condition"),
-                            )
+                            .child(super::section_title("Verification condition"))
                             .child(select_field(
                                 "Condition type",
                                 "Required",
@@ -7635,7 +7620,7 @@ impl Render for VerifierListForm {
                         v_flex()
                             .w_full()
                             .gap_3()
-                            .child(div().text_sm().font_medium().child("Check window"))
+                            .child(super::section_title("Check window"))
                             .child(select_field(
                                 "Window type",
                                 "Required",
@@ -7672,19 +7657,9 @@ impl Render for VerifierListForm {
                                 form.child(
                                     v_flex()
                                         .gap_3()
-                                        .child(
-                                            div()
-                                                .text_sm()
-                                                .font_medium()
-                                                .child("Start-check algorithm"),
-                                        )
+                                        .child(super::section_title("Start-check algorithm"))
                                         .child(row_read.start_check_algorithm.clone())
-                                        .child(
-                                            div()
-                                                .text_sm()
-                                                .font_medium()
-                                                .child("Stop-time algorithm"),
-                                        )
+                                        .child(super::section_title("Stop-time algorithm"))
                                         .child(row_read.stop_time_algorithm.clone()),
                                 )
                             }),
@@ -7712,7 +7687,7 @@ fn open_verifier_options(editor: Entity<VerifierRowForm>, window: &mut Window, c
                     selected_value(&percent_complete_kind, PercentCompleteChoice::None, cx);
                 content.child(
                     super::form_dialog_content()
-                        .child(div().text_sm().font_medium().child("Optional metadata"))
+                        .child(super::section_title("Optional metadata"))
                         .child(field("Long description", "Optional", &long_description, cx))
                         .child(row.alias_set.render(cx))
                         .child(row.ancillary_data_set.render(cx))
@@ -7722,12 +7697,7 @@ fn open_verifier_options(editor: Entity<VerifierRowForm>, window: &mut Window, c
                             &argument_restrictions,
                             cx,
                         ))
-                        .child(
-                            div()
-                                .text_sm()
-                                .font_medium()
-                                .child("Stage-specific options"),
-                        )
+                        .child(super::section_title("Stage-specific options"))
                         .when(stage == VerifierStageChoice::Execution, |form| {
                             form.child(select_field(
                                 "Percent complete source",
@@ -8030,12 +8000,7 @@ impl Render for TransmissionConstraintListForm {
                     .justify_between()
                     .child(
                         v_flex()
-                            .child(
-                                div()
-                                    .text_sm()
-                                    .font_medium()
-                                    .child("Transmission constraints"),
-                            )
+                            .child(super::section_title("Transmission constraints"))
                             .child(
                                 div()
                                     .text_xs()

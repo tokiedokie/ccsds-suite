@@ -2,9 +2,7 @@ use gpui::{
     App, AppContext, Context, Entity, IntoElement, ParentElement, Render, Styled, Window,
     prelude::FluentBuilder,
 };
-use gpui_component::{
-    IndexPath, StyledExt, h_flex, input::InputState, select::SelectState, v_flex,
-};
+use gpui_component::{IndexPath, h_flex, input::InputState, select::SelectState, v_flex};
 use strum::{Display, EnumString, VariantArray};
 
 use super::{field, impl_select_item};
@@ -117,12 +115,7 @@ impl Render for DynamicValueForm {
             .child(
                 h_flex()
                     .justify_between()
-                    .child(
-                        gpui::div()
-                            .text_sm()
-                            .font_medium()
-                            .child("Linear adjustment"),
-                    )
+                    .child(super::section_title("Linear adjustment"))
                     .child(if self.linear_adjustment_present {
                         super::section_remove_button("remove-dynamic-linear-adjustment").on_click(
                             cx.listener(|this, _, _, cx| {

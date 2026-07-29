@@ -1,9 +1,9 @@
 use gpui::{
     App, AppContext, Context, Div, Entity, IntoElement, ParentElement, Render, Styled,
-    Subscription, Window, div, prelude::FluentBuilder,
+    Subscription, Window, prelude::FluentBuilder,
 };
 use gpui_component::{
-    IndexPath, StyledExt, h_flex,
+    IndexPath, h_flex,
     input::InputState,
     select::{SelectEvent, SelectState},
     v_flex,
@@ -783,7 +783,7 @@ impl DataEncodingForm {
                     .child(
                         h_flex()
                             .justify_between()
-                            .child(div().text_sm().font_medium().child("From-binary transform"))
+                            .child(super::section_title("From-binary transform"))
                             .child(if self.from_transform_present {
                                 super::section_remove_button("remove-data-from-binary-transform")
                                     .on_click(cx.listener(|this, _, _, cx| {
@@ -808,7 +808,7 @@ impl DataEncodingForm {
                     .child(
                         h_flex()
                             .justify_between()
-                            .child(div().text_sm().font_medium().child("To-binary transform"))
+                            .child(super::section_title("To-binary transform"))
                             .child(if self.to_transform_present {
                                 super::section_remove_button("remove-data-to-binary-transform")
                                     .on_click(cx.listener(|this, _, _, cx| {
@@ -844,12 +844,7 @@ impl DataEncodingForm {
                             .child(
                                 h_flex()
                                     .justify_between()
-                                    .child(
-                                        div()
-                                            .text_sm()
-                                            .font_medium()
-                                            .child("Termination character"),
-                                    )
+                                    .child(super::section_title("Termination character"))
                                     .child(if self.fixed_termination_present {
                                         super::section_remove_button(
                                             "remove-fixed-string-termination",
@@ -883,7 +878,7 @@ impl DataEncodingForm {
                             .child(
                                 h_flex()
                                     .justify_between()
-                                    .child(div().text_sm().font_medium().child("Leading size"))
+                                    .child(super::section_title("Leading size"))
                                     .child(if self.fixed_leading_size_present {
                                         super::section_remove_button(
                                             "remove-fixed-string-leading-size",

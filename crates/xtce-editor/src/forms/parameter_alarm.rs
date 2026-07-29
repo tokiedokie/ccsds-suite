@@ -301,14 +301,12 @@ impl Render for DefaultAlarmForm {
         let header = h_flex()
             .justify_between()
             .child(
-                v_flex()
-                    .child(div().text_sm().font_medium().child("Default alarm"))
-                    .child(
-                        div()
-                            .text_xs()
-                            .text_color(cx.theme().muted_foreground)
-                            .child("Alarm behavior used when no context alarm matches"),
-                    ),
+                v_flex().child(super::section_title("Default alarm")).child(
+                    div()
+                        .text_xs()
+                        .text_color(cx.theme().muted_foreground)
+                        .child("Alarm behavior used when no context alarm matches"),
+                ),
             )
             .child(if self.active {
                 super::section_remove_button("remove-parameter-type-default-alarm").on_click(
@@ -390,7 +388,7 @@ impl Render for ContextAlarmListForm {
                     .justify_between()
                     .child(
                         v_flex()
-                            .child(div().text_sm().font_medium().child("Context alarms"))
+                            .child(super::section_title("Context alarms"))
                             .child(
                                 div()
                                     .text_xs()
@@ -528,7 +526,7 @@ impl Render for AlarmConditionsForm {
         v_flex()
             .w_full()
             .gap_3()
-            .child(div().text_sm().font_medium().child("Alarm conditions"))
+            .child(super::section_title("Alarm conditions"))
             .children(self.rows.iter().map(|row| {
                 let row_read = row.read(cx);
                 v_flex()
@@ -615,7 +613,7 @@ impl Render for CustomAlarmForm {
     fn render(&mut self, _: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         let header = h_flex()
             .justify_between()
-            .child(div().text_sm().font_medium().child("Custom alarm"))
+            .child(super::section_title("Custom alarm"))
             .child(if self.active {
                 super::section_remove_button("remove-parameter-custom-alarm").on_click(cx.listener(
                     |this, _, _, cx| {

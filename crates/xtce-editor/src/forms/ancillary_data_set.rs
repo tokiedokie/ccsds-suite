@@ -121,7 +121,7 @@ impl Render for AncillaryDataRowsForm {
                     .justify_between()
                     .child(
                         v_flex()
-                            .child(div().text_sm().font_medium().child("Ancillary data"))
+                            .child(super::section_title("Ancillary data"))
                             .child(
                                 div()
                                     .text_xs()

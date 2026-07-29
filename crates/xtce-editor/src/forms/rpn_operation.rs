@@ -221,7 +221,7 @@ impl RpnOperationForm {
                 form.child(
                     v_flex()
                         .gap_2()
-                        .child(div().text_sm().font_medium().child("Operator"))
+                        .child(super::section_title("Operator"))
                         .child(
                             h_flex()
                                 .flex_wrap()
@@ -337,7 +337,7 @@ impl Render for RpnOperationForm {
             .child(
                 v_flex()
                     .gap_1()
-                    .child(div().text_sm().font_medium().child("RPN operation"))
+                    .child(super::section_title("RPN operation"))
                     .child(
                         div()
                             .text_xs()

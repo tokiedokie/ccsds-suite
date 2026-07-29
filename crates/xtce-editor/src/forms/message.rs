@@ -3,7 +3,7 @@ use gpui::{
     div, prelude::FluentBuilder, px,
 };
 use gpui_component::{
-    ActiveTheme, Disableable, IconName, IndexPath, Sizable, StyledExt, WindowExt,
+    ActiveTheme, Disableable, IconName, IndexPath, Sizable, WindowExt,
     button::{Button, ButtonVariants},
     h_flex,
     input::{InputEvent, InputState},
@@ -342,10 +342,7 @@ impl Render for MessageCriteriaForm {
             .w_full()
             .gap_3()
             .child(
-                div()
-                    .text_sm()
-                    .font_medium()
-                    .child("Match criteria"),
+                super::section_title("Match criteria"),
             )
             .child(select_field("Criteria type", &self.kind_select))
             .when(kind == CriteriaKind::BooleanExpression, |form| {

@@ -246,14 +246,14 @@ impl MathAlgorithmForm {
                     .child(
                         v_flex()
                             .gap_3()
-                            .child(div().text_sm().font_medium().child("Operation metadata"))
+                            .child(super::section_title("Operation metadata"))
                             .child(self.operation_ancillary_data_set.render(cx)),
                     ),
             )
             .child(
                 v_flex()
                     .gap_3()
-                    .child(div().text_sm().font_medium().child("Trigger set"))
+                    .child(super::section_title("Trigger set"))
                     .child(
                         h_flex()
                             .gap_4()
@@ -276,7 +276,7 @@ impl MathAlgorithmForm {
             .child(
                 v_flex()
                     .gap_3()
-                    .child(div().text_sm().font_medium().child("Algorithm metadata"))
+                    .child(super::section_title("Algorithm metadata"))
                     .child(self.alias_set.render(cx))
                     .child(self.ancillary_data_set.render(cx)),
             )

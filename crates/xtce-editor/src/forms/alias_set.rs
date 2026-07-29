@@ -99,14 +99,12 @@ impl Render for AliasRowsForm {
                 h_flex()
                     .justify_between()
                     .child(
-                        v_flex()
-                            .child(div().text_sm().font_medium().child("Aliases"))
-                            .child(
-                                div()
-                                    .text_xs()
-                                    .text_color(cx.theme().muted_foreground)
-                                    .child(super::count_label(self.rows.len(), "alias", "aliases")),
-                            ),
+                        v_flex().child(super::section_title("Aliases")).child(
+                            div()
+                                .text_xs()
+                                .text_color(cx.theme().muted_foreground)
+                                .child(super::count_label(self.rows.len(), "alias", "aliases")),
+                        ),
                     )
                     .child(
                         super::collection_add_button("add-alias", "Add alias").on_click(

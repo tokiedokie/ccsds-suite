@@ -42,6 +42,7 @@ mod unit_set;
 mod valid_range;
 pub(super) mod variable_frame_stream;
 mod variable_string;
+mod xsd_docs;
 
 use std::rc::Rc;
 
@@ -55,6 +56,7 @@ use gpui_component::{
     form::{field as form_field, v_form},
     input::{Input, InputState},
     select::{Select, SelectItem, SelectState},
+    tooltip::Tooltip,
     v_flex,
 };
 
@@ -88,12 +90,13 @@ pub(super) fn field(
 ) -> Div {
     let (required, description) = field_requirement(hint);
     let missing = required_value_missing(required, &input.read(cx).value());
+    let label_id = ("xsd-field-label", input.entity_id());
     v_flex()
         .w_full()
         .child(
             v_form().child(
                 form_field()
-                    .label(label)
+                    .label_fn(move |_, _| documented_label(label_id.clone(), label))
                     .required(required)
                     .when(!description.is_empty(), |field| {
                         field.description(description)
@@ -147,7 +150,19 @@ pub(super) fn required_input(input: &Entity<InputState>, cx: &App) -> Div {
 pub(super) fn required_label(label: &'static str, cx: &App) -> Div {
     gpui_component::h_flex()
         .gap_1()
-        .child(label)
+        .child(
+            div()
+                .id(format!("xsd-required-label-{label}"))
+                .child(label)
+                .when_some(
+                    xsd_docs::documentation_for(label),
+                    |label, documentation| {
+                        label.tooltip(move |window, cx| {
+                            documentation_tooltip(documentation, window, cx)
+                        })
+                    },
+                ),
+        )
         .child(div().text_color(cx.theme().danger).child("*"))
 }
 
@@ -160,10 +175,11 @@ where
     T: Clone + PartialEq + SelectItem + 'static,
 {
     let (required, description) = field_requirement(hint);
+    let label_id = ("xsd-select-label", select.entity_id());
     v_flex().w_full().child(
         v_form().child(
             form_field()
-                .label(label)
+                .label_fn(move |_, _| documented_label(label_id.clone(), label))
                 .required(required)
                 .when(!description.is_empty(), |field| {
                     field.description(description)
@@ -171,6 +187,38 @@ where
                 .child(Select::new(select).w_full()),
         ),
     )
+}
+
+fn documented_label(id: impl Into<ElementId>, label: &'static str) -> impl IntoElement {
+    div().id(id).child(label).when_some(
+        xsd_docs::documentation_for(label),
+        |label, documentation| {
+            label.tooltip(move |window, cx| documentation_tooltip(documentation, window, cx))
+        },
+    )
+}
+
+pub(super) fn section_title(label: &'static str) -> impl IntoElement {
+    div()
+        .id(format!("xsd-section-title-{label}"))
+        .text_sm()
+        .font_medium()
+        .child(label)
+        .when_some(
+            xsd_docs::documentation_for(label),
+            |title, documentation| {
+                title.tooltip(move |window, cx| documentation_tooltip(documentation, window, cx))
+            },
+        )
+}
+
+fn documentation_tooltip(
+    documentation: &'static str,
+    window: &mut gpui::Window,
+    cx: &mut App,
+) -> gpui::AnyView {
+    Tooltip::element(move |_, _| div().w(px(360.)).whitespace_normal().child(documentation))
+        .build(window, cx)
 }
 
 pub(super) fn section_remove_button(id: impl Into<ElementId>) -> Button {

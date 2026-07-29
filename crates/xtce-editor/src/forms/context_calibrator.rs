@@ -97,7 +97,7 @@ impl Render for ContextCalibratorListForm {
             .child(
                 h_flex()
                     .justify_between()
-                    .child(div().text_sm().font_medium().child("Context calibrators"))
+                    .child(super::section_title("Context calibrators"))
                     .child(
                         super::collection_add_button(
                             "add-context-calibrator",
@@ -134,7 +134,7 @@ impl Render for ContextCalibratorRow {
             .w_full()
             .gap_4()
             .child(self.criteria.clone())
-            .child(div().text_sm().font_medium().child("Calibrator"))
+            .child(super::section_title("Calibrator"))
             .child(self.calibrator.clone())
     }
 }

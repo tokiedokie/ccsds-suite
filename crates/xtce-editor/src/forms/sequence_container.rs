@@ -863,14 +863,12 @@ impl Render for ComparisonListForm {
                 h_flex()
                     .justify_between()
                     .child(
-                        v_flex()
-                            .child(div().text_sm().font_medium().child("Comparisons"))
-                            .child(
-                                div()
-                                    .text_xs()
-                                    .text_color(cx.theme().muted_foreground)
-                                    .child("All comparison rows must evaluate to true"),
-                            ),
+                        v_flex().child(super::section_title("Comparisons")).child(
+                            div()
+                                .text_xs()
+                                .text_color(cx.theme().muted_foreground)
+                                .child("All comparison rows must evaluate to true"),
+                        ),
                     )
                     .child(
                         super::collection_add_button(
@@ -1259,14 +1257,12 @@ impl Render for TelemetryEntryListView {
                 h_flex()
                     .justify_between()
                     .child(
-                        v_flex()
-                            .child(div().text_sm().font_medium().child("Entry list"))
-                            .child(
-                                div()
-                                    .text_xs()
-                                    .text_color(cx.theme().muted_foreground)
-                                    .child(super::count_label(row_count, "entry", "entries")),
-                            ),
+                        v_flex().child(super::section_title("Entry list")).child(
+                            div()
+                                .text_xs()
+                                .text_color(cx.theme().muted_foreground)
+                                .child(super::count_label(row_count, "entry", "entries")),
+                        ),
                     )
                     .child(
                         super::collection_add_button("add-telemetry-container-entry", "Add entry")
