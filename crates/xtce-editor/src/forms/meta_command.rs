@@ -892,7 +892,7 @@ impl MetaCommandForm {
                     } else {
                         IconName::ChevronRight
                     })
-                    .label("Documentation")
+                    .label("Meta command documentation")
                     .on_click(cx.listener(|this, _, _, cx| {
                         this.documentation_open = !this.documentation_open;
                         cx.notify();
@@ -929,7 +929,7 @@ impl MetaCommandForm {
                     } else {
                         IconName::ChevronRight
                     })
-                    .label("Metadata")
+                    .label("Meta command metadata")
                     .on_click(cx.listener(|this, _, _, cx| {
                         this.metadata_open = !this.metadata_open;
                         cx.notify();
@@ -939,6 +939,12 @@ impl MetaCommandForm {
                 v_flex()
                     .pt_3()
                     .gap_4()
+                    .child(
+                        div()
+                            .text_sm()
+                            .text_color(cx.theme().muted_foreground)
+                            .child("Aliases and ancillary data attached to this MetaCommand."),
+                    )
                     .child(self.alias_set.render(cx))
                     .child(self.ancillary_data_set.render(cx)),
             )
@@ -1214,7 +1220,13 @@ impl MetaCommandForm {
                 "No local command container is defined. The base MetaCommand's packaging will be used."
             };
             return v_flex()
+                .w_full()
                 .gap_3()
+                .p_4()
+                .rounded_lg()
+                .border_1()
+                .border_color(cx.theme().border)
+                .bg(cx.theme().muted.opacity(0.18))
                 .child(div().text_lg().font_semibold().child("Command container"))
                 .child(
                     div()
@@ -1233,11 +1245,30 @@ impl MetaCommandForm {
         }
 
         v_flex()
+            .w_full()
             .gap_4()
+            .p_4()
+            .rounded_lg()
+            .border_1()
+            .border_color(cx.theme().border)
+            .bg(cx.theme().muted.opacity(0.18))
             .child(
                 h_flex()
+                    .items_start()
                     .justify_between()
-                    .child(div().text_lg().font_semibold().child("Command container"))
+                    .child(
+                        v_flex()
+                            .gap_1()
+                            .child(div().text_lg().font_semibold().child("Command container"))
+                            .child(
+                                div()
+                                    .text_sm()
+                                    .text_color(cx.theme().muted_foreground)
+                                    .child(
+                                        "Binary packaging defined locally by this MetaCommand.",
+                                    ),
+                            ),
+                    )
                     .child(
                         super::section_remove_button("remove-command-container").on_click(
                             cx.listener(|this, _, _, cx| {
@@ -1246,6 +1277,23 @@ impl MetaCommandForm {
                             }),
                         ),
                     ),
+            )
+            .child(
+                h_flex()
+                    .gap_3()
+                    .items_start()
+                    .child(field(
+                        "Container name",
+                        "Required",
+                        &self.container_name_input,
+                        cx,
+                    ))
+                    .child(field(
+                        "Base container reference",
+                        "Optional",
+                        &self.container_base_ref_input,
+                        cx,
+                    )),
             )
             .child(
                 Collapsible::new()
@@ -1259,7 +1307,7 @@ impl MetaCommandForm {
                             } else {
                                 IconName::ChevronRight
                             })
-                            .label("Metadata")
+                            .label("Container metadata")
                             .on_click(cx.listener(|this, _, _, cx| {
                                 this.container_metadata_open = !this.container_metadata_open;
                                 cx.notify();
@@ -1269,6 +1317,14 @@ impl MetaCommandForm {
                         v_flex()
                             .pt_3()
                             .gap_4()
+                            .child(
+                                div()
+                                    .text_sm()
+                                    .text_color(cx.theme().muted_foreground)
+                                    .child(
+                                        "Aliases and ancillary data attached to this CommandContainer.",
+                                    ),
+                            )
                             .child(self.container_alias_set.render(cx))
                             .child(self.container_ancillary_data_set.render(cx)),
                     ),
@@ -1285,7 +1341,7 @@ impl MetaCommandForm {
                             } else {
                                 IconName::ChevronRight
                             })
-                            .label("Container details")
+                            .label("Container description")
                             .on_click(cx.listener(|this, _, _, cx| {
                                 this.container_details_open = !this.container_details_open;
                                 cx.notify();
@@ -1295,23 +1351,6 @@ impl MetaCommandForm {
                         v_flex()
                             .pt_3()
                             .gap_4()
-                            .child(
-                                h_flex()
-                                    .gap_3()
-                                    .items_start()
-                                    .child(field(
-                                        "Container name",
-                                        "Required",
-                                        &self.container_name_input,
-                                        cx,
-                                    ))
-                                    .child(field(
-                                        "Base container reference",
-                                        "Optional",
-                                        &self.container_base_ref_input,
-                                        cx,
-                                    )),
-                            )
                             .child(field(
                                 "Short description",
                                 "Optional",

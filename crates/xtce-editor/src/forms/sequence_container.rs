@@ -478,6 +478,11 @@ impl SequenceContainerForm {
 
     fn render_form(&self, cx: &mut Context<Self>) -> Div {
         let base_present = self.base_container_present.get();
+        let base_description = if base_present {
+            "Inheritance and restriction criteria defined by this BaseContainer."
+        } else {
+            "No BaseContainer is defined. This SequenceContainer does not inherit another container."
+        };
         v_flex()
             .w_full()
             .gap_5()
@@ -494,11 +499,28 @@ impl SequenceContainerForm {
             ))
             .child(
                 v_flex()
-                    .gap_3()
+                    .w_full()
+                    .gap_4()
+                    .p_4()
+                    .rounded_lg()
+                    .border_1()
+                    .border_color(cx.theme().border)
+                    .bg(cx.theme().muted.opacity(0.18))
                     .child(
                         h_flex()
+                            .items_start()
                             .justify_between()
-                            .child(div().text_sm().font_medium().child("Base container"))
+                            .child(
+                                v_flex()
+                                    .gap_1()
+                                    .child(div().text_lg().font_semibold().child("Base container"))
+                                    .child(
+                                        div()
+                                            .text_sm()
+                                            .text_color(cx.theme().muted_foreground)
+                                            .child(base_description),
+                                    ),
+                            )
                             .child(if base_present {
                                 super::section_remove_button("remove-telemetry-base-container")
                                     .on_click(cx.listener(|this, _, _, cx| {

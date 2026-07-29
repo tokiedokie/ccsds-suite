@@ -199,8 +199,26 @@ impl MathAlgorithmForm {
             ))
             .child(
                 v_flex()
-                    .gap_3()
-                    .child(div().text_sm().font_medium().child("Math operation"))
+                    .w_full()
+                    .gap_4()
+                    .p_4()
+                    .rounded_lg()
+                    .border_1()
+                    .border_color(cx.theme().border)
+                    .bg(cx.theme().muted.opacity(0.18))
+                    .child(
+                        v_flex()
+                            .gap_1()
+                            .child(div().text_lg().font_semibold().child("Math operation"))
+                            .child(
+                                div()
+                                    .text_sm()
+                                    .text_color(cx.theme().muted_foreground)
+                                    .child(
+                                        "RPN expression and output defined by this MathOperation.",
+                                    ),
+                            ),
+                    )
                     .child(
                         h_flex()
                             .gap_4()
@@ -225,7 +243,12 @@ impl MathAlgorithmForm {
                         cx,
                     ))
                     .child(self.operation_entries.clone())
-                    .child(self.operation_ancillary_data_set.render(cx)),
+                    .child(
+                        v_flex()
+                            .gap_3()
+                            .child(div().text_sm().font_medium().child("Operation metadata"))
+                            .child(self.operation_ancillary_data_set.render(cx)),
+                    ),
             )
             .child(
                 v_flex()
@@ -250,8 +273,13 @@ impl MathAlgorithmForm {
                         cx,
                     )),
             )
-            .child(self.alias_set.render(cx))
-            .child(self.ancillary_data_set.render(cx))
+            .child(
+                v_flex()
+                    .gap_3()
+                    .child(div().text_sm().font_medium().child("Algorithm metadata"))
+                    .child(self.alias_set.render(cx))
+                    .child(self.ancillary_data_set.render(cx)),
+            )
     }
 }
 
