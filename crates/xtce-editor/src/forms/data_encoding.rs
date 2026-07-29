@@ -905,7 +905,7 @@ impl DataEncodingForm {
                             .when(self.fixed_leading_size_present, |section| {
                                 section.child(field(
                                     "Size tag width in bits",
-                                    "Defaults to 16",
+                                    "Optional; defaults to 16",
                                     &self.fixed_leading_size,
                                     cx,
                                 ))

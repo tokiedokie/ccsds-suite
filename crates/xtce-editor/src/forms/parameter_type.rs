@@ -1637,13 +1637,13 @@ impl ParameterTypeForm {
                         .items_start()
                         .child(field(
                             "One string value",
-                            "Defaults to True",
+                            "Optional; defaults to True",
                             &self.extra_a_input,
                             cx,
                         ))
                         .child(field(
                             "Zero string value",
-                            "Defaults to False",
+                            "Optional; defaults to False",
                             &self.extra_b_input,
                             cx,
                         )),

@@ -944,13 +944,13 @@ impl Render for ChangeAlarmRangesForm {
                         .items_start()
                         .child(field(
                             "Span in samples",
-                            "Defaults to 1",
+                            "Optional; defaults to 1",
                             &self.span_samples,
                             cx,
                         ))
                         .child(field(
                             "Span in seconds",
-                            "Defaults to 0",
+                            "Optional; defaults to 0",
                             &self.span_seconds,
                             cx,
                         )),
@@ -1196,13 +1196,13 @@ impl Render for AlarmEditor {
                     .items_start()
                     .child(field(
                         "Minimum violations",
-                        "Defaults to 1",
+                        "Optional; defaults to 1",
                         &self.min_violations,
                         cx,
                     ))
                     .child(field(
                         "Minimum conformance",
-                        "Defaults to 1",
+                        "Optional; defaults to 1",
                         &self.min_conformance,
                         cx,
                     )),

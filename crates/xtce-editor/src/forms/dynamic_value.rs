@@ -103,7 +103,12 @@ impl Render for DynamicValueForm {
                         &self.parameter_ref,
                         cx,
                     ))
-                    .child(field("Instance", "Defaults to 0", &self.instance, cx))
+                    .child(field(
+                        "Instance",
+                        "Optional; defaults to 0",
+                        &self.instance,
+                        cx,
+                    ))
                     .child(select_field(
                         "Use calibrated value",
                         &self.use_calibrated_value,
@@ -139,8 +144,13 @@ impl Render for DynamicValueForm {
                     h_flex()
                         .gap_3()
                         .items_start()
-                        .child(field("Slope", "Defaults to 1", &self.slope, cx))
-                        .child(field("Intercept", "Defaults to 0", &self.intercept, cx)),
+                        .child(field("Slope", "Optional; defaults to 1", &self.slope, cx))
+                        .child(field(
+                            "Intercept",
+                            "Optional; defaults to 0",
+                            &self.intercept,
+                            cx,
+                        )),
                 )
             })
     }

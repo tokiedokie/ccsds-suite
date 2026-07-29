@@ -1142,7 +1142,7 @@ impl MetaCommandForm {
                             )))
                             .child(div().w(px(140.)).child(select_field(
                                 "Suspendable",
-                                "Defaults to false",
+                                "Optional; defaults to false",
                                 &self.interlock_suspendable_select,
                                 cx,
                             ))),
@@ -2494,7 +2494,7 @@ fn open_command_entry_details(
                                     ))
                                     .child(super::select_field(
                                         "Parameter value",
-                                        "Defaults to calibrated",
+                                        "Optional; defaults to calibrated",
                                         &calibrated,
                                     ))
                                     .child(field(
@@ -2514,7 +2514,7 @@ fn open_command_entry_details(
                                     .child(
                                         super::select_field(
                                             "Last entry for this array instance",
-                                            "Defaults to no",
+                                            "Optional; defaults to no",
                                             &last_array_entry,
                                         ),
                                     )

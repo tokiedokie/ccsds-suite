@@ -249,7 +249,7 @@ fn open_offset_options(
             .content(move |content, _, cx| {
                 content.child(
                     super::form_dialog_content()
-                        .child(field("Instance", "Defaults to 0", &instance, cx))
+                        .child(field("Instance", "Optional; defaults to 0", &instance, cx))
                         .child(select_field("Value form", &value_form)),
                 )
             })

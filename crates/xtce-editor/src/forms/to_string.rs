@@ -221,7 +221,7 @@ impl Render for ToStringForm {
                                 .items_start()
                                 .child(div().flex_1().child(field(
                                     "Minimum integer digits",
-                                    "Defaults to 1",
+                                    "Optional; defaults to 1",
                                     &self.minimum_integer_digits,
                                     cx,
                                 )))
@@ -301,7 +301,7 @@ fn open_options(
                                 .items_start()
                                 .child(field(
                                     "Minimum fraction digits",
-                                    "Defaults to 0",
+                                    "Optional; defaults to 0",
                                     &minimum_fraction_digits,
                                     cx,
                                 ))
@@ -318,7 +318,7 @@ fn open_options(
                                 .items_start()
                                 .child(field(
                                     "Negative prefix",
-                                    "Defaults to -",
+                                    "Optional; defaults to -",
                                     &negative_prefix,
                                     cx,
                                 ))

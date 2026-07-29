@@ -314,7 +314,12 @@ impl Render for ComparisonRow {
                 &self.parameter_ref,
                 cx,
             ))
-            .child(field("Instance", "Defaults to 0", &self.instance, cx))
+            .child(field(
+                "Instance",
+                "Optional; defaults to 0",
+                &self.instance,
+                cx,
+            ))
             .child(select_field("Value form", &self.calibrated))
             .child(select_field("Operator", &self.operator))
             .child(field("Value", "Required", &self.value, cx))

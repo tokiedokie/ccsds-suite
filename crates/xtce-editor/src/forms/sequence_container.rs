@@ -1792,7 +1792,7 @@ fn open_entry_details(editor: Entity<TelemetryEntryRow>, window: &mut Window, cx
                             form.child(field("Instance", "Optional; defaults to 0", &instance, cx))
                                 .child(super::select_field(
                                     "Parameter value",
-                                    "Defaults to calibrated",
+                                    "Optional; defaults to calibrated",
                                     &calibrated,
                                 ))
                                 .child(field("Alias namespace", "Optional", &alias_namespace, cx))

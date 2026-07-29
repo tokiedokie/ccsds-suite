@@ -146,8 +146,8 @@ impl Render for TimeEncodingForm {
                         .gap_3()
                         .items_start()
                         .child(select_field("Units", &self.units))
-                        .child(field("Scale", "Defaults to 1", &self.scale, cx))
-                        .child(field("Offset", "Defaults to 0", &self.offset, cx)),
+                        .child(field("Scale", "Optional; defaults to 1", &self.scale, cx))
+                        .child(field("Offset", "Optional; defaults to 0", &self.offset, cx)),
                 )
                 .child(div().text_sm().font_medium().child("Data encoding"))
                 .child(self.data_encoding.clone());

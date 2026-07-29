@@ -396,7 +396,7 @@ impl BooleanExpressionForm {
                                             .child(
                                                 super::select_field(
                                                     "Use calibrated value",
-                                                    "Defaults to calibrated",
+                                                    "Optional; defaults to calibrated",
                                                     &condition.left_calibrated,
                                                 )
                                                 .w(px(150.))
@@ -490,7 +490,7 @@ impl BooleanExpressionForm {
                                                         .child(
                                                             super::select_field(
                                                                 "Use calibrated value",
-                                                                "Defaults to calibrated",
+                                                                "Optional; defaults to calibrated",
                                                                 &condition.right_calibrated,
                                                             )
                                                             .w(px(150.))

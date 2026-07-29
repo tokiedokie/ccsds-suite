@@ -144,7 +144,7 @@ impl Render for VariableStringForm {
             .when(self.kind == VariableKind::LeadingSize, |form| {
                 form.child(field(
                     "Size tag width in bits",
-                    "Defaults to 16",
+                    "Optional; defaults to 16",
                     &self.leading_size,
                     cx,
                 ))

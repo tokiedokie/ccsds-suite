@@ -93,7 +93,7 @@ impl SpaceSystemIdentityFields {
                     .items_start()
                     .child(field(
                         "Asset type",
-                        "Defaults to unknown",
+                        "Optional; defaults to unknown",
                         &self.asset_type_input,
                         cx,
                     ))

@@ -319,7 +319,7 @@ impl Render for ErrorRow {
                     .items_start()
                     .child(field(
                         "Bits from reference",
-                        "Defaults to 0",
+                        "Optional; defaults to 0",
                         &self.bits_from_reference,
                         cx,
                     ))

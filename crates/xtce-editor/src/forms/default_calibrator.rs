@@ -447,7 +447,7 @@ impl Render for DefaultCalibratorForm {
                                     ))
                                     .child(super::select_field(
                                         "Extrapolate",
-                                        "Defaults to false",
+                                        "Optional; defaults to false",
                                         &self.extrapolate,
                                     )),
                             )

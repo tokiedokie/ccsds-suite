@@ -177,7 +177,7 @@ impl Render for AncillaryDataRowsForm {
                             .child(field("Name", "Required", &row_read.name, cx))
                             .child(field(
                                 "MIME type",
-                                "Defaults to text/plain",
+                                "Optional; defaults to text/plain",
                                 &row_read.mime_type,
                                 cx,
                             )),
