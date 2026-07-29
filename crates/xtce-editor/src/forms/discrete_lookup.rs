@@ -257,9 +257,9 @@ impl Render for ComparisonList {
                 h_flex()
                     .w_full()
                     .gap_2()
-                    .items_end()
+                    .items_start()
                     .child(row.clone())
-                    .child(
+                    .child(super::action_field(
                         super::row_remove_button(
                             format!("remove-lookup-comparison-{index}"),
                             "Remove comparison",
@@ -271,7 +271,7 @@ impl Render for ComparisonList {
                                 cx.notify();
                             }
                         })),
-                    )
+                    ))
             })
             .collect::<Vec<_>>();
         v_flex().w_full().gap_2().children(rows).child(

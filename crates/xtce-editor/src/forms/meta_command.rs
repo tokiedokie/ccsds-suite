@@ -7100,7 +7100,7 @@ impl Render for ParameterToSetListForm {
             .children(self.rows.iter().enumerate().map(|(index, row)| {
                 let row_read = row.read(cx);
                 super::compact_list_row(cx)
-                    .items_end()
+                    .items_start()
                     .child(
                         div()
                             .flex_1()
@@ -7123,9 +7123,8 @@ impl Render for ParameterToSetListForm {
                         &row_read.trigger,
                         cx,
                     )))
-                    .child(
+                    .child(super::action_field(
                         h_flex()
-                            .mb(px(6.))
                             .gap_1()
                             .child(
                                 Button::new(format!("parameter-to-set-options-{index}"))
@@ -7152,7 +7151,7 @@ impl Render for ParameterToSetListForm {
                                     },
                                 )),
                             ),
-                    )
+                    ))
             }))
     }
 }
@@ -7424,7 +7423,7 @@ impl Render for ParametersToSuspendAlarmsOnSetForm {
             .children(self.rows.iter().enumerate().map(|(index, row)| {
                 let row_read = row.read(cx);
                 super::compact_list_row(cx)
-                    .items_end()
+                    .items_start()
                     .child(
                         div()
                             .flex_1()
@@ -7442,20 +7441,16 @@ impl Render for ParametersToSuspendAlarmsOnSetForm {
                         &row_read.trigger,
                         cx,
                     )))
-                    .child(
-                        div().mb(px(6.)).child(
-                            super::row_remove_button(
-                                format!("remove-suspend-alarm-{index}"),
-                                "Remove alarm suspension",
-                            )
-                            .on_click(cx.listener(
-                                move |this, _, _, cx| {
-                                    this.rows.remove(index);
-                                    cx.notify();
-                                },
-                            )),
-                        ),
-                    )
+                    .child(super::action_field(
+                        super::row_remove_button(
+                            format!("remove-suspend-alarm-{index}"),
+                            "Remove alarm suspension",
+                        )
+                        .on_click(cx.listener(move |this, _, _, cx| {
+                            this.rows.remove(index);
+                            cx.notify();
+                        })),
+                    ))
             }))
     }
 }

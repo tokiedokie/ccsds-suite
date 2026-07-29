@@ -202,7 +202,7 @@ impl Render for ToStringForm {
                             h_flex()
                                 .w_full()
                                 .gap_3()
-                                .items_start()
+                                .items_end()
                                 .child(
                                     div()
                                         .flex_1()
@@ -231,9 +231,8 @@ impl Render for ToStringForm {
                                     &self.maximum_integer_digits,
                                     cx,
                                 )))
-                                .child(
+                                .child(super::action_field(
                                     Button::new("parameter-type-to-string-options")
-                                        .mt(px(26.))
                                         .small()
                                         .ghost()
                                         .icon(IconName::Ellipsis)
@@ -263,7 +262,7 @@ impl Render for ToStringForm {
                                                 );
                                             }
                                         }),
-                                ),
+                                )),
                         ),
                 )
             })

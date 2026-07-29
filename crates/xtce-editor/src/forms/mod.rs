@@ -188,6 +188,16 @@ pub(super) fn compact_list_row(cx: &App) -> Div {
         .border_color(cx.theme().border)
 }
 
+pub(super) fn action_field(actions: impl IntoElement) -> Div {
+    v_flex().flex_none().child(
+        v_form().child(
+            form_field()
+                .label("Actions")
+                .child(actions.into_any_element()),
+        ),
+    )
+}
+
 fn field_requirement(hint: &'static str) -> (bool, &'static str) {
     let Some(suffix) = hint.strip_prefix("Required") else {
         return (false, hint);

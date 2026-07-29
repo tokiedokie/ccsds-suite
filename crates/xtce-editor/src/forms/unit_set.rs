@@ -123,9 +123,8 @@ impl Render for UnitSetForm {
                             .w(px(180.))
                             .child(select_field("Form", &row_read.form)),
                     )
-                    .child(
+                    .child(super::action_field(
                         h_flex()
-                            .mt(px(26.))
                             .gap_1()
                             .child(
                                 Button::new(format!("parameter-type-unit-options-{index}"))
@@ -152,7 +151,7 @@ impl Render for UnitSetForm {
                                     },
                                 )),
                             ),
-                    )
+                    ))
             }))
     }
 }

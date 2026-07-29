@@ -208,13 +208,12 @@ impl Render for ReferenceTimeForm {
                         cx,
                     ))
                     .when(self.kind == ReferenceTimeKind::OffsetFrom, |row| {
-                        row.child(
+                        row.child(super::action_field(
                             Button::new("parameter-type-reference-time-options")
-                                .mt(px(26.))
                                 .small()
                                 .ghost()
                                 .icon(IconName::Ellipsis)
-                                .tooltip("OffsetFrom options")
+                                .tooltip("Offset options")
                                 .on_click({
                                     let instance = self.instance.clone();
                                     let value_form = self.value_form.clone();
@@ -227,7 +226,7 @@ impl Render for ReferenceTimeForm {
                                         );
                                     }
                                 }),
-                        )
+                        ))
                     }),
             );
         }

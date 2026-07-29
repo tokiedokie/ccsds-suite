@@ -202,9 +202,9 @@ impl Render for StreamRateList {
             .enumerate()
             .map(|(index, row)| {
                 super::compact_list_row(cx)
-                    .items_end()
+                    .items_start()
                     .child(row.clone())
-                    .child(
+                    .child(super::action_field(
                         super::row_remove_button(
                             format!("remove-stream-rate-{index}"),
                             "Remove stream rate",
@@ -215,7 +215,7 @@ impl Render for StreamRateList {
                                 cx.notify();
                             }
                         })),
-                    )
+                    ))
             })
             .collect::<Vec<_>>();
         v_flex()
