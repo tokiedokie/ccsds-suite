@@ -1762,7 +1762,7 @@ fn open_entry_details(editor: Entity<TelemetryEntryRow>, window: &mut Window, cx
         let editor = editor.clone();
         dialog
             .title(title.clone())
-            .w(px(560.))
+            .w(px(super::FORM_DIALOG_WIDTH))
             .content(move |content, _, cx| {
                 let row = editor.read(cx);
                 let kind = selected_value(&row.kind_select, EntryKind::Parameter, cx);
@@ -1783,9 +1783,7 @@ fn open_entry_details(editor: Entity<TelemetryEntryRow>, window: &mut Window, cx
                 let indirect = kind == EntryKind::IndirectParameter;
                 let array = kind == EntryKind::ArrayParameter;
                 content.child(
-                    v_flex()
-                        .p_4()
-                        .gap_3()
+                    super::form_dialog_content()
                         .when(segment, |form| {
                             form.child(field("Segment size", "Required", &segment_size, cx))
                                 .child(field("Order", "Optional", &segment_order, cx))

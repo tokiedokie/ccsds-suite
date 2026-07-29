@@ -245,13 +245,11 @@ fn open_offset_options(
         let instance = instance.clone();
         let value_form = value_form.clone();
         dialog
-            .title("OffsetFrom options")
-            .w(px(640.))
+            .title("Offset options")
+            .w(px(super::FORM_DIALOG_WIDTH))
             .content(move |content, _, cx| {
                 content.child(
-                    v_flex()
-                        .p_4()
-                        .gap_4()
+                    super::form_dialog_content()
                         .child(field("Instance", "Defaults to 0", &instance, cx))
                         .child(select_field("Value form", &value_form)),
                 )

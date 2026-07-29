@@ -1990,14 +1990,12 @@ fn open_command_argument_options(
         let editor = editor.clone();
         dialog
             .title("Argument options")
-            .w(px(680.))
+            .w(px(super::FORM_DIALOG_WIDTH))
             .content(move |content, _, cx| {
                 let row = editor.read(cx);
                 let long_description = row.long_description_input.clone();
                 content.child(
-                    v_flex()
-                        .p_4()
-                        .gap_4()
+                    super::form_dialog_content()
                         .child(field("Long description", "Optional", &long_description, cx))
                         .child(row.alias_set.render(cx))
                         .child(row.ancillary_data_set.render(cx)),
@@ -2448,7 +2446,7 @@ fn open_command_entry_details(
         let editor = editor.clone();
         dialog
             .title(title.clone())
-            .w(px(560.))
+            .w(px(super::FORM_DIALOG_WIDTH))
             .content(move |content, _, cx| {
                 let row = editor.read(cx);
                 let kind =
@@ -2476,9 +2474,7 @@ fn open_command_entry_details(
                         | CommandContainerEntryKind::StreamSegment
                 );
                 content.child(
-                    v_flex()
-                        .p_4()
-                        .gap_3()
+                    super::form_dialog_content()
                         .when(fixed, |form| {
                             form.child(field("Binary value", "Required", &secondary, cx))
                                 .child(field("Size in bits", "Required", &tertiary, cx))
@@ -7170,16 +7166,14 @@ fn open_parameter_to_set_options(
         let editor = editor.clone();
         dialog
             .title("Parameter value source")
-            .w(px(680.))
+            .w(px(super::FORM_DIALOG_WIDTH))
             .content(move |content, _, cx| {
                 let row = editor.read(cx);
                 let kind =
                     selected_value(&row.content_kind, ParameterToSetContentChoice::NewValue, cx);
                 let derivation = row.derivation.clone();
                 content.child(
-                    v_flex()
-                        .p_4()
-                        .gap_3()
+                    super::form_dialog_content()
                         .when(kind == ParameterToSetContentChoice::Derivation, |form| {
                             form.child(derivation)
                         })
@@ -7723,7 +7717,7 @@ fn open_verifier_options(editor: Entity<VerifierRowForm>, window: &mut Window, c
         let editor = editor.clone();
         dialog
             .title("Verifier options")
-            .w(px(760.))
+            .w(px(super::FORM_DIALOG_WIDTH))
             .content(move |content, _, cx| {
                 let row = editor.read(cx);
                 let stage = selected_value(&row.stage, VerifierStageChoice::Execution, cx);
@@ -7736,9 +7730,7 @@ fn open_verifier_options(editor: Entity<VerifierRowForm>, window: &mut Window, c
                 let percent_complete_choice =
                     selected_value(&percent_complete_kind, PercentCompleteChoice::None, cx);
                 content.child(
-                    v_flex()
-                        .p_4()
-                        .gap_4()
+                    super::form_dialog_content()
                         .child(div().text_sm().font_medium().child("Optional metadata"))
                         .child(field("Long description", "Optional", &long_description, cx))
                         .child(row.alias_set.render(cx))

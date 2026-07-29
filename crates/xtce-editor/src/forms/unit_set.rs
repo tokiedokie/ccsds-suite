@@ -162,13 +162,11 @@ fn open_unit_options(editor: Entity<UnitRowForm>, window: &mut Window, cx: &mut 
         let editor = editor.clone();
         dialog
             .title("Unit options")
-            .w(px(680.))
+            .w(px(super::FORM_DIALOG_WIDTH))
             .content(move |content, _, cx| {
                 let row = editor.read(cx);
                 content.child(
-                    v_flex()
-                        .p_4()
-                        .gap_4()
+                    super::form_dialog_content()
                         .child(field("Power", "Optional; defaults to 1", &row.power, cx))
                         .child(field("Factor", "Optional; defaults to 1", &row.factor, cx))
                         .child(field("Description", "Optional", &row.description, cx)),

@@ -242,8 +242,10 @@ fn open_integer_value(
         let editor = editor.clone();
         dialog
             .title(label)
-            .w(px(760.))
-            .content(move |content, _, _| content.child(div().p_4().child(editor.clone())))
+            .w(px(super::FORM_DIALOG_WIDTH))
+            .content(move |content, _, _| {
+                content.child(super::form_dialog_content().child(editor.clone()))
+            })
     });
 }
 

@@ -292,12 +292,10 @@ fn open_options(
         let show_thousands_grouping = show_thousands_grouping.clone();
         dialog
             .title("Number formatting options")
-            .w(px(720.))
+            .w(px(super::FORM_DIALOG_WIDTH))
             .content(move |content, _, cx| {
                 content.child(
-                    v_flex()
-                        .p_4()
-                        .gap_4()
+                    super::form_dialog_content()
                         .child(
                             h_flex()
                                 .gap_4()

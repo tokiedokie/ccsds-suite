@@ -149,6 +149,12 @@ pub(super) fn empty_list_state(message: impl Into<SharedString>, cx: &App) -> Di
         .child(message.into())
 }
 
+pub(super) const FORM_DIALOG_WIDTH: f32 = 720.;
+
+pub(super) fn form_dialog_content() -> Div {
+    v_flex().w_full().p_4().gap_4()
+}
+
 pub(super) fn row_remove_button(
     id: impl Into<ElementId>,
     tooltip: impl Into<SharedString>,
