@@ -1662,7 +1662,7 @@ impl ParameterTypeForm {
         if kind.supports_data_encoding() {
             form = form
                 .child(self.unit_set.clone())
-                .child(div().text_lg().font_semibold().child("Data encoding"))
+                .child(div().text_sm().font_medium().child("Data encoding"))
                 .child(self.data_encoding.clone());
         }
         if matches!(kind, ParameterTypeKind::Integer | ParameterTypeKind::Float) {
