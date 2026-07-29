@@ -1,10 +1,5 @@
-use gpui::{App, AppContext, Context, Div, Entity, ParentElement, Styled, Window, div};
-use gpui_component::{
-    ActiveTheme, IndexPath, StyledExt, h_flex,
-    input::InputState,
-    select::{Select, SelectState},
-    v_flex,
-};
+use gpui::{App, AppContext, Context, Div, Entity, ParentElement, Styled, Window};
+use gpui_component::{IndexPath, h_flex, input::InputState, select::SelectState, v_flex};
 use strum::{Display, EnumString, VariantArray};
 
 use super::{field, impl_select_item, optional_value};
@@ -255,21 +250,8 @@ fn select_field(
     select: &Entity<SelectState<Vec<ValidationStatusChoice>>>,
     cx: &App,
 ) -> Div {
-    v_flex()
-        .w_full()
-        .gap_2()
-        .child(
-            h_flex()
-                .justify_between()
-                .child(div().text_sm().font_medium().child(label))
-                .child(
-                    div()
-                        .text_xs()
-                        .text_color(cx.theme().muted_foreground)
-                        .child(hint),
-                ),
-        )
-        .child(Select::new(select).w_full())
+    let _ = cx;
+    super::select_field(label, hint, select)
 }
 
 fn value(input: &Entity<InputState>, cx: &App) -> String {

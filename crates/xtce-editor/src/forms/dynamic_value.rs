@@ -7,7 +7,7 @@ use gpui_component::{
     button::{Button, ButtonVariants},
     h_flex,
     input::InputState,
-    select::{Select, SelectState},
+    select::SelectState,
     v_flex,
 };
 use strum::{Display, EnumString, VariantArray};
@@ -243,11 +243,7 @@ fn select_field(
     label: &'static str,
     select: &Entity<SelectState<Vec<BooleanChoice>>>,
 ) -> gpui::Div {
-    v_flex().w_full().child(
-        gpui_component::form::field()
-            .label(label)
-            .child(Select::new(select).w_full()),
-    )
+    super::select_field(label, "", select)
 }
 
 #[cfg(test)]

@@ -11,7 +11,7 @@ use gpui_component::{
     collapsible::Collapsible,
     h_flex,
     input::{CompletionProvider, Input, InputEvent, InputState, Rope, RopeExt},
-    select::{Select, SelectEvent, SelectState},
+    select::{SelectEvent, SelectState},
     v_flex,
 };
 use lsp_types::{
@@ -1087,18 +1087,7 @@ fn select_field<T>(
 where
     T: Clone + PartialEq + gpui_component::select::SelectItem<Value = T> + 'static,
 {
-    let required = hint == "Required";
-    v_flex().w_full().child(
-        gpui_component::form::v_form().child(
-            gpui_component::form::field()
-                .label(label)
-                .required(required)
-                .when(!required && !hint.is_empty(), |field| {
-                    field.description(hint)
-                })
-                .child(Select::new(select).w_full()),
-        ),
-    )
+    super::select_field(label, hint, select)
 }
 
 fn input(

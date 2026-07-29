@@ -2043,16 +2043,7 @@ fn select_field<T>(
 where
     T: Clone + PartialEq + gpui_component::select::SelectItem<Value = T> + 'static,
 {
-    let required = hint == "Required";
-    let field = gpui_component::form::field()
-        .label(label)
-        .required(required)
-        .child(Select::new(select).w_full());
-    v_flex().w_full().child(if required {
-        field
-    } else {
-        field.description(hint)
-    })
+    super::select_field(label, hint, select)
 }
 
 fn value(input: &Entity<InputState>, cx: &impl AppContext) -> String {

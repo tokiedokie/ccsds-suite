@@ -7,7 +7,7 @@ use gpui_component::{
     button::{Button, ButtonVariants},
     h_flex,
     input::InputState,
-    select::{Select, SelectEvent, SelectState},
+    select::{SelectEvent, SelectState},
     v_flex,
 };
 use strum::{Display, EnumString, VariantArray};
@@ -617,11 +617,7 @@ fn select_field<T>(label: &'static str, select: &Entity<SelectState<Vec<T>>>) ->
 where
     T: Clone + PartialEq + gpui_component::select::SelectItem + 'static,
 {
-    v_flex().w_full().child(
-        gpui_component::form::field()
-            .label(label)
-            .child(Select::new(select).w_full()),
-    )
+    super::select_field(label, "", select)
 }
 
 fn reference_choice(value: &xtce::ReferencePointType) -> ReferenceChoice {

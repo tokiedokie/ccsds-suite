@@ -53,6 +53,7 @@ use gpui_component::{
     ActiveTheme, StyledExt,
     form::{field as form_field, v_form},
     input::{Input, InputState},
+    select::{Select, SelectItem, SelectState},
     v_flex,
 };
 
@@ -94,6 +95,28 @@ pub(super) fn field(
                     field.description(description)
                 })
                 .child(Input::new(input)),
+        ),
+    )
+}
+
+pub(super) fn select_field<T>(
+    label: &'static str,
+    hint: &'static str,
+    select: &Entity<SelectState<Vec<T>>>,
+) -> Div
+where
+    T: Clone + PartialEq + SelectItem + 'static,
+{
+    let (required, description) = field_requirement(hint);
+    v_flex().w_full().child(
+        v_form().child(
+            form_field()
+                .label(label)
+                .required(required)
+                .when(!description.is_empty(), |field| {
+                    field.description(description)
+                })
+                .child(Select::new(select).w_full()),
         ),
     )
 }

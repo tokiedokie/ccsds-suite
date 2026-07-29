@@ -7,7 +7,7 @@ use gpui_component::{
     button::{Button, ButtonVariants},
     h_flex,
     input::InputState,
-    select::{Select, SelectState},
+    select::SelectState,
     v_flex,
 };
 use strum::{Display, EnumString, VariantArray};
@@ -393,11 +393,7 @@ fn selected_basis(select: &Entity<SelectState<Vec<RateBasis>>>, cx: &App) -> Rat
 }
 
 fn select_field(label: &'static str, select: &Entity<SelectState<Vec<RateBasis>>>) -> Div {
-    v_flex().w_full().child(
-        gpui_component::form::field()
-            .label(label)
-            .child(Select::new(select).w_full()),
-    )
+    super::select_field(label, "", select)
 }
 
 #[cfg(test)]

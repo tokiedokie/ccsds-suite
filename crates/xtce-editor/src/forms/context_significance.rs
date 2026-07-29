@@ -7,7 +7,7 @@ use gpui_component::{
     button::{Button, ButtonVariants},
     h_flex,
     input::InputState,
-    select::{Select, SelectState},
+    select::SelectState,
     v_flex,
 };
 use strum::{Display, EnumString, VariantArray};
@@ -282,12 +282,7 @@ fn select_field(
     label: &'static str,
     select: &Entity<SelectState<Vec<ConsequenceLevel>>>,
 ) -> gpui::Div {
-    v_flex().w_full().child(
-        gpui_component::form::field()
-            .label(label)
-            .required(true)
-            .child(Select::new(select).w_full()),
-    )
+    super::select_field(label, "Required", select)
 }
 
 fn input(value: &str, window: &mut Window, cx: &mut impl AppContext) -> Entity<InputState> {

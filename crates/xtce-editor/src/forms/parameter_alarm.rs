@@ -6,7 +6,7 @@ use gpui_component::{
     button::Button,
     h_flex,
     input::{Input, InputState},
-    select::{Select, SelectState},
+    select::SelectState,
     v_flex,
 };
 use strum::{Display, EnumString, VariantArray};
@@ -2971,11 +2971,7 @@ fn select_field<T>(label: &'static str, select: &Entity<SelectState<Vec<T>>>) ->
 where
     T: Clone + PartialEq + gpui_component::select::SelectItem<Value = T> + 'static,
 {
-    v_flex().w_full().child(
-        gpui_component::form::field()
-            .label(label)
-            .child(Select::new(select).w_full()),
-    )
+    super::select_field(label, "", select)
 }
 
 fn range_details_field(details: &Entity<InputState>, cx: &App) -> Div {

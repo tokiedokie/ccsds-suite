@@ -792,12 +792,7 @@ fn select_field<T>(label: &'static str, select: &Entity<SelectState<Vec<T>>>) ->
 where
     T: Clone + PartialEq + gpui_component::select::SelectItem<Value = T> + 'static,
 {
-    v_flex().w_full().child(
-        gpui_component::form::field()
-            .label(label)
-            .required(true)
-            .child(Select::new(select).w_full()),
-    )
+    super::select_field(label, "Required", select)
 }
 
 fn value(input: &Entity<InputState>, cx: &App) -> String {

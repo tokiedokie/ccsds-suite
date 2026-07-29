@@ -2,12 +2,8 @@ use gpui::{
     App, AppContext, Context, Div, Entity, IntoElement, ParentElement, Render, Styled, Window, div,
 };
 use gpui_component::{
-    ActiveTheme, IconName, IndexPath, Sizable, StyledExt,
-    button::Button,
-    h_flex,
-    input::InputState,
-    select::{Select, SelectState},
-    v_flex,
+    ActiveTheme, IconName, IndexPath, Sizable, StyledExt, button::Button, h_flex,
+    input::InputState, select::SelectState, v_flex,
 };
 use strum::{Display, EnumString, VariantArray};
 
@@ -379,11 +375,7 @@ fn select_field<T>(label: &'static str, select: &Entity<SelectState<Vec<T>>>) ->
 where
     T: Clone + PartialEq + gpui_component::select::SelectItem<Value = T> + 'static,
 {
-    v_flex().w_full().child(
-        gpui_component::form::field()
-            .label(label)
-            .child(Select::new(select).w_full()),
-    )
+    super::select_field(label, "", select)
 }
 
 fn value(input: &Entity<InputState>, cx: &App) -> String {
