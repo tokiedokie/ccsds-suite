@@ -12,7 +12,10 @@ use gpui_component::{
 };
 use strum::{Display, EnumString, VariantArray};
 
-use super::{alias_set::AliasSetForm, field, impl_select_item, optional_value};
+use super::{
+    alias_set::AliasSetForm, ancillary_data_set::AncillaryDataSetForm, field, impl_select_item,
+    optional_value,
+};
 
 #[derive(Clone, Copy, Debug, Display, EnumString, VariantArray, PartialEq, Eq)]
 enum ReferenceKind {
@@ -28,6 +31,7 @@ pub(super) struct ServiceForm {
     short_description: Entity<InputState>,
     long_description: Entity<InputState>,
     alias_set: AliasSetForm,
+    ancillary_data_set: AncillaryDataSetForm,
     kind: Entity<SelectState<Vec<ReferenceKind>>>,
     references: Vec<Entity<InputState>>,
 }
@@ -44,6 +48,11 @@ impl ServiceForm {
             short_description: input(&model.short_description, window, cx),
             long_description: input(&model.long_description, window, cx),
             alias_set: AliasSetForm::new_text(&model.aliases, window, cx),
+            ancillary_data_set: AncillaryDataSetForm::new(
+                service.and_then(service_ancillary_data_set),
+                window,
+                cx,
+            ),
             kind: select(model.kind, window, cx),
             references: model
                 .references
@@ -69,6 +78,8 @@ impl ServiceForm {
         }
         self.alias_set
             .load(service.and_then(service_alias_set), window, cx);
+        self.ancillary_data_set
+            .load(service.and_then(service_ancillary_data_set), window, cx);
         self.kind.update(cx, |select, cx| {
             select.set_selected_value(&model.kind, window, cx);
         });
@@ -101,6 +112,10 @@ impl ServiceForm {
         set_alias_set(
             &mut service.content,
             AliasSetForm::parse(&self.alias_set.text(cx)),
+        );
+        set_ancillary_data_set(
+            &mut service.content,
+            AncillaryDataSetForm::parse(&self.ancillary_data_set.text(cx)),
         );
         let references = self
             .references
@@ -143,6 +158,7 @@ impl Render for ServiceForm {
                 cx,
             ))
             .child(self.alias_set.render(cx))
+            .child(self.ancillary_data_set.render(cx))
             .child(
                 v_flex()
                     .gap_2()
@@ -277,6 +293,13 @@ fn service_alias_set(service: &xtce::ServiceType) -> Option<&xtce::AliasSetType>
     })
 }
 
+fn service_ancillary_data_set(service: &xtce::ServiceType) -> Option<&xtce::AncillaryDataSetType> {
+    service.content.iter().find_map(|content| match content {
+        xtce::ServiceTypeContent::AncillaryDataSet(value) => Some(value),
+        _ => None,
+    })
+}
+
 fn set_long_description(content: &mut Vec<xtce::ServiceTypeContent>, value: String) {
     content.retain(|content| !matches!(content, xtce::ServiceTypeContent::LongDescription(_)));
     if !value.trim().is_empty() {
@@ -302,6 +325,29 @@ fn set_alias_set(
             })
             .unwrap_or(content.len());
         content.insert(index, xtce::ServiceTypeContent::AliasSet(alias_set));
+    }
+}
+
+fn set_ancillary_data_set(
+    content: &mut Vec<xtce::ServiceTypeContent>,
+    ancillary_data_set: Option<xtce::AncillaryDataSetType>,
+) {
+    content.retain(|content| !matches!(content, xtce::ServiceTypeContent::AncillaryDataSet(_)));
+    if let Some(ancillary_data_set) = ancillary_data_set {
+        let index = content
+            .iter()
+            .position(|content| {
+                matches!(
+                    content,
+                    xtce::ServiceTypeContent::MessageRefSet(_)
+                        | xtce::ServiceTypeContent::ContainerRefSet(_)
+                )
+            })
+            .unwrap_or(content.len());
+        content.insert(
+            index,
+            xtce::ServiceTypeContent::AncillaryDataSet(ancillary_data_set),
+        );
     }
 }
 
@@ -366,7 +412,7 @@ fn select(
 
 #[cfg(test)]
 mod tests {
-    use super::{ReferenceKind, ServiceModel, set_references};
+    use super::{ReferenceKind, ServiceModel, set_ancillary_data_set, set_references};
 
     #[test]
     fn service_loads_container_references() {
@@ -414,6 +460,35 @@ mod tests {
             content.last(),
             Some(xtce::ServiceTypeContent::MessageRefSet(set))
                 if set.message_ref[0].message_ref == "ModeChanged"
+        ));
+    }
+
+    #[test]
+    fn ancillary_data_is_inserted_before_service_references() {
+        let mut content = vec![xtce::ServiceTypeContent::ContainerRefSet(
+            xtce::ContainerRefSetType {
+                container_ref: Vec::new(),
+            },
+        )];
+
+        set_ancillary_data_set(
+            &mut content,
+            Some(xtce::AncillaryDataSetType {
+                ancillary_data: vec![xtce::AncillaryDataType {
+                    name: "owner".to_owned(),
+                    mime_type: "text/plain".to_owned(),
+                    href: None,
+                    content: "flight".to_owned(),
+                }],
+            }),
+        );
+
+        assert!(matches!(
+            content.as_slice(),
+            [
+                xtce::ServiceTypeContent::AncillaryDataSet(_),
+                xtce::ServiceTypeContent::ContainerRefSet(_)
+            ]
         ));
     }
 }
