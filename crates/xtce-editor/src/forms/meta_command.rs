@@ -2492,13 +2492,11 @@ fn open_command_entry_details(
                                         &instance,
                                         cx,
                                     ))
-                                    .child(
-                                        v_flex()
-                                            .w_full()
-                                            .gap_1()
-                                            .child(div().text_sm().child("Parameter value"))
-                                            .child(Select::new(&calibrated).w_full()),
-                                    )
+                                    .child(super::select_field(
+                                        "Parameter value",
+                                        "Defaults to calibrated",
+                                        &calibrated,
+                                    ))
                                     .child(field(
                                         "Alias namespace",
                                         "Optional",
@@ -2514,15 +2512,11 @@ fn open_command_entry_details(
                                         cx,
                                     ))
                                     .child(
-                                        v_flex()
-                                            .w_full()
-                                            .gap_1()
-                                            .child(
-                                                div()
-                                                    .text_sm()
-                                                    .child("Last entry for this array instance"),
-                                            )
-                                            .child(Select::new(&last_array_entry).w_full()),
+                                        super::select_field(
+                                            "Last entry for this array instance",
+                                            "Defaults to no",
+                                            &last_array_entry,
+                                        ),
                                     )
                                 })
                                 .child(field("Description", "Optional", &description, cx))

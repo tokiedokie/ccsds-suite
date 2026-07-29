@@ -1790,13 +1790,11 @@ fn open_entry_details(editor: Entity<TelemetryEntryRow>, window: &mut Window, cx
                         })
                         .when(indirect, |form| {
                             form.child(field("Instance", "Optional; defaults to 0", &instance, cx))
-                                .child(
-                                    v_flex()
-                                        .w_full()
-                                        .gap_1()
-                                        .child(div().text_sm().child("Parameter value"))
-                                        .child(Select::new(&calibrated).w_full()),
-                                )
+                                .child(super::select_field(
+                                    "Parameter value",
+                                    "Defaults to calibrated",
+                                    &calibrated,
+                                ))
                                 .child(field("Alias namespace", "Optional", &alias_namespace, cx))
                         })
                         .when(array, |form| {

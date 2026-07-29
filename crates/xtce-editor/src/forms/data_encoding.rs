@@ -5,7 +5,7 @@ use gpui::{
 use gpui_component::{
     IndexPath, StyledExt, h_flex,
     input::InputState,
-    select::{Select, SelectEvent, SelectState},
+    select::{SelectEvent, SelectState},
     v_flex,
 };
 use strum::{Display, EnumString, VariantArray};
@@ -691,12 +691,12 @@ impl DataEncodingForm {
 
     fn render_form(&self, cx: &mut Context<Self>) -> Div {
         let kind = self.selected_kind(cx);
-        let mut form = v_flex().gap_5().child(
-            v_flex()
-                .gap_2()
-                .child(div().text_sm().font_medium().child("Data encoding"))
-                .child(Select::new(&self.kind_select).w_full()),
-        );
+        let mut form = v_flex().gap_5().child(select_field(
+            "Data encoding",
+            "Required",
+            &self.kind_select,
+            cx,
+        ));
         let Some(kind) = kind else {
             return form;
         };

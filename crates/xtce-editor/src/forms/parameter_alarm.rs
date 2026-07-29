@@ -3,12 +3,8 @@ use gpui::{
     prelude::FluentBuilder,
 };
 use gpui_component::{
-    ActiveTheme, IconName, IndexPath, Sizable, StyledExt,
-    button::Button,
-    h_flex,
-    input::{Input, InputState},
-    select::SelectState,
-    v_flex,
+    ActiveTheme, IconName, IndexPath, Sizable, StyledExt, button::Button, h_flex,
+    input::InputState, select::SelectState, v_flex,
 };
 use strum::{Display, EnumString, VariantArray};
 
@@ -1031,19 +1027,12 @@ impl Render for AlarmMultiRangesForm {
                             cx,
                         )),
                 )
-                .child(
-                    v_flex()
-                        .w_full()
-                        .gap_1()
-                        .child(div().text_sm().font_medium().child("Ranges"))
-                        .child(Input::new(&self.details))
-                        .child(
-                            div()
-                                .text_xs()
-                                .text_color(cx.theme().muted_foreground)
-                                .child("One per line: level | range form | minimum | inclusive/exclusive | maximum | inclusive/exclusive"),
-                        ),
-                )
+                .child(field(
+                    "Ranges",
+                    "One per line: level | range form | minimum | inclusive/exclusive | maximum | inclusive/exclusive",
+                    &self.details,
+                    cx,
+                ))
                 .child(self.ancillary_data_set.render(cx));
         }
         form
@@ -1225,24 +1214,12 @@ impl Render for AlarmEditor {
             ));
         }
         if self.kind.has_details() {
-            form = form.child(
-                v_flex()
-                    .w_full()
-                    .gap_1()
-                    .child(
-                        div()
-                            .text_sm()
-                            .font_medium()
-                            .child(self.kind.details_label()),
-                    )
-                    .child(Input::new(&self.details))
-                    .child(
-                        div()
-                            .text_xs()
-                            .text_color(cx.theme().muted_foreground)
-                            .child(self.kind.details_hint()),
-                    ),
-            );
+            form = form.child(field(
+                self.kind.details_label(),
+                self.kind.details_hint(),
+                &self.details,
+                cx,
+            ));
         }
         if matches!(self.kind, AlarmKind::Numeric | AlarmKind::Time) {
             form = form.child(self.static_alarm_ranges.clone());
@@ -2965,19 +2942,12 @@ where
 }
 
 fn range_details_field(details: &Entity<InputState>, cx: &App) -> Div {
-    v_flex()
-        .w_full()
-        .gap_1()
-        .child(div().text_sm().font_medium().child("Ranges"))
-        .child(Input::new(details))
-        .child(
-            div()
-                .text_xs()
-                .text_color(cx.theme().muted_foreground)
-                .child(
-                    "One per line: level | minimum | inclusive/exclusive | maximum | inclusive/exclusive",
-                ),
-        )
+    field(
+        "Ranges",
+        "One per line: level | minimum | inclusive/exclusive | maximum | inclusive/exclusive",
+        details,
+        cx,
+    )
 }
 
 fn optional_section_header<T: 'static>(

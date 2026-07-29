@@ -7,7 +7,7 @@ use gpui_component::{
     button::Button,
     h_flex,
     input::{Input, InputEvent, InputState},
-    select::{Select, SelectEvent, SelectState},
+    select::{SelectEvent, SelectState},
     v_flex,
 };
 use strum::{Display, EnumString, VariantArray};
@@ -417,7 +417,11 @@ impl Render for DefaultCalibratorForm {
                 form.child(
                     v_flex()
                         .gap_4()
-                        .child(Select::new(&self.kind_select).w_full())
+                        .child(super::select_field(
+                            "Calibrator type",
+                            "Required",
+                            &self.kind_select,
+                        ))
                         .child(
                             h_flex()
                                 .gap_4()
@@ -441,12 +445,11 @@ impl Render for DefaultCalibratorForm {
                                         &self.order,
                                         cx,
                                     ))
-                                    .child(
-                                        v_flex()
-                                            .w_full()
-                                            .child(div().text_sm().child("Extrapolate"))
-                                            .child(Select::new(&self.extrapolate).w_full()),
-                                    ),
+                                    .child(super::select_field(
+                                        "Extrapolate",
+                                        "Defaults to false",
+                                        &self.extrapolate,
+                                    )),
                             )
                         })
                         .child(

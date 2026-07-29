@@ -8,7 +8,7 @@ use gpui_component::{
     collapsible::Collapsible,
     h_flex,
     input::{Input, InputEvent, InputState},
-    select::{Select, SelectEvent, SelectState},
+    select::{SelectEvent, SelectState},
     v_flex,
 };
 use strum::{Display, EnumString, VariantArray};
@@ -1595,12 +1595,12 @@ impl ParameterTypeForm {
         }
         let kind = self.kind;
 
-        let mut form = v_flex().gap_5().child(
-            v_flex()
-                .gap_2()
-                .child(div().text_sm().font_medium().child("Parameter type"))
-                .child(Select::new(&self.kind_select).w_full()),
-        );
+        let mut form = v_flex().gap_5().child(select_field(
+            "Parameter type",
+            "Required",
+            &self.kind_select,
+            cx,
+        ));
         if kind == ParameterTypeKind::Array {
             form = form.child(field(
                 "Array type reference",

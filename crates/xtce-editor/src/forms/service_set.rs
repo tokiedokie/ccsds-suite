@@ -7,7 +7,7 @@ use gpui_component::{
     button::Button,
     h_flex,
     input::{Input, InputState},
-    select::{Select, SelectState},
+    select::SelectState,
     v_flex,
 };
 use strum::{Display, EnumString, VariantArray};
@@ -174,12 +174,11 @@ impl Render for ServiceForm {
             ))
             .child(self.alias_set.render(cx))
             .child(self.ancillary_data_set.render(cx))
-            .child(
-                v_flex()
-                    .gap_2()
-                    .child(div().text_sm().font_medium().child("Reference target type"))
-                    .child(Select::new(&self.kind).w_full()),
-            )
+            .child(super::select_field(
+                "Reference target type",
+                "Required",
+                &self.kind,
+            ))
             .child(
                 v_flex()
                     .gap_2()
