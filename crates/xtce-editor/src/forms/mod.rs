@@ -84,17 +84,36 @@ pub(super) fn field(
     input: &Entity<InputState>,
     _cx: &App,
 ) -> Div {
-    let required = hint == "Required";
+    let (required, description) = field_requirement(hint);
     v_flex().w_full().child(
         v_form().child(
             form_field()
                 .label(label)
                 .required(required)
-                .when(!required && !hint.is_empty(), |field| {
-                    field.description(hint)
+                .when(!description.is_empty(), |field| {
+                    field.description(description)
                 })
                 .child(Input::new(input)),
         ),
+    )
+}
+
+fn field_requirement(hint: &'static str) -> (bool, &'static str) {
+    let Some(suffix) = hint.strip_prefix("Required") else {
+        return (false, hint);
+    };
+    if !suffix.is_empty()
+        && !suffix.starts_with(|character: char| {
+            character == ',' || character == ';' || character.is_whitespace()
+        })
+    {
+        return (false, hint);
+    }
+    (
+        true,
+        suffix.trim_start_matches(|character: char| {
+            character == ',' || character == ';' || character.is_whitespace()
+        }),
     )
 }
 
@@ -209,4 +228,27 @@ pub(super) fn collection_summary(
                 )
                 .into_any_element()
         })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::field_requirement;
+
+    #[test]
+    fn recognizes_required_hints_and_preserves_their_details() {
+        assert_eq!(field_requirement("Required"), (true, ""));
+        assert_eq!(
+            field_requirement("Required, for example catalog"),
+            (true, "for example catalog")
+        );
+        assert_eq!(
+            field_requirement("Required; floating-point delta"),
+            (true, "floating-point delta")
+        );
+        assert_eq!(
+            field_requirement("Required if significance specified"),
+            (true, "if significance specified")
+        );
+        assert_eq!(field_requirement("Optional"), (false, "Optional"));
+    }
 }
