@@ -439,6 +439,9 @@ struct ElementTree {
     nodes: HashMap<SharedString, TreeNode>,
     ordered_nodes: Vec<TreeNode>,
     node_count: usize,
+    filter_match_count: Option<usize>,
+    selection_outside_filter: bool,
+    hidden_selection_ancestor: Option<SharedString>,
     file_name: String,
     selection: ElementSelection,
     editor: WeakEntity<XtceEditor>,
@@ -704,16 +707,6 @@ impl XtceEditor {
         .detach();
     }
 
-    #[allow(dead_code)]
-    fn toggle_tree_node(&mut self, selection: &ElementSelection, cx: &mut Context<Self>) {
-        self.tree.update(cx, |tree, cx| {
-            if !tree.collapsed.insert(selection.clone()) {
-                tree.collapsed.remove(selection);
-            }
-            tree.rebuild(cx);
-        });
-    }
-
     fn add_tree_child(
         &mut self,
         parent: &ElementSelection,
@@ -725,9 +718,7 @@ impl XtceEditor {
         let Some(kind) = XtceDocument::add_collection_item(system, parent.kind) else {
             return;
         };
-        self.tree.update(cx, |tree, _| {
-            tree.collapsed.remove(parent);
-        });
+        self.tree.update(cx, |tree, _| tree.expand(parent));
         self.document.selection = ElementSelection {
             system_path: parent.system_path.clone(),
             kind,
@@ -747,9 +738,7 @@ impl XtceEditor {
         let Some(kind) = XtceDocument::add_stream_item(system, parent.kind, child_kind) else {
             return;
         };
-        self.tree.update(cx, |tree, _| {
-            tree.collapsed.remove(parent);
-        });
+        self.tree.update(cx, |tree, _| tree.expand(parent));
         self.document.selection = ElementSelection {
             system_path: parent.system_path.clone(),
             kind,
@@ -769,9 +758,7 @@ impl XtceEditor {
         let Some(kind) = XtceDocument::add_algorithm_item(system, parent.kind, child_kind) else {
             return;
         };
-        self.tree.update(cx, |tree, _| {
-            tree.collapsed.remove(parent);
-        });
+        self.tree.update(cx, |tree, _| tree.expand(parent));
         self.document.selection = ElementSelection {
             system_path: parent.system_path.clone(),
             kind,
@@ -791,9 +778,7 @@ impl XtceEditor {
         if !XtceDocument::add_metadata(system, kind) {
             return;
         }
-        self.tree.update(cx, |tree, _| {
-            tree.collapsed.remove(parent);
-        });
+        self.tree.update(cx, |tree, _| tree.expand(parent));
         self.document.selection = ElementSelection {
             system_path: parent.system_path.clone(),
             kind,
@@ -810,9 +795,7 @@ impl XtceEditor {
         self.save_selected_element(cx);
         let system = XtceDocument::system_at_path_mut(&mut self.document.root, &parent.system_path);
         let index = XtceDocument::add_space_system(system);
-        self.tree.update(cx, |tree, _| {
-            tree.collapsed.remove(parent);
-        });
+        self.tree.update(cx, |tree, _| tree.expand(parent));
         let mut system_path = parent.system_path.clone();
         system_path.push(index);
         self.document.selection = ElementSelection {
@@ -897,13 +880,15 @@ impl XtceEditor {
             window.push_notification("The selected element no longer exists.", cx);
             return;
         }
-        self.document.selection = ElementSelection {
+        let parent = ElementSelection {
             system_path: selection.system_path.clone(),
             kind: selection
                 .kind
                 .parent_set()
                 .expect("deletable elements have a parent set"),
         };
+        self.tree.update(cx, |tree, _| tree.expand(&parent));
+        self.document.selection = parent;
         self.load_selected_element(window, cx);
         window.push_notification("Element deleted.", cx);
     }
@@ -2509,6 +2494,9 @@ impl ElementTree {
                 nodes: HashMap::new(),
                 ordered_nodes: Vec::new(),
                 node_count: 0,
+                filter_match_count: None,
+                selection_outside_filter: false,
+                hidden_selection_ancestor: None,
                 file_name,
                 selection: selection.clone(),
                 editor,
@@ -2531,6 +2519,11 @@ impl ElementTree {
                 .join("-")
         };
         format!("{path}:{:?}", selection.kind).into()
+    }
+
+    fn expand(&mut self, selection: &ElementSelection) {
+        self.collapsed.remove(selection);
+        self.filter_collapsed.remove(selection);
     }
 
     fn load_nodes(
@@ -2569,6 +2562,16 @@ impl ElementTree {
             .value()
             .trim()
             .to_ascii_lowercase();
+        self.filter_match_count = (!query.is_empty()).then(|| {
+            self.ordered_nodes
+                .iter()
+                .filter(|node| node.label.to_ascii_lowercase().contains(&query))
+                .count()
+        });
+        self.selection_outside_filter = !query.is_empty()
+            && selected.is_some_and(|selection| {
+                !Self::selection_is_filter_context(&self.ordered_nodes, selection, &query)
+            });
         let mut index = 0;
         let items = Self::build_items(
             &self.ordered_nodes,
@@ -2577,8 +2580,13 @@ impl ElementTree {
             &query,
             &self.collapsed,
             &self.filter_collapsed,
+            selected,
         );
         let selected_id = selected.map(Self::node_id);
+        self.hidden_selection_ancestor = selected_id
+            .as_ref()
+            .and_then(|id| Self::find_hidden_selection_ancestor(&items, id))
+            .map(|item| item.id.clone());
         let selected_item = selected_id
             .as_ref()
             .and_then(|id| Self::find_visible_item(&items, id))
@@ -2597,6 +2605,7 @@ impl ElementTree {
         query: &str,
         collapsed: &HashSet<ElementSelection>,
         filter_collapsed: &HashSet<ElementSelection>,
+        selected: Option<&ElementSelection>,
     ) -> Vec<TreeItem> {
         let mut items = Vec::new();
         while *index < nodes.len() {
@@ -2614,11 +2623,20 @@ impl ElementTree {
                 .map(|next| next.level);
             let children = child_level
                 .map(|level| {
-                    Self::build_items(nodes, index, level, query, collapsed, filter_collapsed)
+                    Self::build_items(
+                        nodes,
+                        index,
+                        level,
+                        query,
+                        collapsed,
+                        filter_collapsed,
+                        selected,
+                    )
                 })
                 .unwrap_or_default();
             let matches = query.is_empty() || node.label.to_ascii_lowercase().contains(query);
-            if !matches && children.is_empty() {
+            let selected = selected.is_some_and(|selection| node.selection == *selection);
+            if !matches && !selected && children.is_empty() {
                 continue;
             }
             let expanded = if query.is_empty() {
@@ -2635,12 +2653,52 @@ impl ElementTree {
         items
     }
 
+    fn selection_is_filter_context(
+        nodes: &[TreeNode],
+        selection: &ElementSelection,
+        query: &str,
+    ) -> bool {
+        let Some(index) = nodes.iter().position(|node| node.selection == *selection) else {
+            return false;
+        };
+        let selected_level = nodes[index].level;
+        nodes[index..]
+            .iter()
+            .take_while(|node| node.selection == *selection || node.level > selected_level)
+            .any(|node| node.label.to_ascii_lowercase().contains(query))
+    }
+
     fn find_visible_item<'a>(items: &'a [TreeItem], id: &SharedString) -> Option<&'a TreeItem> {
         items.iter().find_map(|item| {
             if &item.id == id {
                 Some(item)
             } else if item.is_expanded() {
                 Self::find_visible_item(&item.children, id)
+            } else {
+                None
+            }
+        })
+    }
+
+    fn find_hidden_selection_ancestor<'a>(
+        items: &'a [TreeItem],
+        id: &SharedString,
+    ) -> Option<&'a TreeItem> {
+        fn contains(items: &[TreeItem], id: &SharedString) -> bool {
+            items
+                .iter()
+                .any(|item| &item.id == id || contains(&item.children, id))
+        }
+
+        items.iter().find_map(|item| {
+            if &item.id == id {
+                None
+            } else if contains(&item.children, id) {
+                if item.is_expanded() {
+                    Self::find_hidden_selection_ancestor(&item.children, id)
+                } else {
+                    Some(item)
+                }
             } else {
                 None
             }
@@ -2658,6 +2716,10 @@ impl ElementTree {
         let Some(node) = self.nodes.get(&item.id).cloned() else {
             return ListItem::new(index).child(item.label.clone());
         };
+        let contains_hidden_selection = self
+            .hidden_selection_ancestor
+            .as_ref()
+            .is_some_and(|id| id == &item.id);
         let editor = self.editor.clone();
         let selection = node.selection.clone();
         let add_parent = node.selection.clone();
@@ -2696,6 +2758,15 @@ impl ElementTree {
                     .group(row_group.clone())
                     .w_full()
                     .gap_2()
+                    .when(contains_hidden_selection, |row| {
+                        row.rounded_sm()
+                            .border_l_2()
+                            .border_color(cx.theme().primary)
+                            .bg(cx.theme().sidebar_accent.opacity(0.5))
+                            .tooltip(|window, cx| {
+                                Tooltip::new("Contains the current selection").build(window, cx)
+                            })
+                    })
                     .when_some(dragged_parameter, |row, dragged| {
                         row.cursor_grab().on_drag(dragged, |dragged, _, _, cx| {
                             cx.stop_propagation();
@@ -2969,148 +3040,6 @@ impl ElementTree {
 
         visible
     }
-
-    #[allow(dead_code)]
-    fn tree_item(
-        id: SharedString,
-        node: TreeNode,
-        selected: bool,
-        collapsed: bool,
-        can_add_telemetry_metadata: bool,
-        can_add_command_metadata: bool,
-        cx: &mut Context<XtceEditor>,
-    ) -> impl IntoElement {
-        let toggle_id = format!("{id}-toggle");
-        let add_id = format!("{id}-add");
-        let add_metadata_id = format!("{id}-add-metadata");
-        let toggle_selection = node.selection.clone();
-        let add_parent = node.selection.clone();
-        let can_add_child = node.selection.kind.can_add_child();
-        let can_add_element = node.selection.kind == ElementKind::SpaceSystem;
-        let tree_icon = node.selection.kind.tree_icon(!collapsed);
-        let editor = cx.entity().downgrade();
-        let metadata_parent = node.selection.clone();
-        let selection = node.selection;
-        h_flex()
-            .id(id)
-            .h(px(34.))
-            .w_full()
-            .pl(px(10. + node.level as f32 * 18.))
-            .pr_2()
-            .gap_2()
-            .rounded_md()
-            .cursor_pointer()
-            .text_sm()
-            .when(selected, |this| {
-                this.bg(cx.theme().sidebar_accent)
-                    .text_color(cx.theme().sidebar_accent_foreground)
-            })
-            .when(!selected, |this| {
-                this.hover(|style| style.bg(cx.theme().sidebar_accent.opacity(0.55)))
-            })
-            .child(
-                div()
-                    .id(toggle_id)
-                    .w_4()
-                    .h_4()
-                    .flex_none()
-                    .when(node.has_children, |this| {
-                        this.cursor_pointer()
-                            .child(
-                                Icon::new(if collapsed {
-                                    IconName::ChevronRight
-                                } else {
-                                    IconName::ChevronDown
-                                })
-                                .xsmall()
-                                .text_color(cx.theme().muted_foreground),
-                            )
-                            .on_click(cx.listener(move |this, _, _, cx| {
-                                cx.stop_propagation();
-                                this.toggle_tree_node(&toggle_selection, cx);
-                            }))
-                    }),
-            )
-            .child(
-                Icon::new(tree_icon)
-                    .small()
-                    .text_color(cx.theme().muted_foreground),
-            )
-            .child(div().flex_1().truncate().child(node.label))
-            .when(can_add_child, |this| {
-                this.child(
-                    Button::new(add_id)
-                        .ghost()
-                        .xsmall()
-                        .icon(IconName::Plus)
-                        .on_click(cx.listener(move |this, _, window, cx| {
-                            cx.stop_propagation();
-                            this.add_tree_child(&add_parent, window, cx);
-                        })),
-                )
-            })
-            .when(can_add_element, |this| {
-                this.child(
-                    Button::new(add_metadata_id)
-                        .ghost()
-                        .xsmall()
-                        .icon(IconName::Plus)
-                        .dropdown_menu(move |menu, _, _| {
-                            let space_system_editor = editor.clone();
-                            let space_system_parent = metadata_parent.clone();
-                            let telemetry_editor = editor.clone();
-                            let telemetry_parent = metadata_parent.clone();
-                            let command_editor = editor.clone();
-                            let command_parent = metadata_parent.clone();
-                            menu.item(
-                                PopupMenuItem::new("SpaceSystem")
-                                    .icon(IconName::Globe)
-                                    .on_click(move |_, window, cx| {
-                                        _ = space_system_editor.update(cx, |this, cx| {
-                                            this.add_space_system(&space_system_parent, window, cx);
-                                        });
-                                    }),
-                            )
-                            .separator()
-                            .item(
-                                PopupMenuItem::new("TelemetryMetaData")
-                                    .icon(IconName::ChartPie)
-                                    .disabled(!can_add_telemetry_metadata)
-                                    .on_click(move |_, window, cx| {
-                                        _ = telemetry_editor.update(cx, |this, cx| {
-                                            this.add_metadata(
-                                                &telemetry_parent,
-                                                ElementKind::TelemetryMetaData,
-                                                window,
-                                                cx,
-                                            );
-                                        });
-                                    }),
-                            )
-                            .item(
-                                PopupMenuItem::new("CommandMetaData")
-                                    .icon(IconName::SquareTerminal)
-                                    .disabled(!can_add_command_metadata)
-                                    .on_click(move |_, window, cx| {
-                                        _ = command_editor.update(cx, |this, cx| {
-                                            this.add_metadata(
-                                                &command_parent,
-                                                ElementKind::CommandMetaData,
-                                                window,
-                                                cx,
-                                            );
-                                        });
-                                    }),
-                            )
-                        }),
-                )
-            })
-            .on_click(cx.listener(move |this, _, window, cx| {
-                this.save_selected_element(cx);
-                this.document.selection.clone_from(&selection);
-                this.load_selected_element(window, cx);
-            }))
-    }
 }
 
 impl ElementInspector {
@@ -3146,6 +3075,18 @@ impl ElementInspector {
 impl Render for ElementTree {
     fn render(&mut self, _: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         let view = cx.entity();
+        let count_label = self.filter_match_count.map_or_else(
+            || format!("{} elements", self.node_count),
+            |count| format!("{count} of {} elements", self.node_count),
+        );
+        let filter_notice = match (self.filter_match_count, self.selection_outside_filter) {
+            (Some(0), true) => {
+                Some("No matching elements. The current selection is shown for context.")
+            }
+            (Some(0), false) => Some("No matching elements."),
+            (Some(_), true) => Some("The current selection does not match this filter."),
+            _ => None,
+        };
         v_flex()
             .w_full()
             .h_full()
@@ -3171,22 +3112,44 @@ impl Render for ElementTree {
                     .py_3()
                     .border_b_1()
                     .border_color(cx.theme().border)
-                    .child(Input::new(&self.search_input).prefix(IconName::Search)),
+                    .child(
+                        Input::new(&self.search_input)
+                            .prefix(IconName::Search)
+                            .cleanable(true),
+                    ),
             )
             .child(
-                div()
-                    .id("element-tree")
+                v_flex()
                     .flex_1()
                     .min_h_0()
-                    .p_2()
-                    .child(tree(
-                        &self.tree_state,
-                        move |index, entry, selected, _, cx| {
-                            view.update(cx, |this, cx| {
-                                this.render_entry(index, entry, selected, cx)
-                            })
-                        },
-                    )),
+                    .when_some(filter_notice, |tree_panel, notice| {
+                        tree_panel.child(
+                            div()
+                                .px_4()
+                                .py_2()
+                                .flex_none()
+                                .border_b_1()
+                                .border_color(cx.theme().border)
+                                .text_xs()
+                                .text_color(cx.theme().muted_foreground)
+                                .child(notice),
+                        )
+                    })
+                    .child(
+                        div()
+                            .id("element-tree")
+                            .flex_1()
+                            .min_h_0()
+                            .p_2()
+                            .child(tree(
+                                &self.tree_state,
+                                move |index, entry, selected, _, cx| {
+                                    view.update(cx, |this, cx| {
+                                        this.render_entry(index, entry, selected, cx)
+                                    })
+                                },
+                            )),
+                    ),
             )
             .child(
                 h_flex()
@@ -3197,7 +3160,7 @@ impl Render for ElementTree {
                     .border_color(cx.theme().border)
                     .text_xs()
                     .text_color(cx.theme().muted_foreground)
-                    .child(format!("{} elements", self.node_count))
+                    .child(count_label)
                     .child(div().flex_1())
                     .child("XTCE 1.3"),
             )
@@ -4694,17 +4657,26 @@ mod tests {
         let document = sample_document();
         let mut nodes = Vec::new();
         XtceDocument::collect_tree_nodes(&document, &mut Vec::new(), 0, &mut nodes);
-        let collapsed = HashSet::from([ElementSelection {
+        let parent = ElementSelection {
             system_path: Vec::new(),
             kind: ElementKind::TelemetryParameterTypeSet,
-        }]);
-        let mut index = 0;
-        let items =
-            ElementTree::build_items(&nodes, &mut index, 0, "", &collapsed, &HashSet::new());
-        let hidden_parameter_type = ElementTree::node_id(&ElementSelection {
+        };
+        let hidden_selection = ElementSelection {
             system_path: Vec::new(),
             kind: ElementKind::TelemetryParameterType(0),
-        });
+        };
+        let collapsed = HashSet::from([parent.clone()]);
+        let mut index = 0;
+        let items = ElementTree::build_items(
+            &nodes,
+            &mut index,
+            0,
+            "",
+            &collapsed,
+            &HashSet::new(),
+            Some(&hidden_selection),
+        );
+        let hidden_parameter_type = ElementTree::node_id(&hidden_selection);
         let visible_parameter = ElementTree::node_id(&ElementSelection {
             system_path: Vec::new(),
             kind: ElementKind::TelemetryParameter(0),
@@ -4717,6 +4689,11 @@ mod tests {
         assert!(
             ElementTree::find_visible_item(&items, &visible_parameter).is_some(),
             "a selection in an expanded sibling set should remain selectable"
+        );
+        assert_eq!(
+            ElementTree::find_hidden_selection_ancestor(&items, &hidden_parameter_type)
+                .map(|item| item.id.clone()),
+            Some(ElementTree::node_id(&parent))
         );
     }
 
@@ -4747,6 +4724,7 @@ mod tests {
             "operationalflag",
             &collapsed,
             &HashSet::new(),
+            None,
         );
         assert!(
             ElementTree::find_visible_item(&initially_filtered, &parameter_type_id).is_some(),
@@ -4763,6 +4741,7 @@ mod tests {
             "operationalflag",
             &collapsed,
             &filter_collapsed,
+            None,
         );
         let parameter_type_set_id = ElementTree::node_id(&parameter_type_set);
         let parameter_type_set_item =
@@ -4805,7 +4784,7 @@ mod tests {
         let mut index = 0;
 
         let items =
-            ElementTree::build_items(&nodes, &mut index, 0, "", &collapsed, &HashSet::new());
+            ElementTree::build_items(&nodes, &mut index, 0, "", &collapsed, &HashSet::new(), None);
 
         assert_eq!(items.len(), 1);
         assert_eq!(items[0].label.as_ref(), "ExampleMission");
@@ -4844,6 +4823,7 @@ mod tests {
             "samplecount",
             &collapsed,
             &HashSet::new(),
+            None,
         );
 
         assert_eq!(items.len(), 1);
@@ -4851,6 +4831,60 @@ mod tests {
         assert!(items[0].is_expanded());
         assert!(contains_label(&items, "SampleCount"));
         assert!(!contains_label(&items, "OperationalFlag"));
+    }
+
+    #[test]
+    fn tree_search_keeps_the_current_selection_for_context() {
+        let document = sample_document();
+        let mut nodes = Vec::new();
+        XtceDocument::collect_tree_nodes(&document, &mut Vec::new(), 0, &mut nodes);
+        let collapsed = ElementTree::collapsed_by_default(&document);
+        let selection = ElementSelection {
+            system_path: Vec::new(),
+            kind: ElementKind::TelemetryParameter(0),
+        };
+        let selected_id = ElementTree::node_id(&selection);
+        let matching_id = ElementTree::node_id(
+            &nodes
+                .iter()
+                .find(|node| node.label == "SampleCount")
+                .expect("sample fixture contains SampleCount")
+                .selection,
+        );
+        let mut index = 0;
+
+        assert!(!ElementTree::selection_is_filter_context(
+            &nodes,
+            &selection,
+            "samplecount"
+        ));
+        assert!(ElementTree::selection_is_filter_context(
+            &nodes,
+            &ElementSelection {
+                system_path: Vec::new(),
+                kind: ElementKind::SpaceSystem,
+            },
+            "samplecount"
+        ));
+
+        let items = ElementTree::build_items(
+            &nodes,
+            &mut index,
+            0,
+            "samplecount",
+            &collapsed,
+            &HashSet::new(),
+            Some(&selection),
+        );
+
+        assert!(
+            ElementTree::find_visible_item(&items, &selected_id).is_some(),
+            "renamed or post-delete selections should remain visible as filter context"
+        );
+        assert!(
+            ElementTree::find_visible_item(&items, &matching_id).is_some(),
+            "matching search results should remain visible beside the current selection"
+        );
     }
 
     #[test]
