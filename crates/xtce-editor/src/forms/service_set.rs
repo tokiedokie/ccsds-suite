@@ -130,6 +130,27 @@ impl ServiceForm {
 impl Render for ServiceForm {
     fn render(&mut self, _: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         let reference_count = self.references.len();
+        let reference_kind = self
+            .kind
+            .read(cx)
+            .selected_value()
+            .copied()
+            .unwrap_or(ReferenceKind::Containers);
+        let (references_title, add_reference_label, remove_reference_tooltip, empty_message) =
+            match reference_kind {
+                ReferenceKind::Containers => (
+                    "Container references",
+                    "Add container reference",
+                    "Remove container reference",
+                    "No container references defined.",
+                ),
+                ReferenceKind::Messages => (
+                    "Message references",
+                    "Add message reference",
+                    "Remove message reference",
+                    "No message references defined.",
+                ),
+            };
         v_flex()
             .w_full()
             .gap_5()
@@ -156,7 +177,7 @@ impl Render for ServiceForm {
             .child(
                 v_flex()
                     .gap_2()
-                    .child(div().text_sm().font_medium().child("Reference type"))
+                    .child(div().text_sm().font_medium().child("Reference target type"))
                     .child(Select::new(&self.kind).w_full()),
             )
             .child(
@@ -165,12 +186,12 @@ impl Render for ServiceForm {
                     .child(
                         h_flex()
                             .justify_between()
-                            .child(div().text_sm().font_medium().child("References"))
+                            .child(div().text_sm().font_medium().child(references_title))
                             .child(
                                 Button::new("add-service-reference")
                                     .small()
                                     .icon(IconName::Plus)
-                                    .label("Add reference")
+                                    .label(add_reference_label)
                                     .on_click(cx.listener(|this, _, window, cx| {
                                         this.references.push(input("", window, cx));
                                         cx.notify();
@@ -187,7 +208,7 @@ impl Render for ServiceForm {
                                     .child(
                                         super::row_remove_button(
                                             format!("remove-service-reference-{index}"),
-                                            "Remove reference",
+                                            remove_reference_tooltip,
                                         )
                                         .on_click(
                                             cx.listener(move |this, _, _, cx| {
@@ -201,7 +222,7 @@ impl Render for ServiceForm {
                             }),
                     )
                     .when(reference_count == 0, |list| {
-                        list.child(super::empty_list_state("No references defined.", cx))
+                        list.child(super::empty_list_state(empty_message, cx))
                     }),
             )
     }

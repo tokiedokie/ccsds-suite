@@ -308,7 +308,7 @@ impl VariableFrameStreamForm {
                     .gap_3()
                     .child(div().text_sm().font_medium().child("Frame source"))
                     .child(select_field(
-                        "Reference type",
+                        "Reference target type",
                         "Required",
                         &self.reference_kind_select,
                     ))

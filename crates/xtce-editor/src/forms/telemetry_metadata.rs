@@ -59,7 +59,7 @@ impl TelemetryMetaDataForm {
                     .map(|index| Some(ElementKind::TelemetryParameter(index)))
                     .collect();
                 collection_summary(
-                    &["Name or reference", "Type reference"],
+                    &["Name / reference target", "Type reference"],
                     rows,
                     targets,
                     editor,

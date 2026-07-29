@@ -63,7 +63,7 @@ impl CommandMetaDataForm {
                     .map(|index| Some(ElementKind::CommandParameter(index)))
                     .collect();
                 collection_summary(
-                    &["Name or reference", "Type reference"],
+                    &["Name / reference target", "Type reference"],
                     rows,
                     targets,
                     editor,
@@ -101,7 +101,7 @@ impl CommandMetaDataForm {
                     .map(|index| Some(ElementKind::MetaCommand(index)))
                     .collect();
                 collection_summary(
-                    &["Type", "Name or reference"],
+                    &["Type", "Name / reference target"],
                     rows,
                     targets,
                     editor,
