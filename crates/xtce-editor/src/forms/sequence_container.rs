@@ -867,57 +867,99 @@ impl Render for ComparisonListForm {
                     ),
             )
             .child(
-                div()
-                    .id("comparison-table-scroll")
-                    .w_full()
-                    .overflow_x_scroll()
+                super::list_table_frame(cx)
                     .child(
-                        v_flex()
-                            .min_w(px(820.))
-                            .rounded_md()
-                            .border_1()
+                        h_flex()
+                            .h(px(34.))
+                            .px_2()
+                            .gap_2()
+                            .bg(cx.theme().muted.opacity(0.5))
+                            .text_xs()
+                            .font_medium()
+                            .child(
+                                div()
+                                    .flex_1()
+                                    .min_w_0()
+                                    .child(super::required_label("Parameter reference", cx)),
+                            )
+                            .child(div().w(px(110.)).flex_none().child("Operator"))
+                            .child(
+                                div()
+                                    .flex_1()
+                                    .min_w_0()
+                                    .child(super::required_label("Value", cx)),
+                            )
+                            .child(div().w(px(72.)).flex_none().child("Actions")),
+                    )
+                    .children(self.rows.iter().enumerate().map(|(index, row)| {
+                        let (parameter, operator, comparison_value) = {
+                            let row = row.read(cx);
+                            (
+                                div()
+                                    .flex_1()
+                                    .min_w_0()
+                                    .child(super::required_input(&row.parameter_ref, cx)),
+                                div()
+                                    .w(px(110.))
+                                    .flex_none()
+                                    .child(Select::new(&row.operator).w_full()),
+                                div()
+                                    .flex_1()
+                                    .min_w_0()
+                                    .child(super::required_input(&row.comparison_value, cx)),
+                            )
+                        };
+                        let options = row.clone();
+                        h_flex()
+                            .w_full()
+                            .h(px(70.))
+                            .px_2()
+                            .gap_2()
+                            .border_b_1()
                             .border_color(cx.theme().border)
+                            .child(parameter)
+                            .child(operator)
+                            .child(comparison_value)
                             .child(
                                 h_flex()
-                                    .h(px(34.))
-                                    .px_2()
-                                    .gap_2()
-                                    .bg(cx.theme().muted.opacity(0.5))
-                                    .text_xs()
-                                    .font_medium()
-                                    .child(div().flex_1().child("Parameter reference"))
-                                    .child(div().w(px(110.)).child("Operator"))
-                                    .child(div().flex_1().child("Value"))
-                                    .child(div().w(px(90.)).child("Instance"))
-                                    .child(div().w(px(130.)).child("Compare using"))
-                                    .child(div().w(px(52.)).child("Actions")),
-                            )
-                            .children(self.rows.iter().enumerate().map(|(index, row)| {
-                                h_flex()
-                                    .h(px(52.))
-                                    .px_2()
-                                    .gap_2()
-                                    .border_b_1()
-                                    .border_color(cx.theme().border)
-                                    .child(row.clone())
+                                    .w(px(72.))
+                                    .flex_none()
+                                    .justify_end()
+                                    .gap_1()
                                     .child(
-                                        div().w(px(52.)).flex_none().child(
-                                            super::row_remove_button(
-                                                format!("remove-restriction-comparison-{index}"),
-                                                "Remove comparison",
-                                            )
-                                            .on_click(
-                                                cx.listener(move |this, _, _, cx| {
-                                                    if index < this.rows.len() {
-                                                        this.rows.remove(index);
-                                                        cx.notify();
-                                                    }
-                                                }),
-                                            ),
+                                        Button::new(format!(
+                                            "restriction-comparison-options-{index}"
+                                        ))
+                                        .xsmall()
+                                        .ghost()
+                                        .icon(IconName::Ellipsis)
+                                        .tooltip("Comparison options")
+                                        .on_click(
+                                            move |_, window, cx| {
+                                                open_restriction_comparison_options(
+                                                    options.clone(),
+                                                    window,
+                                                    cx,
+                                                );
+                                            },
                                         ),
                                     )
-                            })),
-                    ),
+                                    .child(
+                                        super::row_remove_button(
+                                            format!("remove-restriction-comparison-{index}"),
+                                            "Remove comparison",
+                                        )
+                                        .on_click(
+                                            cx.listener(move |this, _, _, cx| {
+                                                if index < this.rows.len() {
+                                                    this.rows.remove(index);
+                                                    cx.notify();
+                                                }
+                                            }),
+                                        ),
+                                    ),
+                            )
+                    })),
             )
             .when(count == 0, |form| {
                 form.child(super::empty_list_state(
@@ -928,33 +970,34 @@ impl Render for ComparisonListForm {
     }
 }
 
-impl Render for ComparisonRowForm {
-    fn render(&mut self, _: &mut Window, _: &mut Context<Self>) -> impl IntoElement {
-        h_flex()
-            .flex_1()
-            .min_w_0()
-            .gap_2()
-            .child(div().flex_1().child(Input::new(&self.parameter_ref)))
-            .child(
-                div()
-                    .w(px(110.))
-                    .flex_none()
-                    .child(Select::new(&self.operator).w_full()),
-            )
-            .child(div().flex_1().child(Input::new(&self.comparison_value)))
-            .child(
-                div()
-                    .w(px(90.))
-                    .flex_none()
-                    .child(Input::new(&self.instance)),
-            )
-            .child(
-                div()
-                    .w(px(130.))
-                    .flex_none()
-                    .child(Select::new(&self.calibrated).w_full()),
-            )
-    }
+fn open_restriction_comparison_options(
+    editor: Entity<ComparisonRowForm>,
+    window: &mut Window,
+    cx: &mut App,
+) {
+    window.open_dialog(cx, move |dialog, _, _| {
+        let editor = editor.clone();
+        dialog
+            .title("Comparison options")
+            .w(px(super::FORM_DIALOG_WIDTH))
+            .content(move |content, _, cx| {
+                let row = editor.read(cx);
+                content.child(
+                    super::form_dialog_content()
+                        .child(field(
+                            "Instance",
+                            "Optional; defaults to 0",
+                            &row.instance,
+                            cx,
+                        ))
+                        .child(super::select_field(
+                            "Compare using",
+                            "Optional; defaults to calibrated",
+                            &row.calibrated,
+                        )),
+                )
+            })
+    });
 }
 
 impl TelemetryEntryListView {

@@ -1,10 +1,12 @@
 use gpui::{
-    App, AppContext, Context, Div, Entity, InteractiveElement, ParentElement, Render,
-    StatefulInteractiveElement, Styled, Subscription, Window, div, prelude::FluentBuilder, px,
+    App, AppContext, Context, Div, Entity, ParentElement, Render, Styled, Subscription, Window,
+    div, prelude::FluentBuilder, px,
 };
 use gpui_component::{
-    ActiveTheme, Disableable, IndexPath, StyledExt, h_flex,
-    input::{Input, InputEvent, InputState},
+    ActiveTheme, Disableable, IconName, IndexPath, Sizable, StyledExt, WindowExt,
+    button::{Button, ButtonVariants},
+    h_flex,
+    input::{InputEvent, InputState},
     select::{Select, SelectEvent, SelectState},
     v_flex,
 };
@@ -389,76 +391,122 @@ impl Render for MessageCriteriaForm {
                             }),
                     )
                     .child(
-                        div()
-                            .id("message-comparison-table-scroll")
-                            .w_full()
-                            .overflow_x_scroll()
+                        super::list_table_frame(cx)
                             .child(
-                                v_flex()
-                                    .min_w(px(820.))
-                                    .rounded_md()
-                                    .border_1()
-                                    .border_color(cx.theme().border)
+                                h_flex()
+                                    .h(px(34.))
+                                    .px_2()
+                                    .gap_2()
+                                    .bg(cx.theme().muted.opacity(0.5))
+                                    .text_xs()
+                                    .font_medium()
                                     .child(
+                                        div()
+                                            .flex_1()
+                                            .min_w_0()
+                                            .child(super::required_label(
+                                                "Parameter reference",
+                                                cx,
+                                            )),
+                                    )
+                                    .child(div().w(px(110.)).flex_none().child("Operator"))
+                                    .child(
+                                        div()
+                                            .flex_1()
+                                            .min_w_0()
+                                            .child(super::required_label("Value", cx)),
+                                    )
+                                    .child(
+                                        div().w(px(72.)).flex_none().child("Actions"),
+                                    ),
+                            )
+                            .children(
+                                self.rows
+                                    .iter()
+                                    .take(if is_list { count } else { 1 })
+                                    .enumerate()
+                                    .map(|(index, row)| {
+                                        let (parameter, operator, comparison_value) = {
+                                            let row = row.read(cx);
+                                            (
+                                                div()
+                                                    .flex_1()
+                                                    .min_w_0()
+                                                    .child(super::required_input(
+                                                        &row.parameter_ref,
+                                                        cx,
+                                                    )),
+                                                div()
+                                                    .w(px(110.))
+                                                    .flex_none()
+                                                    .child(
+                                                        Select::new(&row.operator).w_full(),
+                                                    ),
+                                                div()
+                                                    .flex_1()
+                                                    .min_w_0()
+                                                    .child(super::required_input(
+                                                        &row.comparison_value,
+                                                        cx,
+                                                    )),
+                                            )
+                                        };
+                                        let options = row.clone();
                                         h_flex()
-                                            .h(px(34.))
+                                            .w_full()
+                                            .h(px(70.))
                                             .px_2()
                                             .gap_2()
-                                            .bg(cx.theme().muted.opacity(0.5))
-                                            .text_xs()
-                                            .font_medium()
-                                            .child(div().flex_1().child("Parameter reference"))
-                                            .child(div().w(px(100.)).child("Operator"))
-                                            .child(div().flex_1().child("Value"))
-                                            .child(div().w(px(85.)).child("Instance"))
-                                            .child(div().w(px(120.)).child("Value type"))
-                                            .when(is_list, |header| {
-                                                header.child(div().w(px(52.)).child("Actions"))
-                                            }),
-                                    )
-                                    .children(
-                                        self.rows
-                                            .iter()
-                                            .take(if is_list { count } else { 1 })
-                                            .enumerate()
-                                            .map(|(index, row)| {
+                                            .border_b_1()
+                                            .border_color(cx.theme().border)
+                                            .child(parameter)
+                                            .child(operator)
+                                            .child(comparison_value)
+                                            .child(
                                                 h_flex()
-                                                    .h(px(52.))
-                                                    .px_2()
-                                                    .gap_2()
-                                                    .border_b_1()
-                                                    .border_color(cx.theme().border)
-                                                    .child(row.clone())
-                                                    .when(is_list, |line| {
-                                                        line.child(
-                                                            div()
-                                                                .w(px(52.))
-                                                                .flex_none()
-                                                                .child(
-                                                                    super::row_remove_button(
-                                                                        format!(
-                                                                            "remove-message-comparison-{index}"
-                                                                        ),
-                                                                        "Remove comparison",
-                                                                    )
-                                                                    .disabled(count == 1)
-                                                                    .on_click(cx.listener(
-                                                                        move |this, _, _, cx| {
-                                                                            if this.rows.len() > 1
-                                                                                && index
-                                                                                    < this.rows.len()
-                                                                            {
-                                                                                this.rows
-                                                                                    .remove(index);
-                                                                                cx.notify();
-                                                                            }
-                                                                        },
-                                                                    )),
+                                                    .w(px(72.))
+                                                    .flex_none()
+                                                    .justify_end()
+                                                    .gap_1()
+                                                    .child(
+                                                        Button::new(format!(
+                                                            "message-comparison-options-{index}"
+                                                        ))
+                                                        .xsmall()
+                                                        .ghost()
+                                                        .icon(IconName::Ellipsis)
+                                                        .tooltip("Comparison options")
+                                                        .on_click(move |_, window, cx| {
+                                                            open_comparison_options(
+                                                                options.clone(),
+                                                                window,
+                                                                cx,
+                                                            );
+                                                        }),
+                                                    )
+                                                    .when(is_list, |actions| {
+                                                        actions.child(
+                                                            super::row_remove_button(
+                                                                format!(
+                                                                    "remove-message-comparison-{index}"
                                                                 ),
+                                                                "Remove comparison",
+                                                            )
+                                                            .disabled(count == 1)
+                                                            .on_click(cx.listener(
+                                                                move |this, _, _, cx| {
+                                                                    if this.rows.len() > 1
+                                                                        && index < this.rows.len()
+                                                                    {
+                                                                        this.rows.remove(index);
+                                                                        cx.notify();
+                                                                    }
+                                                                },
+                                                            )),
                                                         )
-                                                    })
-                                            }),
-                                    ),
+                                                    }),
+                                            )
+                                    }),
                             ),
                     )
                 },
@@ -494,33 +542,30 @@ impl ComparisonRow {
     }
 }
 
-impl Render for ComparisonRow {
-    fn render(&mut self, _: &mut Window, _: &mut Context<Self>) -> impl gpui::IntoElement {
-        h_flex()
-            .flex_1()
-            .min_w_0()
-            .gap_2()
-            .child(div().flex_1().child(Input::new(&self.parameter_ref)))
-            .child(
-                div()
-                    .w(px(100.))
-                    .flex_none()
-                    .child(Select::new(&self.operator).w_full()),
-            )
-            .child(div().flex_1().child(Input::new(&self.comparison_value)))
-            .child(
-                div()
-                    .w(px(85.))
-                    .flex_none()
-                    .child(Input::new(&self.instance)),
-            )
-            .child(
-                div()
-                    .w(px(120.))
-                    .flex_none()
-                    .child(Select::new(&self.calibrated).w_full()),
-            )
-    }
+fn open_comparison_options(editor: Entity<ComparisonRow>, window: &mut Window, cx: &mut App) {
+    window.open_dialog(cx, move |dialog, _, _| {
+        let editor = editor.clone();
+        dialog
+            .title("Comparison options")
+            .w(px(super::FORM_DIALOG_WIDTH))
+            .content(move |content, _, cx| {
+                let row = editor.read(cx);
+                content.child(
+                    super::form_dialog_content()
+                        .child(field(
+                            "Instance",
+                            "Optional; defaults to 0",
+                            &row.instance,
+                            cx,
+                        ))
+                        .child(super::select_field(
+                            "Value type",
+                            "Optional; defaults to calibrated",
+                            &row.calibrated,
+                        )),
+                )
+            })
+    });
 }
 
 struct MessageValues {
