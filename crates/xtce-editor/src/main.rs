@@ -67,6 +67,7 @@ enum ElementKind {
     CommandCustomAlgorithm(usize),
     CommandMathAlgorithm(usize),
     ServiceSet,
+    Service(usize),
 }
 
 impl ElementKind {
@@ -103,6 +104,7 @@ impl ElementKind {
             Self::CommandContainerSet => "CommandContainerSet",
             Self::CommandContainer(_) => "CommandContainer",
             Self::ServiceSet => "ServiceSet",
+            Self::Service(_) => "Service",
         }
     }
 
@@ -122,6 +124,7 @@ impl ElementKind {
                 | Self::ArgumentTypeSet
                 | Self::MetaCommandSet
                 | Self::CommandContainerSet
+                | Self::ServiceSet
         )
     }
 
@@ -147,6 +150,7 @@ impl ElementKind {
                 | Self::ArgumentType(_)
                 | Self::MetaCommand(_)
                 | Self::CommandContainer(_)
+                | Self::Service(_)
         )
     }
 
@@ -173,6 +177,7 @@ impl ElementKind {
             Self::ArgumentType(_) => Some(Self::ArgumentTypeSet),
             Self::MetaCommand(_) => Some(Self::MetaCommandSet),
             Self::CommandContainer(_) => Some(Self::CommandContainerSet),
+            Self::Service(_) => Some(Self::ServiceSet),
             _ => None,
         }
     }
@@ -192,6 +197,7 @@ impl ElementKind {
                 | Self::MetaCommandSet
                 | Self::CommandContainerSet
                 | Self::CommandStreamSet
+                | Self::ServiceSet
         )
     }
 
@@ -208,6 +214,7 @@ impl ElementKind {
                 | Self::CommandContainerSet
                 | Self::TelemetryAlgorithmSet
                 | Self::CommandAlgorithmSet
+                | Self::ServiceSet
         )
     }
 
@@ -237,7 +244,6 @@ impl ElementKind {
             | Self::TelemetryMathAlgorithm(_)
             | Self::CommandMathAlgorithm(_) => IconName::Bot,
             Self::ArgumentType(_) => IconName::CaseSensitive,
-            Self::ServiceSet => IconName::Building2,
             kind if kind.uses_folder_icon() => {
                 if expanded {
                     IconName::FolderOpen
@@ -995,6 +1001,12 @@ impl XtceDocument {
                 .command_container
                 .get(index)
                 .map(|container| container.name.clone()),
+            ElementKind::Service(index) => system
+                .service_set
+                .as_ref()?
+                .service
+                .get(index)
+                .map(|service| service.name.clone()),
             _ => None,
         }
     }
@@ -1285,6 +1297,15 @@ impl XtceDocument {
                     metadata.command_container_set = None;
                 }
             }
+            ElementKind::Service(index) => {
+                let Some(set) = system.service_set.as_mut() else {
+                    return false;
+                };
+                if index >= set.service.len() {
+                    return false;
+                }
+                set.service.remove(index);
+            }
             _ => return false,
         }
         true
@@ -1457,6 +1478,15 @@ impl XtceDocument {
                 set.command_container
                     .push(Self::new_sequence_container_value(name));
                 Some(ElementKind::CommandContainer(index))
+            }
+            ElementKind::ServiceSet => {
+                let set = system.service_set.as_mut()?;
+                let index = set.service.len();
+                let name = Self::next_unique_name("Service", |candidate| {
+                    set.service.iter().any(|service| service.name == candidate)
+                });
+                set.service.push(forms::service_set::default_service(name));
+                Some(ElementKind::Service(index))
             }
             _ => None,
         }
@@ -2164,8 +2194,23 @@ impl XtceDocument {
                 }
             }
         }
-        if system.service_set.is_some() {
-            Self::push_tree_node(nodes, path, ElementKind::ServiceSet, child_level, false);
+        if let Some(set) = system.service_set.as_ref() {
+            Self::push_tree_node(
+                nodes,
+                path,
+                ElementKind::ServiceSet,
+                child_level,
+                !set.service.is_empty(),
+            );
+            for (index, service) in set.service.iter().enumerate() {
+                Self::push_named_tree_node(
+                    nodes,
+                    path,
+                    ElementKind::Service(index),
+                    service.name.clone(),
+                    child_level + 1,
+                );
+            }
         }
 
         for (index, child) in system.space_system.iter().enumerate() {
@@ -3586,6 +3631,42 @@ mod tests {
         assert!(document.command_meta_data.is_some());
         assert!(document.service_set.is_some());
         XtceDocument::serialize(&document).expect("metadata document should serialize");
+    }
+
+    #[test]
+    fn service_set_is_a_directory_of_service_elements() {
+        let mut root = XtceDocument::untitled().root;
+        assert!(XtceDocument::add_metadata(
+            &mut root,
+            ElementKind::ServiceSet
+        ));
+
+        let added = XtceDocument::add_collection_item(&mut root, ElementKind::ServiceSet);
+        assert_eq!(added, Some(ElementKind::Service(0)));
+        assert_eq!(
+            root.service_set.as_ref().unwrap().service[0].name,
+            "Service1"
+        );
+
+        let mut nodes = Vec::new();
+        XtceDocument::collect_tree_nodes(&root, &mut Vec::new(), 0, &mut nodes);
+        let set = nodes
+            .iter()
+            .find(|node| node.selection.kind == ElementKind::ServiceSet)
+            .expect("service set tree node");
+        assert!(set.has_children);
+        assert!(nodes.iter().any(|node| {
+            node.selection.kind == ElementKind::Service(0) && node.label == "Service1"
+        }));
+
+        assert!(XtceDocument::delete_element(
+            &mut root,
+            &ElementSelection {
+                system_path: Vec::new(),
+                kind: ElementKind::Service(0),
+            },
+        ));
+        assert!(root.service_set.as_ref().unwrap().service.is_empty());
     }
 
     #[test]

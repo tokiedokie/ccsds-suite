@@ -16,7 +16,7 @@ use super::{
     parameter::ParameterForm,
     parameter_type::ParameterTypeForm,
     sequence_container::{ReferenceSets, SequenceContainerForm},
-    service_set::ServiceSetForm,
+    service_set::ServiceForm,
     space_system::SpaceSystemForm,
     telemetry_metadata::TelemetryMetaDataForm,
     variable_frame_stream::VariableFrameStreamForm,
@@ -43,7 +43,7 @@ pub(crate) struct ElementForms {
     sequence_container: Entity<SequenceContainerForm>,
     argument_type: Entity<ArgumentTypeForm>,
     meta_command: Entity<MetaCommandForm>,
-    service_set: Entity<ServiceSetForm>,
+    service: Entity<ServiceForm>,
 }
 
 impl ElementForms {
@@ -131,6 +131,10 @@ impl ElementForms {
                 .and_then(|set| set.content.get(index))
                 .map(XtceDocument::algorithm_label)
                 .unwrap_or_else(|| kind.label().to_owned()),
+            ElementKind::Service(index) => service_set(system)
+                .and_then(|set| set.service.get(index))
+                .map(|service| service.name.clone())
+                .unwrap_or_else(|| kind.label().to_owned()),
             _ => kind.label().to_owned(),
         }
     }
@@ -183,6 +187,7 @@ impl ElementForms {
             ElementKind::TelemetryMathAlgorithm(_) | ElementKind::CommandMathAlgorithm(_) => {
                 Some(self.math_algorithm.read(cx).name(cx))
             }
+            ElementKind::Service(_) => Some(self.service.read(cx).name(cx)),
             _ => None,
         }
     }
@@ -239,6 +244,7 @@ impl ElementForms {
             ElementKind::TelemetryMathAlgorithm(_) | ElementKind::CommandMathAlgorithm(_) => {
                 Some(self.math_algorithm.read(cx).render_name_editor())
             }
+            ElementKind::Service(_) => Some(self.service.read(cx).render_name_editor()),
             _ => None,
         }
     }
@@ -332,7 +338,11 @@ impl ElementForms {
                 window,
                 cx,
             ),
-            service_set: ServiceSetForm::new(system.service_set.as_ref(), window, cx),
+            service: ServiceForm::new(
+                service_set(system).and_then(|set| set.service.first()),
+                window,
+                cx,
+            ),
         }
     }
 
@@ -549,9 +559,13 @@ impl ElementForms {
                     );
                 });
             }
-            ElementKind::ServiceSet => {
-                self.service_set.update(cx, |form, cx| {
-                    form.load(system.service_set.as_ref(), window, cx);
+            ElementKind::Service(index) => {
+                self.service.update(cx, |form, cx| {
+                    form.load(
+                        service_set(system).and_then(|set| set.service.get(index)),
+                        window,
+                        cx,
+                    );
                 });
             }
             _ => {}
@@ -707,10 +721,12 @@ impl ElementForms {
                     self.math_algorithm.read(cx).apply_to(algorithm, cx);
                 }
             }
-            ElementKind::ServiceSet => {
-                self.service_set
-                    .read(cx)
-                    .apply_to(&mut system.service_set, cx);
+            ElementKind::Service(index) => {
+                if let Some(service) =
+                    service_set_mut(system).and_then(|set| set.service.get_mut(index))
+                {
+                    self.service.read(cx).apply_to(service, cx);
+                }
             }
             _ => {}
         }
@@ -801,9 +817,10 @@ impl ElementForms {
                 self.editor.clone(),
                 cx,
             ),
-            ElementKind::ServiceSet => gpui_component::v_flex()
+            ElementKind::Service(_) => gpui_component::v_flex()
                 .w_full()
-                .child(self.service_set.clone()),
+                .child(self.service.clone()),
+            ElementKind::ServiceSet => gpui_component::v_flex().w_full(),
             ElementKind::SpaceSystem => self.space_system.render_identity(cx),
         }
     }
@@ -830,6 +847,14 @@ fn telemetry_parameter_set(system: &xtce::SpaceSystem) -> Option<&xtce::Paramete
         .telemetry_meta_data
         .as_ref()
         .and_then(|metadata| metadata.parameter_set.as_ref())
+}
+
+fn service_set(system: &xtce::SpaceSystem) -> Option<&xtce::ServiceSetType> {
+    system.service_set.as_ref()
+}
+
+fn service_set_mut(system: &mut xtce::SpaceSystem) -> Option<&mut xtce::ServiceSetType> {
+    system.service_set.as_mut()
 }
 
 fn message_set(system: &xtce::SpaceSystem) -> Option<&xtce::MessageSetType> {
