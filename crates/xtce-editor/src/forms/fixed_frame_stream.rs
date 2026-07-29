@@ -3,9 +3,7 @@ use gpui::{
     div, prelude::FluentBuilder, px,
 };
 use gpui_component::{
-    ActiveTheme, IconName, IndexPath, Sizable, StyledExt,
-    button::Button,
-    h_flex,
+    ActiveTheme, IndexPath, StyledExt, h_flex,
     input::{Input, InputEvent, InputState},
     select::{SelectEvent, SelectState},
     v_flex,
@@ -447,14 +445,12 @@ impl FixedFrameStreamForm {
                                         cx.notify();
                                     }))
                             } else {
-                                Button::new("add-fixed-frame-auto-invert")
-                                    .small()
-                                    .icon(IconName::Plus)
-                                    .label("Add")
-                                    .on_click(cx.listener(|this, _, _, cx| {
+                                super::section_add_button("add-fixed-frame-auto-invert").on_click(
+                                    cx.listener(|this, _, _, cx| {
                                         this.auto_invert_present = true;
                                         cx.notify();
-                                    }))
+                                    }),
+                                )
                             }),
                     )
                     .when(self.auto_invert_present, |section| {
@@ -486,14 +482,13 @@ impl FixedFrameStreamForm {
                                                     cx.notify();
                                                 }))
                                             } else {
-                                                Button::new("add-fixed-frame-invert-algorithm")
-                                                    .small()
-                                                    .icon(IconName::Plus)
-                                                    .label("Add")
-                                                    .on_click(cx.listener(|this, _, _, cx| {
-                                                        this.invert_algorithm_present = true;
-                                                        cx.notify();
-                                                    }))
+                                                super::section_add_button(
+                                                    "add-fixed-frame-invert-algorithm",
+                                                )
+                                                .on_click(cx.listener(|this, _, _, cx| {
+                                                    this.invert_algorithm_present = true;
+                                                    cx.notify();
+                                                }))
                                             }),
                                     )
                                     .when(self.invert_algorithm_present, |form| {

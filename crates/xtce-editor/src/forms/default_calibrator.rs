@@ -404,14 +404,12 @@ impl Render for DefaultCalibratorForm {
                                 }),
                             )
                         } else {
-                            Button::new("add-default-calibrator")
-                                .small()
-                                .icon(IconName::Plus)
-                                .label("Add")
-                                .on_click(cx.listener(|this, _, _, cx| {
+                            super::section_add_button("add-default-calibrator").on_click(
+                                cx.listener(|this, _, _, cx| {
                                     this.present = true;
                                     cx.notify();
-                                }))
+                                }),
+                            )
                         }),
                 )
             })

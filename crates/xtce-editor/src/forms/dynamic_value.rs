@@ -3,8 +3,7 @@ use gpui::{
     prelude::FluentBuilder,
 };
 use gpui_component::{
-    IndexPath, Sizable, StyledExt, button::Button, h_flex, input::InputState, select::SelectState,
-    v_flex,
+    IndexPath, StyledExt, h_flex, input::InputState, select::SelectState, v_flex,
 };
 use strum::{Display, EnumString, VariantArray};
 
@@ -127,13 +126,12 @@ impl Render for DynamicValueForm {
                             }),
                         )
                     } else {
-                        Button::new("add-dynamic-linear-adjustment")
-                            .small()
-                            .label("Add")
-                            .on_click(cx.listener(|this, _, _, cx| {
+                        super::section_add_button("add-dynamic-linear-adjustment").on_click(
+                            cx.listener(|this, _, _, cx| {
                                 this.linear_adjustment_present = true;
                                 cx.notify();
-                            }))
+                            }),
+                        )
                     }),
             )
             .when(self.linear_adjustment_present, |form| {

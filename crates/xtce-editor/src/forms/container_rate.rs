@@ -125,14 +125,12 @@ impl Render for ContainerRateForm {
                             }),
                         )
                     } else {
-                        Button::new("add-default-container-rate")
-                            .small()
-                            .icon(IconName::Plus)
-                            .label("Add default rate")
-                            .on_click(cx.listener(|this, _, _, cx| {
+                        super::section_add_button("add-default-container-rate").on_click(
+                            cx.listener(|this, _, _, cx| {
                                 this.default_present = true;
                                 cx.notify();
-                            }))
+                            }),
+                        )
                     }),
             )
             .when(self.default_present, |form| {

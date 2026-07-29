@@ -509,14 +509,12 @@ impl SequenceContainerForm {
                                         cx.notify();
                                     }))
                             } else {
-                                Button::new("add-telemetry-base-container")
-                                    .small()
-                                    .icon(IconName::Plus)
-                                    .label("Add base container")
-                                    .on_click(cx.listener(|this, _, _, cx| {
+                                super::section_add_button("add-telemetry-base-container").on_click(
+                                    cx.listener(|this, _, _, cx| {
                                         this.base_container_present.set(true);
                                         cx.notify();
-                                    }))
+                                    }),
+                                )
                             }),
                     )
                     .when(base_present, |section| {

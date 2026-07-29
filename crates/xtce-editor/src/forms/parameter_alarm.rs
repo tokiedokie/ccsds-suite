@@ -322,15 +322,13 @@ impl Render for DefaultAlarmForm {
                     }),
                 )
             } else {
-                Button::new("add-parameter-type-default-alarm")
-                    .small()
-                    .icon(IconName::Plus)
-                    .label("Add")
-                    .on_click(cx.listener(|this, _, window, cx| {
+                super::section_add_button("add-parameter-type-default-alarm").on_click(cx.listener(
+                    |this, _, window, cx| {
                         this.active = true;
                         this.editor = alarm_editor(this.kind, None, window, cx);
                         cx.notify();
-                    }))
+                    },
+                ))
             });
         v_flex()
             .w_full()
@@ -552,19 +550,19 @@ impl Render for AlarmConditionsForm {
                                     }
                                 })
                             } else {
-                                Button::new(format!("add-{}-alarm-condition", row_read.level))
-                                    .small()
-                                    .icon(IconName::Plus)
-                                    .label("Add")
-                                    .on_click({
-                                        let row = row.clone();
-                                        move |_, _, cx| {
-                                            row.update(cx, |row, cx| {
-                                                row.active = true;
-                                                cx.notify();
-                                            });
-                                        }
-                                    })
+                                super::section_add_button(format!(
+                                    "add-{}-alarm-condition",
+                                    row_read.level
+                                ))
+                                .on_click({
+                                    let row = row.clone();
+                                    move |_, _, cx| {
+                                        row.update(cx, |row, cx| {
+                                            row.active = true;
+                                            cx.notify();
+                                        });
+                                    }
+                                })
                             }),
                     )
                     .children(row_read.active.then(|| row_read.criteria.clone()))
@@ -623,14 +621,12 @@ impl Render for CustomAlarmForm {
                     },
                 ))
             } else {
-                Button::new("add-parameter-custom-alarm")
-                    .small()
-                    .icon(IconName::Plus)
-                    .label("Add")
-                    .on_click(cx.listener(|this, _, _, cx| {
+                super::section_add_button("add-parameter-custom-alarm").on_click(cx.listener(
+                    |this, _, _, cx| {
                         this.active = true;
                         cx.notify();
-                    }))
+                    },
+                ))
             });
         let mut form = v_flex().w_full().gap_3().child(header);
         if self.active {
@@ -780,19 +776,19 @@ impl Render for StaticAlarmRangesForm {
                                 }
                             })
                         } else {
-                            Button::new(format!("add-static-range-{}", row.entity_id()))
-                                .small()
-                                .icon(IconName::Plus)
-                                .label("Add")
-                                .on_click({
-                                    let row = row.clone();
-                                    move |_, _, cx| {
-                                        row.update(cx, |row, cx| {
-                                            row.active = true;
-                                            cx.notify();
-                                        });
-                                    }
-                                })
+                            super::section_add_button(format!(
+                                "add-static-range-{}",
+                                row.entity_id()
+                            ))
+                            .on_click({
+                                let row = row.clone();
+                                move |_, _, cx| {
+                                    row.update(cx, |row, cx| {
+                                        row.active = true;
+                                        cx.notify();
+                                    });
+                                }
+                            })
                         });
                     let mut range = super::detail_list_card(cx).child(header);
                     if row_read.active {
@@ -2994,14 +2990,12 @@ fn optional_section_header<T: 'static>(
                 },
             ))
         } else {
-            Button::new(format!("add-{id}"))
-                .small()
-                .icon(IconName::Plus)
-                .label("Add")
-                .on_click(cx.listener(move |this, _, _, cx| {
+            super::section_add_button(format!("add-{id}")).on_click(cx.listener(
+                move |this, _, _, cx| {
                     *active_field(this) = true;
                     cx.notify();
-                }))
+                },
+            ))
         })
 }
 

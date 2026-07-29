@@ -2,8 +2,7 @@ use gpui::{
     App, AppContext, Context, Div, Entity, IntoElement, ParentElement, Render, Styled, Window, div,
 };
 use gpui_component::{
-    ActiveTheme, IconName, IndexPath, Sizable, StyledExt, button::Button, h_flex,
-    input::InputState, select::SelectState, v_flex,
+    ActiveTheme, IndexPath, StyledExt, h_flex, input::InputState, select::SelectState, v_flex,
 };
 use strum::{Display, EnumString, VariantArray};
 
@@ -124,11 +123,8 @@ impl Render for TimeEncodingForm {
                     }),
                 )
             } else {
-                Button::new("add-parameter-type-time-encoding")
-                    .small()
-                    .icon(IconName::Plus)
-                    .label("Add")
-                    .on_click(cx.listener(|this, _, window, cx| {
+                super::section_add_button("add-parameter-type-time-encoding").on_click(cx.listener(
+                    |this, _, window, cx| {
                         this.active = true;
                         let default = default_integer_encoding();
                         this.data_encoding = DataEncodingForm::new(
@@ -137,7 +133,8 @@ impl Render for TimeEncodingForm {
                             cx,
                         );
                         cx.notify();
-                    }))
+                    },
+                ))
             });
 
         let mut form = v_flex().w_full().gap_3().child(header);

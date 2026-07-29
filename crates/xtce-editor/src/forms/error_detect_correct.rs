@@ -206,11 +206,8 @@ impl Render for ErrorDetectCorrectForm {
                             }),
                         )
                     } else {
-                        Button::new("add-error-detect-correct")
-                            .small()
-                            .icon(IconName::Plus)
-                            .label("Add")
-                            .on_click(cx.listener(|this, _, window, cx| {
+                        super::section_add_button("add-error-detect-correct").on_click(cx.listener(
+                            |this, _, window, cx| {
                                 this.present = true;
                                 if this.rows.is_empty() {
                                     this.rows.push(new_row(
@@ -221,7 +218,8 @@ impl Render for ErrorDetectCorrectForm {
                                     ));
                                 }
                                 cx.notify();
-                            }))
+                            },
+                        ))
                     }),
             )
             .when(self.present, |form| {
@@ -350,14 +348,12 @@ impl Render for ErrorRow {
                                     cx.notify();
                                 }))
                         } else {
-                            Button::new("add-checksum-input-algorithm")
-                                .small()
-                                .icon(IconName::Plus)
-                                .label("Add")
-                                .on_click(cx.listener(|this, _, _, cx| {
+                            super::section_add_button("add-checksum-input-algorithm").on_click(
+                                cx.listener(|this, _, _, cx| {
                                     this.input_algorithm_present = true;
                                     cx.notify();
-                                }))
+                                }),
+                            )
                         }),
                 )
                 .when(self.input_algorithm_present, |form| {

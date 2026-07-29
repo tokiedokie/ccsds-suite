@@ -129,6 +129,10 @@ pub(super) fn section_remove_button(id: impl Into<ElementId>) -> Button {
         .label("Remove")
 }
 
+pub(super) fn section_add_button(id: impl Into<ElementId>) -> Button {
+    Button::new(id).small().icon(IconName::Plus).label("Add")
+}
+
 pub(super) fn row_remove_button(
     id: impl Into<ElementId>,
     tooltip: impl Into<SharedString>,

@@ -177,14 +177,12 @@ impl Render for ToStringForm {
                     }),
                 )
             } else {
-                Button::new("add-parameter-type-to-string")
-                    .small()
-                    .icon(IconName::Plus)
-                    .label("Add")
-                    .on_click(cx.listener(|this, _, _, cx| {
+                super::section_add_button("add-parameter-type-to-string").on_click(cx.listener(
+                    |this, _, _, cx| {
                         this.active = true;
                         cx.notify();
-                    }))
+                    },
+                ))
             });
 
         v_flex()

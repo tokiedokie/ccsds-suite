@@ -3,9 +3,7 @@ use gpui::{
     prelude::FluentBuilder,
 };
 use gpui_component::{
-    ActiveTheme, IconName, IndexPath, Sizable, StyledExt,
-    button::Button,
-    h_flex,
+    ActiveTheme, IndexPath, StyledExt, h_flex,
     input::InputState,
     select::{Select, SelectEvent, SelectState},
     v_flex,
@@ -256,14 +254,12 @@ impl Render for ContainerBinaryEncodingForm {
                             }),
                         )
                     } else {
-                        Button::new("add-container-binary-encoding")
-                            .small()
-                            .icon(IconName::Plus)
-                            .label("Add binary encoding")
-                            .on_click(cx.listener(|this, _, _, cx| {
+                        super::section_add_button("add-container-binary-encoding").on_click(
+                            cx.listener(|this, _, _, cx| {
                                 this.present = true;
                                 cx.notify();
-                            }))
+                            }),
+                        )
                     }),
             )
             .when(self.present, |form| {
@@ -306,14 +302,15 @@ impl Render for ContainerBinaryEncodingForm {
                                             }),
                                         )
                                     } else {
-                                        Button::new("add-container-from-binary-transform")
-                                            .small()
-                                            .icon(IconName::Plus)
-                                            .label("Add")
-                                            .on_click(cx.listener(|this, _, _, cx| {
+                                        super::section_add_button(
+                                            "add-container-from-binary-transform",
+                                        )
+                                        .on_click(
+                                            cx.listener(|this, _, _, cx| {
                                                 this.from_transform_present = true;
                                                 cx.notify();
-                                            }))
+                                            }),
+                                        )
                                     }),
                             )
                             .when(self.from_transform_present, |section| {
@@ -340,14 +337,15 @@ impl Render for ContainerBinaryEncodingForm {
                                             }),
                                         )
                                     } else {
-                                        Button::new("add-container-to-binary-transform")
-                                            .small()
-                                            .icon(IconName::Plus)
-                                            .label("Add")
-                                            .on_click(cx.listener(|this, _, _, cx| {
+                                        super::section_add_button(
+                                            "add-container-to-binary-transform",
+                                        )
+                                        .on_click(
+                                            cx.listener(|this, _, _, cx| {
                                                 this.to_transform_present = true;
                                                 cx.notify();
-                                            }))
+                                            }),
+                                        )
                                     }),
                             )
                             .when(self.to_transform_present, |section| {

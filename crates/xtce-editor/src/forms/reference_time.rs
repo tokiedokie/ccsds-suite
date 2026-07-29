@@ -172,11 +172,8 @@ impl Render for ReferenceTimeForm {
                     }),
                 )
             } else {
-                Button::new("add-parameter-type-reference-time")
-                    .small()
-                    .icon(IconName::Plus)
-                    .label("Add")
-                    .on_click(cx.listener(|this, _, window, cx| {
+                super::section_add_button("add-parameter-type-reference-time").on_click(
+                    cx.listener(|this, _, window, cx| {
                         this.active = true;
                         this.kind = ReferenceTimeKind::Epoch;
                         set_select(&this.kind_select, ReferenceTimeKind::Epoch, window, cx);
@@ -184,7 +181,8 @@ impl Render for ReferenceTimeForm {
                             input.set_value("UNIX".to_owned(), window, cx);
                         });
                         cx.notify();
-                    }))
+                    }),
+                )
             });
 
         let mut form = v_flex().w_full().gap_3().child(header);

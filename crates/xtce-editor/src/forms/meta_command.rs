@@ -1226,14 +1226,12 @@ impl MetaCommandForm {
                         .child(description),
                 )
                 .child(
-                    Button::new("add-command-container")
-                        .primary()
-                        .icon(IconName::Plus)
-                        .label("Add command container")
-                        .on_click(cx.listener(|this, _, _, cx| {
+                    super::section_add_button("add-command-container").on_click(cx.listener(
+                        |this, _, _, cx| {
                             this.command_container_present.set(true);
                             cx.notify();
-                        })),
+                        },
+                    )),
                 );
         }
 

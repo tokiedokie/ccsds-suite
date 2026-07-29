@@ -3,9 +3,7 @@ use gpui::{
     Subscription, Window, div, prelude::FluentBuilder,
 };
 use gpui_component::{
-    IconName, IndexPath, Sizable, StyledExt,
-    button::Button,
-    h_flex,
+    IndexPath, StyledExt, h_flex,
     input::InputState,
     select::{Select, SelectEvent, SelectState},
     v_flex,
@@ -793,10 +791,7 @@ impl DataEncodingForm {
                                         cx.notify();
                                     }))
                             } else {
-                                Button::new("add-data-from-binary-transform")
-                                    .small()
-                                    .icon(IconName::Plus)
-                                    .label("Add")
+                                super::section_add_button("add-data-from-binary-transform")
                                     .on_click(cx.listener(|this, _, _, cx| {
                                         this.from_transform_present = true;
                                         cx.notify();
@@ -821,14 +816,12 @@ impl DataEncodingForm {
                                         cx.notify();
                                     }))
                             } else {
-                                Button::new("add-data-to-binary-transform")
-                                    .small()
-                                    .icon(IconName::Plus)
-                                    .label("Add")
-                                    .on_click(cx.listener(|this, _, _, cx| {
+                                super::section_add_button("add-data-to-binary-transform").on_click(
+                                    cx.listener(|this, _, _, cx| {
                                         this.to_transform_present = true;
                                         cx.notify();
-                                    }))
+                                    }),
+                                )
                             }),
                     )
                     .when(self.to_transform_present, |section| {
@@ -868,10 +861,7 @@ impl DataEncodingForm {
                                             }),
                                         )
                                     } else {
-                                        Button::new("add-fixed-string-termination")
-                                            .small()
-                                            .icon(IconName::Plus)
-                                            .label("Add")
+                                        super::section_add_button("add-fixed-string-termination")
                                             .on_click(cx.listener(|this, _, _, cx| {
                                                 this.fixed_termination_present = true;
                                                 cx.notify();
@@ -905,10 +895,7 @@ impl DataEncodingForm {
                                             }),
                                         )
                                     } else {
-                                        Button::new("add-fixed-string-leading-size")
-                                            .small()
-                                            .icon(IconName::Plus)
-                                            .label("Add")
+                                        super::section_add_button("add-fixed-string-leading-size")
                                             .on_click(cx.listener(|this, _, _, cx| {
                                                 this.fixed_leading_size_present = true;
                                                 cx.notify();

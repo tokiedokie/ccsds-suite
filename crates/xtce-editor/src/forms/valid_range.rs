@@ -2,8 +2,7 @@ use gpui::{
     App, AppContext, Context, Div, Entity, IntoElement, ParentElement, Render, Styled, Window, div,
 };
 use gpui_component::{
-    ActiveTheme, IconName, IndexPath, Sizable, StyledExt, button::Button, h_flex,
-    input::InputState, select::SelectState, v_flex,
+    ActiveTheme, IndexPath, StyledExt, h_flex, input::InputState, select::SelectState, v_flex,
 };
 use strum::{Display, EnumString, VariantArray};
 
@@ -158,14 +157,12 @@ impl Render for ValidRangeForm {
                     }),
                 )
             } else {
-                Button::new("add-parameter-type-valid-range")
-                    .small()
-                    .icon(IconName::Plus)
-                    .label("Add")
-                    .on_click(cx.listener(|this, _, _, cx| {
+                super::section_add_button("add-parameter-type-valid-range").on_click(cx.listener(
+                    |this, _, _, cx| {
                         this.active = true;
                         cx.notify();
-                    }))
+                    },
+                ))
             });
 
         let mut form = v_flex().w_full().gap_3().child(header);
