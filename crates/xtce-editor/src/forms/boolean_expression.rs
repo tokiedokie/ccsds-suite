@@ -394,12 +394,13 @@ impl BooleanExpressionForm {
                                                 )),
                                             )
                                             .child(
-                                                gpui_component::form::field()
-                                                    .label("Use calibrated value")
-                                                    .child(
-                                                        Select::new(&condition.left_calibrated)
-                                                            .w(px(150.)),
-                                                    ),
+                                                super::select_field(
+                                                    "Use calibrated value",
+                                                    "",
+                                                    &condition.left_calibrated,
+                                                )
+                                                .w(px(150.))
+                                                .flex_none(),
                                             ),
                                     ),
                             )
@@ -409,12 +410,11 @@ impl BooleanExpressionForm {
                                     .flex_none()
                                     .pt_3()
                                     .child(
-                                        gpui_component::form::field()
-                                            .label("Operator")
-                                            .required(true)
-                                            .child(
-                                                Select::new(&condition.operator).w(px(110.)),
-                                            ),
+                                        super::select_field(
+                                            "Operator",
+                                            "Required",
+                                            &condition.operator,
+                                        ),
                                     ),
                             )
                             .child(
@@ -488,17 +488,13 @@ impl BooleanExpressionForm {
                                                                 )),
                                                         )
                                                         .child(
-                                                            gpui_component::form::field()
-                                                                .label(
-                                                                    "Use calibrated value",
-                                                                )
-                                                                .child(
-                                                                    Select::new(
-                                                                        &condition
-                                                                            .right_calibrated,
-                                                                    )
-                                                                    .w(px(150.)),
-                                                                ),
+                                                            super::select_field(
+                                                                "Use calibrated value",
+                                                                "",
+                                                                &condition.right_calibrated,
+                                                            )
+                                                            .w(px(150.))
+                                                            .flex_none(),
                                                         ),
                                                 )
                                         },

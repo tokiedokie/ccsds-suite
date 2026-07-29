@@ -5,7 +5,7 @@ use gpui::{
 use gpui_component::{
     ActiveTheme, IndexPath, StyledExt, h_flex,
     input::InputState,
-    select::{Select, SelectEvent, SelectState},
+    select::{SelectEvent, SelectState},
     v_flex,
 };
 use strum::{Display, EnumString, VariantArray};
@@ -405,11 +405,7 @@ fn size_kind_select(
 }
 
 fn size_kind_field(select: &Entity<SelectState<Vec<SizeKind>>>) -> gpui::Div {
-    v_flex().w_full().child(
-        gpui_component::form::field()
-            .label("Size in bits")
-            .child(Select::new(select).w_full()),
-    )
+    super::select_field("Size in bits", "Optional", select)
 }
 
 #[cfg(test)]

@@ -7,7 +7,7 @@ use gpui_component::{
     button::{Button, ButtonVariants},
     h_flex,
     input::{InputEvent, InputState},
-    select::{Select, SelectEvent, SelectState},
+    select::{SelectEvent, SelectState},
     v_flex,
 };
 use strum::{Display, EnumString, VariantArray};
@@ -205,12 +205,7 @@ impl RpnOperationForm {
                             ),
                     ),
             )
-            .child(
-                gpui_component::form::field()
-                    .label("Token type")
-                    .required(true)
-                    .child(Select::new(&row.kind).w_full()),
-            )
+            .child(super::select_field("Token type", "Required", &row.kind))
             .when(kind == EntryKind::ValueOperand, |form| {
                 form.child(field("Value", "Required", &row.value, cx))
             })
@@ -260,22 +255,20 @@ impl RpnOperationForm {
                                 &row.instance,
                                 cx,
                             ))
-                            .child(
-                                gpui_component::form::field()
-                                    .label("Use calibrated value")
-                                    .required(true)
-                                    .child(Select::new(&row.calibrated).w_full()),
-                            ),
+                            .child(super::select_field(
+                                "Use calibrated value",
+                                "Required",
+                                &row.calibrated,
+                            )),
                     )
             })
             .when(kind == EntryKind::ArgumentInstanceRef, |form| {
                 form.child(field("Argument reference", "Required", &row.value, cx))
-                    .child(
-                        gpui_component::form::field()
-                            .label("Use calibrated value")
-                            .required(true)
-                            .child(Select::new(&row.calibrated).w_full()),
-                    )
+                    .child(super::select_field(
+                        "Use calibrated value",
+                        "Required",
+                        &row.calibrated,
+                    ))
             })
     }
 }
