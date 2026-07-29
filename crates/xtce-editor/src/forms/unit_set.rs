@@ -96,10 +96,7 @@ impl Render for UnitSetForm {
                             ),
                     )
                     .child(
-                        Button::new("add-parameter-type-unit")
-                            .small()
-                            .icon(IconName::Plus)
-                            .label("Add unit")
+                        super::collection_add_button("add-parameter-type-unit", "Add unit")
                             .on_click(cx.listener(|this, _, window, cx| {
                                 this.rows.push(unit_entity(None, window, cx));
                                 cx.notify();

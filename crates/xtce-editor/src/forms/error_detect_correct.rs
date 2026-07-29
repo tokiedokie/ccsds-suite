@@ -3,9 +3,7 @@ use gpui::{
     prelude::FluentBuilder,
 };
 use gpui_component::{
-    IconName, IndexPath, Sizable, StyledExt,
-    button::Button,
-    h_flex,
+    IndexPath, StyledExt, h_flex,
     input::InputState,
     select::{SelectEvent, SelectState},
     v_flex,
@@ -231,10 +229,7 @@ impl Render for ErrorDetectCorrectForm {
                 })
                 .children(rows)
                 .child(
-                    Button::new("add-error-detect-correct-row")
-                        .small()
-                        .icon(IconName::Plus)
-                        .label("Add method")
+                    super::collection_add_button("add-error-detect-correct-row", "Add method")
                         .on_click(cx.listener(|this, _, window, cx| {
                             this.rows
                                 .push(new_row(ErrorValues::default(), None, window, cx));

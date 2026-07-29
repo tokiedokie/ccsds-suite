@@ -2,9 +2,7 @@ use gpui::{
     App, AppContext, Context, Div, Entity, IntoElement, ParentElement, Render, Styled, Window, div,
     prelude::FluentBuilder,
 };
-use gpui_component::{
-    ActiveTheme, IconName, Sizable, StyledExt, button::Button, h_flex, input::InputState, v_flex,
-};
+use gpui_component::{ActiveTheme, StyledExt, h_flex, input::InputState, v_flex};
 
 use super::field;
 
@@ -111,14 +109,12 @@ impl Render for AliasRowsForm {
                             ),
                     )
                     .child(
-                        Button::new("add-alias")
-                            .small()
-                            .icon(IconName::Plus)
-                            .label("Add alias")
-                            .on_click(cx.listener(|this, _, window, cx| {
+                        super::collection_add_button("add-alias", "Add alias").on_click(
+                            cx.listener(|this, _, window, cx| {
                                 this.rows.push(row_entity(None, window, cx));
                                 cx.notify();
-                            })),
+                            }),
+                        ),
                     ),
             )
             .children(self.rows.iter().enumerate().map(|(index, row)| {

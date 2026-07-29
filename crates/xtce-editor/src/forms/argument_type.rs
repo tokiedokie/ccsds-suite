@@ -7,7 +7,7 @@ use gpui_component::{
     button::{Button, ButtonVariants},
     collapsible::Collapsible,
     h_flex,
-    input::{Input, InputEvent, InputState},
+    input::{InputEvent, InputState},
     select::{SelectEvent, SelectState},
     v_flex,
 };
@@ -264,11 +264,8 @@ impl ArgumentTypeForm {
         value(&self.name_input, cx)
     }
 
-    pub(super) fn render_name_editor(&self) -> Div {
-        v_flex()
-            .w_full()
-            .max_w(gpui::px(520.))
-            .child(Input::new(&self.name_input))
+    pub(super) fn render_name_editor(&self, cx: &App) -> Div {
+        super::name_editor(&self.name_input, cx)
     }
 
     pub(super) fn apply_to(&self, argument_type: &mut xtce::ArgumentTypeSetTypeContent, cx: &App) {

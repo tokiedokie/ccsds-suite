@@ -3,8 +3,7 @@ use gpui::{
     prelude::FluentBuilder,
 };
 use gpui_component::{
-    IconName, IndexPath, Sizable, StyledExt, button::Button, h_flex, input::InputState,
-    select::SelectState, v_flex,
+    IndexPath, StyledExt, h_flex, input::InputState, select::SelectState, v_flex,
 };
 use strum::{Display, EnumString, VariantArray};
 
@@ -122,14 +121,14 @@ impl Render for ContextSignificanceListForm {
                     .justify_between()
                     .child(div().text_sm().font_medium().child("Context significance"))
                     .child(
-                        Button::new("add-context-significance")
-                            .small()
-                            .icon(IconName::Plus)
-                            .label("Add context significance")
-                            .on_click(cx.listener(|this, _, window, cx| {
-                                this.rows.push(new_row(None, window, cx));
-                                cx.notify();
-                            })),
+                        super::collection_add_button(
+                            "add-context-significance",
+                            "Add context significance",
+                        )
+                        .on_click(cx.listener(|this, _, window, cx| {
+                            this.rows.push(new_row(None, window, cx));
+                            cx.notify();
+                        })),
                     ),
             )
             .when(self.rows.is_empty(), |form| {

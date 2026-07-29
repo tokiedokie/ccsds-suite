@@ -38,8 +38,8 @@ impl SpaceSystemForm {
         self.description.apply_to(system, cx);
     }
 
-    pub(crate) fn render_name_editor(&self) -> Div {
-        self.identity.render_name_editor()
+    pub(crate) fn render_name_editor(&self, cx: &App) -> Div {
+        self.identity.render_name_editor(cx)
     }
 
     pub(crate) fn name(&self, cx: &App) -> String {

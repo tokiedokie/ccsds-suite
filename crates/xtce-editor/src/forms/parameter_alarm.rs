@@ -3,8 +3,7 @@ use gpui::{
     prelude::FluentBuilder,
 };
 use gpui_component::{
-    ActiveTheme, IconName, IndexPath, Sizable, StyledExt, button::Button, h_flex,
-    input::InputState, select::SelectState, v_flex,
+    ActiveTheme, IndexPath, StyledExt, h_flex, input::InputState, select::SelectState, v_flex,
 };
 use strum::{Display, EnumString, VariantArray};
 
@@ -404,15 +403,15 @@ impl Render for ContextAlarmListForm {
                             ),
                     )
                     .child(
-                        Button::new("add-parameter-type-context-alarm")
-                            .small()
-                            .icon(IconName::Plus)
-                            .label("Add context alarm")
-                            .on_click(cx.listener(|this, _, window, cx| {
-                                this.rows
-                                    .push(context_alarm_row(this.kind, None, window, cx));
-                                cx.notify();
-                            })),
+                        super::collection_add_button(
+                            "add-parameter-type-context-alarm",
+                            "Add context alarm",
+                        )
+                        .on_click(cx.listener(|this, _, window, cx| {
+                            this.rows
+                                .push(context_alarm_row(this.kind, None, window, cx));
+                            cx.notify();
+                        })),
                     ),
             )
             .when(self.rows.is_empty(), |form| {

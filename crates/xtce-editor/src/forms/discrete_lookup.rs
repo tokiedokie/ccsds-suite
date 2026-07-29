@@ -3,9 +3,7 @@ use gpui::{
     prelude::FluentBuilder,
 };
 use gpui_component::{
-    Disableable, IconName, IndexPath, Sizable, StyledExt,
-    button::Button,
-    h_flex,
+    Disableable, IndexPath, StyledExt, h_flex,
     input::InputState,
     select::{SelectEvent, SelectState},
     v_flex,
@@ -172,14 +170,12 @@ impl Render for DiscreteLookupListForm {
                 form.child(super::empty_list_state("No discrete lookups defined.", cx))
             })
             .child(
-                Button::new("add-discrete-lookup")
-                    .small()
-                    .icon(IconName::Plus)
-                    .label("Add lookup")
-                    .on_click(cx.listener(|this, _, window, cx| {
+                super::collection_add_button("add-discrete-lookup", "Add lookup").on_click(
+                    cx.listener(|this, _, window, cx| {
                         this.rows.push(new_lookup_row_default(window, cx));
                         cx.notify();
-                    })),
+                    }),
+                ),
             )
     }
 }
@@ -275,15 +271,13 @@ impl Render for ComparisonList {
             })
             .collect::<Vec<_>>();
         v_flex().w_full().gap_2().children(rows).child(
-            Button::new("add-lookup-comparison")
-                .small()
-                .icon(IconName::Plus)
-                .label("Add comparison")
-                .on_click(cx.listener(|this, _, window, cx| {
+            super::collection_add_button("add-lookup-comparison", "Add comparison").on_click(
+                cx.listener(|this, _, window, cx| {
                     this.rows
                         .push(new_comparison_row(&default_comparison(), window, cx));
                     cx.notify();
-                })),
+                }),
+            ),
         )
     }
 }

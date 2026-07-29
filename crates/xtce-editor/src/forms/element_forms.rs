@@ -199,14 +199,14 @@ impl ElementForms {
         cx: &App,
     ) -> Option<Div> {
         match kind {
-            ElementKind::SpaceSystem => Some(self.space_system.render_name_editor()),
+            ElementKind::SpaceSystem => Some(self.space_system.render_name_editor(cx)),
             ElementKind::TelemetryParameter(index)
                 if matches!(
                     telemetry_parameter_set(system).and_then(|set| set.content.get(index)),
                     Some(xtce::ParameterSetTypeContent::Parameter(_))
                 ) =>
             {
-                Some(self.parameter.read(cx).render_name_editor())
+                Some(self.parameter.read(cx).render_name_editor(cx))
             }
             ElementKind::CommandParameter(index)
                 if matches!(
@@ -214,37 +214,39 @@ impl ElementForms {
                     Some(xtce::ParameterSetTypeContent::Parameter(_))
                 ) =>
             {
-                Some(self.parameter.read(cx).render_name_editor())
+                Some(self.parameter.read(cx).render_name_editor(cx))
             }
             ElementKind::TelemetryParameterType(_) | ElementKind::CommandParameterType(_) => {
-                Some(self.parameter_type.read(cx).render_name_editor())
+                Some(self.parameter_type.read(cx).render_name_editor(cx))
             }
-            ElementKind::ArgumentType(_) => Some(self.argument_type.read(cx).render_name_editor()),
+            ElementKind::ArgumentType(_) => {
+                Some(self.argument_type.read(cx).render_name_editor(cx))
+            }
             ElementKind::SequenceContainer(_) => {
-                Some(self.sequence_container.read(cx).render_name_editor())
+                Some(self.sequence_container.read(cx).render_name_editor(cx))
             }
             ElementKind::CommandContainer(_) => {
-                Some(self.sequence_container.read(cx).render_name_editor())
+                Some(self.sequence_container.read(cx).render_name_editor(cx))
             }
-            ElementKind::MetaCommand(_) => Some(self.meta_command.read(cx).render_name_editor()),
-            ElementKind::Message(_) => Some(self.message.read(cx).render_name_editor()),
+            ElementKind::MetaCommand(_) => Some(self.meta_command.read(cx).render_name_editor(cx)),
+            ElementKind::Message(_) => Some(self.message.read(cx).render_name_editor(cx)),
             ElementKind::TelemetryFixedFrameStream(_) | ElementKind::CommandFixedFrameStream(_) => {
-                Some(self.fixed_frame_stream.read(cx).render_name_editor())
+                Some(self.fixed_frame_stream.read(cx).render_name_editor(cx))
             }
             ElementKind::TelemetryVariableFrameStream(_)
             | ElementKind::CommandVariableFrameStream(_) => {
-                Some(self.variable_frame_stream.read(cx).render_name_editor())
+                Some(self.variable_frame_stream.read(cx).render_name_editor(cx))
             }
             ElementKind::TelemetryCustomStream(_) | ElementKind::CommandCustomStream(_) => {
-                Some(self.custom_stream.read(cx).render_name_editor())
+                Some(self.custom_stream.read(cx).render_name_editor(cx))
             }
             ElementKind::TelemetryCustomAlgorithm(_) | ElementKind::CommandCustomAlgorithm(_) => {
-                Some(self.custom_algorithm.read(cx).render_name_editor())
+                Some(self.custom_algorithm.read(cx).render_name_editor(cx))
             }
             ElementKind::TelemetryMathAlgorithm(_) | ElementKind::CommandMathAlgorithm(_) => {
-                Some(self.math_algorithm.read(cx).render_name_editor())
+                Some(self.math_algorithm.read(cx).render_name_editor(cx))
             }
-            ElementKind::Service(_) => Some(self.service.read(cx).render_name_editor()),
+            ElementKind::Service(_) => Some(self.service.read(cx).render_name_editor(cx)),
             _ => None,
         }
     }

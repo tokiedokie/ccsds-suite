@@ -120,14 +120,14 @@ impl Render for DimensionListForm {
                             ),
                     )
                     .child(
-                        Button::new("add-parameter-type-dimension")
-                            .small()
-                            .icon(IconName::Plus)
-                            .label("Add dimension")
-                            .on_click(cx.listener(|this, _, window, cx| {
-                                this.rows.push(dimension_row(None, window, cx));
-                                cx.notify();
-                            })),
+                        super::collection_add_button(
+                            "add-parameter-type-dimension",
+                            "Add dimension",
+                        )
+                        .on_click(cx.listener(|this, _, window, cx| {
+                            this.rows.push(dimension_row(None, window, cx));
+                            cx.notify();
+                        })),
                     ),
             )
             .children(self.rows.iter().enumerate().map(|(index, row)| {

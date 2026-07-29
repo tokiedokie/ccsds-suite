@@ -1,10 +1,9 @@
 use gpui::{
-    App, AppContext, Context, Div, Entity, ParentElement, Render, Styled, Subscription, Window,
-    div, px,
+    App, AppContext, Context, Div, Entity, ParentElement, Render, Styled, Subscription, Window, div,
 };
 use gpui_component::{
     ActiveTheme, StyledExt, h_flex,
-    input::{Input, InputEvent, InputState},
+    input::{InputEvent, InputState},
     v_flex,
 };
 
@@ -136,11 +135,8 @@ impl MathAlgorithmForm {
         value(&self.name_input, cx)
     }
 
-    pub(super) fn render_name_editor(&self) -> Div {
-        v_flex()
-            .w_full()
-            .max_w(px(520.))
-            .child(Input::new(&self.name_input))
+    pub(super) fn render_name_editor(&self, cx: &App) -> Div {
+        super::name_editor(&self.name_input, cx)
     }
 
     pub(super) fn apply_to(&self, algorithm: &mut xtce::AlgorithmSetTypeContent, cx: &App) {

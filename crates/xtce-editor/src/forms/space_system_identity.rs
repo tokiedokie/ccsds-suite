@@ -1,7 +1,7 @@
 use gpui::{App, AppContext, Context, Div, Entity, ParentElement, Styled, Subscription, Window};
 use gpui_component::{
     h_flex,
-    input::{Input, InputEvent, InputState},
+    input::{InputEvent, InputState},
     v_flex,
 };
 
@@ -73,11 +73,8 @@ impl SpaceSystemIdentityFields {
         system.base = optional_value(self.base_input.read(cx).value().to_string());
     }
 
-    pub(super) fn render_name_editor(&self) -> Div {
-        v_flex()
-            .w_full()
-            .max_w(gpui::px(520.))
-            .child(Input::new(&self.name_input))
+    pub(super) fn render_name_editor(&self, cx: &App) -> Div {
+        super::name_editor(&self.name_input, cx)
     }
 
     pub(super) fn name(&self, cx: &App) -> String {

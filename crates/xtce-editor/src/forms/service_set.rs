@@ -1,11 +1,9 @@
 use gpui::{
     App, AppContext, Context, Div, Entity, IntoElement, ParentElement, Render, Styled, Window, div,
-    prelude::FluentBuilder, px,
+    prelude::FluentBuilder,
 };
 use gpui_component::{
-    IconName, IndexPath, Sizable, StyledExt,
-    button::Button,
-    h_flex,
+    IndexPath, StyledExt, h_flex,
     input::{Input, InputState},
     select::SelectState,
     v_flex,
@@ -95,11 +93,8 @@ impl ServiceForm {
         value(&self.name, cx)
     }
 
-    pub(super) fn render_name_editor(&self) -> Div {
-        v_flex()
-            .w_full()
-            .max_w(px(520.))
-            .child(Input::new(&self.name))
+    pub(super) fn render_name_editor(&self, cx: &App) -> Div {
+        super::name_editor(&self.name, cx)
     }
 
     pub(super) fn apply_to(&self, service: &mut xtce::ServiceType, cx: &App) {
@@ -187,14 +182,16 @@ impl Render for ServiceForm {
                             .justify_between()
                             .child(div().text_sm().font_medium().child(references_title))
                             .child(
-                                Button::new("add-service-reference")
-                                    .small()
-                                    .icon(IconName::Plus)
-                                    .label(add_reference_label)
-                                    .on_click(cx.listener(|this, _, window, cx| {
+                                super::collection_add_button(
+                                    "add-service-reference",
+                                    add_reference_label,
+                                )
+                                .on_click(cx.listener(
+                                    |this, _, window, cx| {
                                         this.references.push(input("", window, cx));
                                         cx.notify();
-                                    })),
+                                    },
+                                )),
                             ),
                     )
                     .children(

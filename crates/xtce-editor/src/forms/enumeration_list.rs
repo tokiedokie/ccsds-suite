@@ -1,19 +1,21 @@
 use std::collections::{HashMap, VecDeque};
 
 use gpui::{
-    AnyElement, App, AppContext, Context, Entity, InteractiveElement, IntoElement, ListAlignment,
-    ListState, ParentElement, Render, StatefulInteractiveElement, Styled, Window, div, list, px,
+    AnyElement, App, AppContext, Context, Entity, IntoElement, ListAlignment, ListState,
+    ParentElement, Render, Styled, Window, div, list, px,
 };
 use gpui_component::{
-    ActiveTheme, Disableable, IconName, Sizable, StyledExt,
+    ActiveTheme, Disableable, IconName, Sizable, StyledExt, WindowExt,
     button::{Button, ButtonVariants},
     h_flex,
-    input::{Input, InputState},
+    input::InputState,
     v_flex,
 };
 
-const ROW_HEIGHT: f32 = 52.;
+const ROW_HEIGHT: f32 = 70.;
 const EDITOR_CACHE_SIZE: usize = 24;
+const VALUE_WIDTH: f32 = 140.;
+const ACTIONS_WIDTH: f32 = 132.;
 
 #[derive(Clone)]
 pub(super) struct EnumerationRowData {
@@ -354,17 +356,43 @@ impl EnumerationListForm {
     ) -> AnyElement {
         let editor = self.editor(index, window, cx);
         let count = self.rows.len();
+        let (value_field, label_field) = {
+            let row = editor.read(cx);
+            (
+                div()
+                    .w(px(VALUE_WIDTH))
+                    .flex_none()
+                    .child(super::required_input(&row.value_input, cx)),
+                div()
+                    .flex_1()
+                    .min_w_0()
+                    .child(super::required_input(&row.label_input, cx)),
+            )
+        };
         h_flex()
+            .w_full()
             .h(px(ROW_HEIGHT))
             .px_2()
             .gap_2()
             .border_b_1()
             .border_color(cx.theme().border)
+            .child(value_field)
+            .child(label_field)
             .child(
                 h_flex()
-                    .w(px(96.))
+                    .w(px(ACTIONS_WIDTH))
                     .flex_none()
                     .gap_1()
+                    .child(
+                        Button::new(format!("enumeration-options-{index}"))
+                            .xsmall()
+                            .ghost()
+                            .icon(IconName::Ellipsis)
+                            .tooltip("Enumeration options")
+                            .on_click(move |_, window, cx| {
+                                open_enumeration_options(editor.clone(), window, cx);
+                            }),
+                    )
                     .child(
                         Button::new(format!("move-enumeration-up-{index}"))
                             .xsmall()
@@ -398,7 +426,6 @@ impl EnumerationListForm {
                         })),
                     ),
             )
-            .child(editor)
             .into_any_element()
     }
 }
@@ -423,90 +450,71 @@ impl Render for EnumerationListForm {
                             ),
                     )
                     .child(
-                        Button::new("add-enumeration-value")
-                            .small()
-                            .icon(IconName::Plus)
-                            .label("Add value")
+                        super::collection_add_button("add-enumeration-value", "Add value")
                             .on_click(cx.listener(|this, _, _, cx| this.add_row(cx))),
                     ),
             )
             .child(
-                div()
-                    .id("enumeration-list-scroll-boundary")
-                    .w_full()
-                    .on_scroll_wheel(|_, _, cx| cx.stop_propagation())
+                super::list_table_frame(cx)
                     .child(
-                        div()
-                            .id("enumeration-list-horizontal-scroll")
-                            .w_full()
-                            .overflow_x_scroll()
+                        h_flex()
+                            .h(px(34.))
+                            .px_2()
+                            .gap_2()
+                            .bg(cx.theme().muted.opacity(0.5))
+                            .text_xs()
+                            .font_medium()
                             .child(
-                                v_flex()
-                                    .min_w(px(840.))
-                                    .rounded_md()
-                                    .border_1()
-                                    .border_color(cx.theme().border)
-                                    .child(
-                                        h_flex()
-                                            .h(px(34.))
-                                            .px_2()
-                                            .gap_2()
-                                            .bg(cx.theme().muted.opacity(0.5))
-                                            .text_xs()
-                                            .font_medium()
-                                            .child(div().w(px(96.)).child("Actions"))
-                                            .child(div().w(px(90.)).child("Value"))
-                                            .child(div().w(px(100.)).child("Max value"))
-                                            .child(div().w(px(180.)).child("Label"))
-                                            .child(
-                                                div().w(px(300.)).flex_none().child("Description"),
-                                            ),
-                                    )
-                                    .child(
-                                        list(
-                                            self.list_state.clone(),
-                                            cx.processor(EnumerationListForm::render_row),
-                                        )
-                                        .w_full()
-                                        .h(px((count.min(8) as f32 * ROW_HEIGHT).max(ROW_HEIGHT))),
-                                    ),
-                            ),
+                                div()
+                                    .w(px(VALUE_WIDTH))
+                                    .flex_none()
+                                    .child(super::required_label("Value", cx)),
+                            )
+                            .child(
+                                div()
+                                    .flex_1()
+                                    .min_w_0()
+                                    .child(super::required_label("Label", cx)),
+                            )
+                            .child(div().w(px(ACTIONS_WIDTH)).flex_none().child("Actions")),
+                    )
+                    .child(
+                        list(
+                            self.list_state.clone(),
+                            cx.processor(EnumerationListForm::render_row),
+                        )
+                        .w_full()
+                        .h(px((count.min(8) as f32 * ROW_HEIGHT).max(ROW_HEIGHT))),
                     ),
             )
     }
 }
 
-impl Render for EnumerationRowForm {
-    fn render(&mut self, _: &mut Window, _: &mut Context<Self>) -> impl IntoElement {
-        h_flex()
-            .flex_1()
-            .min_w_0()
-            .gap_2()
-            .child(
-                div()
-                    .w(px(90.))
-                    .flex_none()
-                    .child(Input::new(&self.value_input)),
-            )
-            .child(
-                div()
-                    .w(px(100.))
-                    .flex_none()
-                    .child(Input::new(&self.max_value_input)),
-            )
-            .child(
-                div()
-                    .w(px(180.))
-                    .flex_none()
-                    .child(Input::new(&self.label_input)),
-            )
-            .child(
-                div()
-                    .w(px(300.))
-                    .flex_none()
-                    .child(Input::new(&self.description_input)),
-            )
-    }
+fn open_enumeration_options(editor: Entity<EnumerationRowForm>, window: &mut Window, cx: &mut App) {
+    window.open_dialog(cx, move |dialog, _, _| {
+        let editor = editor.clone();
+        dialog
+            .title("Enumeration options")
+            .w(px(super::FORM_DIALOG_WIDTH))
+            .content(move |content, _, cx| {
+                let row = editor.read(cx);
+                content.child(
+                    super::form_dialog_content()
+                        .child(super::field(
+                            "Max value",
+                            "Optional",
+                            &row.max_value_input,
+                            cx,
+                        ))
+                        .child(super::field(
+                            "Description",
+                            "Optional",
+                            &row.description_input,
+                            cx,
+                        )),
+                )
+            })
+    });
 }
 
 fn rows_from_parameter_type(

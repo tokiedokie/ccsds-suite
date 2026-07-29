@@ -3,8 +3,7 @@ use gpui::{
     prelude::FluentBuilder,
 };
 use gpui_component::{
-    IconName, IndexPath, Sizable, StyledExt, button::Button, h_flex, input::InputState,
-    select::SelectState, v_flex,
+    IndexPath, StyledExt, h_flex, input::InputState, select::SelectState, v_flex,
 };
 use strum::{Display, EnumString, VariantArray};
 
@@ -226,10 +225,7 @@ impl Render for StreamRateList {
                     .justify_between()
                     .child(div().text_sm().font_medium().child("Per-stream rates"))
                     .child(
-                        Button::new("add-stream-rate")
-                            .small()
-                            .icon(IconName::Plus)
-                            .label("Add stream rate")
+                        super::collection_add_button("add-stream-rate", "Add stream rate")
                             .on_click(cx.listener(move |this, _, window, cx| {
                                 this.rows.push(new_stream_rate_row(
                                     RateValues::default(),

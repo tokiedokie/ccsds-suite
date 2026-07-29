@@ -1,18 +1,20 @@
 use std::collections::{HashMap, VecDeque};
 
 use gpui::{
-    AnyElement, App, AppContext, Context, Entity, InteractiveElement, IntoElement, ListAlignment,
-    ListState, ParentElement, Render, StatefulInteractiveElement, Styled, Window, div, list, px,
+    AnyElement, App, AppContext, Context, Entity, IntoElement, ListAlignment, ListState,
+    ParentElement, Render, Styled, Window, div, list, px,
 };
 use gpui_component::{
-    ActiveTheme, Disableable, IconName, Sizable, StyledExt,
+    ActiveTheme, Disableable, IconName, Sizable, StyledExt, WindowExt,
     button::{Button, ButtonVariants},
     h_flex,
-    input::{Input, InputState},
+    input::InputState,
     v_flex,
 };
 
-const ROW_HEIGHT: f32 = 52.;
+const ROW_HEIGHT: f32 = 70.;
+const NAME_WIDTH: f32 = 220.;
+const ACTIONS_WIDTH: f32 = 132.;
 
 #[derive(Clone)]
 pub(super) struct MemberRowData {
@@ -291,17 +293,43 @@ impl AggregateMemberListForm {
     ) -> AnyElement {
         let editor = self.editor(index, window, cx);
         let count = self.rows.len();
+        let (name_field, type_ref_field) = {
+            let row = editor.read(cx);
+            (
+                div()
+                    .w(px(NAME_WIDTH))
+                    .flex_none()
+                    .child(super::required_input(&row.name, cx)),
+                div()
+                    .flex_1()
+                    .min_w_0()
+                    .child(super::required_input(&row.type_ref, cx)),
+            )
+        };
         h_flex()
+            .w_full()
             .h(px(ROW_HEIGHT))
             .px_2()
             .gap_2()
             .border_b_1()
             .border_color(cx.theme().border)
+            .child(name_field)
+            .child(type_ref_field)
             .child(
                 h_flex()
-                    .w(px(96.))
+                    .w(px(ACTIONS_WIDTH))
                     .flex_none()
                     .gap_1()
+                    .child(
+                        Button::new(format!("aggregate-member-options-{index}"))
+                            .xsmall()
+                            .ghost()
+                            .icon(IconName::Ellipsis)
+                            .tooltip("Member options")
+                            .on_click(move |_, window, cx| {
+                                open_member_options(editor.clone(), window, cx);
+                            }),
+                    )
                     .child(
                         Button::new(format!("move-member-up-{index}"))
                             .xsmall()
@@ -333,7 +361,6 @@ impl AggregateMemberListForm {
                         .on_click(cx.listener(move |this, _, _, cx| this.remove(index, cx))),
                     ),
             )
-            .child(editor)
             .into_any_element()
     }
 }
@@ -361,82 +388,71 @@ impl Render for AggregateMemberListForm {
                             ),
                     )
                     .child(
-                        Button::new("add-aggregate-member")
-                            .small()
-                            .icon(IconName::Plus)
-                            .label("Add member")
+                        super::collection_add_button("add-aggregate-member", "Add member")
                             .on_click(cx.listener(|this, _, _, cx| this.add(cx))),
                     ),
             )
             .child(
-                div()
-                    .id("aggregate-member-scroll-boundary")
-                    .w_full()
-                    .on_scroll_wheel(|_, _, cx| cx.stop_propagation())
+                super::list_table_frame(cx)
                     .child(
-                        div()
-                            .id("aggregate-member-horizontal-scroll")
-                            .w_full()
-                            .overflow_x_scroll()
+                        h_flex()
+                            .h(px(34.))
+                            .px_2()
+                            .gap_2()
+                            .bg(cx.theme().muted.opacity(0.5))
+                            .text_xs()
+                            .font_medium()
                             .child(
-                                v_flex()
-                                    .min_w(px(900.))
-                                    .rounded_md()
-                                    .border_1()
-                                    .border_color(cx.theme().border)
-                                    .child(
-                                        h_flex()
-                                            .h(px(34.))
-                                            .px_2()
-                                            .gap_2()
-                                            .bg(cx.theme().muted.opacity(0.5))
-                                            .text_xs()
-                                            .font_medium()
-                                            .child(div().w(px(96.)).child("Actions"))
-                                            .child(div().w(px(180.)).child("Name"))
-                                            .child(div().w(px(220.)).child("Type reference"))
-                                            .child(div().w(px(160.)).child("Initial value"))
-                                            .child(div().w(px(220.)).child("Description")),
-                                    )
-                                    .child(
-                                        list(
-                                            self.list_state.clone(),
-                                            cx.processor(AggregateMemberListForm::render_row),
-                                        )
-                                        .w_full()
-                                        .h(px((count.min(8) as f32 * ROW_HEIGHT).max(ROW_HEIGHT))),
-                                    ),
-                            ),
+                                div()
+                                    .w(px(NAME_WIDTH))
+                                    .flex_none()
+                                    .child(super::required_label("Name", cx)),
+                            )
+                            .child(
+                                div()
+                                    .flex_1()
+                                    .min_w_0()
+                                    .child(super::required_label("Type reference", cx)),
+                            )
+                            .child(div().w(px(ACTIONS_WIDTH)).flex_none().child("Actions")),
+                    )
+                    .child(
+                        list(
+                            self.list_state.clone(),
+                            cx.processor(AggregateMemberListForm::render_row),
+                        )
+                        .w_full()
+                        .h(px((count.min(8) as f32 * ROW_HEIGHT).max(ROW_HEIGHT))),
                     ),
             )
     }
 }
 
-impl Render for MemberRowForm {
-    fn render(&mut self, _: &mut Window, _: &mut Context<Self>) -> impl IntoElement {
-        h_flex()
-            .flex_1()
-            .gap_2()
-            .child(div().w(px(180.)).flex_none().child(Input::new(&self.name)))
-            .child(
-                div()
-                    .w(px(220.))
-                    .flex_none()
-                    .child(Input::new(&self.type_ref)),
-            )
-            .child(
-                div()
-                    .w(px(160.))
-                    .flex_none()
-                    .child(Input::new(&self.initial_value)),
-            )
-            .child(
-                div()
-                    .w(px(220.))
-                    .flex_none()
-                    .child(Input::new(&self.description)),
-            )
-    }
+fn open_member_options(editor: Entity<MemberRowForm>, window: &mut Window, cx: &mut App) {
+    window.open_dialog(cx, move |dialog, _, _| {
+        let editor = editor.clone();
+        dialog
+            .title("Member options")
+            .w(px(super::FORM_DIALOG_WIDTH))
+            .content(move |content, _, cx| {
+                let row = editor.read(cx);
+                content.child(
+                    super::form_dialog_content()
+                        .child(super::field(
+                            "Initial value",
+                            "Optional",
+                            &row.initial_value,
+                            cx,
+                        ))
+                        .child(super::field(
+                            "Description",
+                            "Optional",
+                            &row.description,
+                            cx,
+                        )),
+                )
+            })
+    });
 }
 
 fn rows_from_type(

@@ -407,11 +407,8 @@ impl SequenceContainerForm {
         value(&self.name_input, cx)
     }
 
-    pub(super) fn render_name_editor(&self) -> Div {
-        v_flex()
-            .w_full()
-            .max_w(px(520.))
-            .child(Input::new(&self.name_input))
+    pub(super) fn render_name_editor(&self, cx: &App) -> Div {
+        super::name_editor(&self.name_input, cx)
     }
 
     pub(super) fn apply_to(&self, container: &mut xtce::ContainerSetTypeContent, cx: &App) {
@@ -854,19 +851,19 @@ impl Render for ComparisonListForm {
                             ),
                     )
                     .child(
-                        Button::new("add-restriction-comparison")
-                            .small()
-                            .icon(IconName::Plus)
-                            .label("Add comparison")
-                            .on_click(cx.listener(|this, _, window, cx| {
-                                this.rows.push(comparison_row(
-                                    ComparisonRowModel::default(),
-                                    this.context.clone(),
-                                    window,
-                                    cx,
-                                ));
-                                cx.notify();
-                            })),
+                        super::collection_add_button(
+                            "add-restriction-comparison",
+                            "Add comparison",
+                        )
+                        .on_click(cx.listener(|this, _, window, cx| {
+                            this.rows.push(comparison_row(
+                                ComparisonRowModel::default(),
+                                this.context.clone(),
+                                window,
+                                cx,
+                            ));
+                            cx.notify();
+                        })),
                     ),
             )
             .child(
@@ -1213,10 +1210,7 @@ impl Render for TelemetryEntryListView {
                             ),
                     )
                     .child(
-                        Button::new("add-telemetry-container-entry")
-                            .small()
-                            .icon(IconName::Plus)
-                            .label("Add entry")
+                        super::collection_add_button("add-telemetry-container-entry", "Add entry")
                             .on_click(cx.listener(|this, _, _, cx| {
                                 let index = this.rows.len();
                                 this.rows

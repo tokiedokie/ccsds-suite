@@ -10,7 +10,7 @@ use gpui_component::{
     button::{Button, ButtonVariants},
     collapsible::Collapsible,
     h_flex,
-    input::{CompletionProvider, Input, InputEvent, InputState, Rope, RopeExt},
+    input::{CompletionProvider, InputEvent, InputState, Rope, RopeExt},
     select::{SelectEvent, SelectState},
     v_flex,
 };
@@ -420,11 +420,8 @@ pub(super) struct ParameterForm {
 }
 
 impl ParameterForm {
-    pub(super) fn render_name_editor(&self) -> Div {
-        v_flex()
-            .w_full()
-            .max_w(gpui::px(520.))
-            .child(Input::new(&self.name_input))
+    pub(super) fn render_name_editor(&self, cx: &App) -> Div {
+        super::name_editor(&self.name_input, cx)
     }
 
     pub(super) fn name(&self, cx: &App) -> String {

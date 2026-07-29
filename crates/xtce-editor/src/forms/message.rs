@@ -3,9 +3,7 @@ use gpui::{
     StatefulInteractiveElement, Styled, Subscription, Window, div, prelude::FluentBuilder, px,
 };
 use gpui_component::{
-    ActiveTheme, Disableable, IconName, IndexPath, Sizable, StyledExt,
-    button::Button,
-    h_flex,
+    ActiveTheme, Disableable, IndexPath, StyledExt, h_flex,
     input::{Input, InputEvent, InputState},
     select::{Select, SelectEvent, SelectState},
     v_flex,
@@ -137,11 +135,8 @@ impl MessageForm {
         value(&self.name_input, cx)
     }
 
-    pub(super) fn render_name_editor(&self) -> Div {
-        v_flex()
-            .w_full()
-            .max_w(px(520.))
-            .child(Input::new(&self.name_input))
+    pub(super) fn render_name_editor(&self, cx: &App) -> Div {
+        super::name_editor(&self.name_input, cx)
     }
 
     pub(super) fn apply_to(&self, message: &mut xtce::MessageType, cx: &App) {
@@ -378,10 +373,10 @@ impl Render for MessageCriteriaForm {
                             )
                             .when(is_list, |header| {
                                 header.child(
-                                    Button::new("add-message-comparison")
-                                        .small()
-                                        .icon(IconName::Plus)
-                                        .label("Add comparison")
+                                    super::collection_add_button(
+                                        "add-message-comparison",
+                                        "Add comparison",
+                                    )
                                         .on_click(cx.listener(|this, _, window, cx| {
                                             this.rows.push(comparison_row(
                                                 &default_comparison(),

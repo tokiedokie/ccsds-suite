@@ -3,9 +3,7 @@ use gpui::{
     Window, div, prelude::FluentBuilder, px,
 };
 use gpui_component::{
-    ActiveTheme, Disableable, IconName, IndexPath, Sizable, StyledExt,
-    button::Button,
-    h_flex,
+    ActiveTheme, Disableable, IndexPath, StyledExt, h_flex,
     input::{Input, InputEvent, InputState},
     select::{SelectEvent, SelectState},
     v_flex,
@@ -562,31 +560,31 @@ fn render_rows(
             ))
         })
         .child(
-            Button::new("add-calibrator-row")
-                .small()
-                .icon(IconName::Plus)
-                .label(if kind == CalibratorKind::Polynomial {
+            super::collection_add_button(
+                "add-calibrator-row",
+                if kind == CalibratorKind::Polynomial {
                     "Add term"
                 } else {
                     "Add point"
-                })
-                .on_click(cx.listener(|this, _, window, cx| {
-                    let data = if this.kind == CalibratorKind::Polynomial {
-                        CalibratorRowData {
-                            first: "0".to_owned(),
-                            second: this.rows.len().to_string(),
-                            third: String::new(),
-                        }
-                    } else {
-                        CalibratorRowData {
-                            first: this.rows.len().to_string(),
-                            second: this.rows.len().to_string(),
-                            third: "1".to_owned(),
-                        }
-                    };
-                    this.rows.push(row_entity(&data, window, cx));
-                    cx.notify();
-                })),
+                },
+            )
+            .on_click(cx.listener(|this, _, window, cx| {
+                let data = if this.kind == CalibratorKind::Polynomial {
+                    CalibratorRowData {
+                        first: "0".to_owned(),
+                        second: this.rows.len().to_string(),
+                        third: String::new(),
+                    }
+                } else {
+                    CalibratorRowData {
+                        first: this.rows.len().to_string(),
+                        second: this.rows.len().to_string(),
+                        third: "1".to_owned(),
+                    }
+                };
+                this.rows.push(row_entity(&data, window, cx));
+                cx.notify();
+            })),
         )
 }
 

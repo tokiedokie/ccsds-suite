@@ -47,7 +47,7 @@ use std::rc::Rc;
 
 use gpui::{
     App, Div, ElementId, Entity, InteractiveElement, IntoElement, ParentElement, SharedString,
-    StatefulInteractiveElement, Styled, WeakEntity, div, prelude::FluentBuilder, uniform_list,
+    StatefulInteractiveElement, Styled, WeakEntity, div, prelude::FluentBuilder, px, uniform_list,
 };
 use gpui_component::{
     ActiveTheme, IconName, Sizable, StyledExt,
@@ -84,20 +84,71 @@ pub(super) fn field(
     label: &'static str,
     hint: &'static str,
     input: &Entity<InputState>,
-    _cx: &App,
+    cx: &App,
 ) -> Div {
     let (required, description) = field_requirement(hint);
-    v_flex().w_full().child(
-        v_form().child(
-            form_field()
-                .label(label)
-                .required(required)
-                .when(!description.is_empty(), |field| {
-                    field.description(description)
-                })
-                .child(Input::new(input)),
-        ),
-    )
+    let missing = required_value_missing(required, &input.read(cx).value());
+    v_flex()
+        .w_full()
+        .child(
+            v_form().child(
+                form_field()
+                    .label(label)
+                    .required(required)
+                    .when(!description.is_empty(), |field| {
+                        field.description(description)
+                    })
+                    .child(Input::new(input)),
+            ),
+        )
+        .when(missing, |field| {
+            field.child(
+                div()
+                    .text_xs()
+                    .text_color(cx.theme().danger)
+                    .child("Required field is empty."),
+            )
+        })
+}
+
+pub(super) fn name_editor(input: &Entity<InputState>, cx: &App) -> Div {
+    let missing = required_value_missing(true, &input.read(cx).value());
+    v_flex()
+        .w_full()
+        .max_w(px(520.))
+        .gap_1()
+        .child(Input::new(input))
+        .when(missing, |editor| {
+            editor.child(
+                div()
+                    .text_xs()
+                    .text_color(cx.theme().danger)
+                    .child("Name is required."),
+            )
+        })
+}
+
+pub(super) fn required_input(input: &Entity<InputState>, cx: &App) -> Div {
+    let missing = required_value_missing(true, &input.read(cx).value());
+    v_flex()
+        .w_full()
+        .gap_1()
+        .child(Input::new(input))
+        .when(missing, |field| {
+            field.child(
+                div()
+                    .text_xs()
+                    .text_color(cx.theme().danger)
+                    .child("Required"),
+            )
+        })
+}
+
+pub(super) fn required_label(label: &'static str, cx: &App) -> Div {
+    gpui_component::h_flex()
+        .gap_1()
+        .child(label)
+        .child(div().text_color(cx.theme().danger).child("*"))
 }
 
 pub(super) fn select_field<T>(
@@ -130,7 +181,14 @@ pub(super) fn section_remove_button(id: impl Into<ElementId>) -> Button {
 }
 
 pub(super) fn section_add_button(id: impl Into<ElementId>) -> Button {
-    Button::new(id).small().icon(IconName::Plus).label("Add")
+    collection_add_button(id, "Add")
+}
+
+pub(super) fn collection_add_button(
+    id: impl Into<ElementId>,
+    label: impl Into<SharedString>,
+) -> Button {
+    Button::new(id).small().icon(IconName::Plus).label(label)
 }
 
 pub(super) fn count_label(count: usize, singular: &str, plural: &str) -> String {
@@ -178,6 +236,14 @@ pub(super) fn detail_list_card(cx: &App) -> Div {
         .border_color(cx.theme().border)
 }
 
+pub(super) fn list_table_frame(cx: &App) -> Div {
+    v_flex()
+        .w_full()
+        .rounded_md()
+        .border_1()
+        .border_color(cx.theme().border)
+}
+
 pub(super) fn compact_list_row(cx: &App) -> Div {
     gpui_component::h_flex()
         .w_full()
@@ -215,6 +281,10 @@ fn field_requirement(hint: &'static str) -> (bool, &'static str) {
             character == ',' || character == ';' || character.is_whitespace()
         }),
     )
+}
+
+fn required_value_missing(required: bool, value: &str) -> bool {
+    required && value.trim().is_empty()
 }
 
 pub(super) fn optional_value(value: String) -> Option<String> {
@@ -320,6 +390,29 @@ pub(super) fn collection_summary(
                 )
                 .into_any_element()
         })
+}
+
+#[cfg(test)]
+mod validation_tests {
+    use super::{field_requirement, required_value_missing};
+
+    #[test]
+    fn required_hints_are_split_from_their_description() {
+        assert_eq!(field_requirement("Required"), (true, ""));
+        assert_eq!(
+            field_requirement("Required; absolute path"),
+            (true, "absolute path")
+        );
+        assert_eq!(field_requirement("Optional"), (false, "Optional"));
+    }
+
+    #[test]
+    fn required_values_reject_empty_or_whitespace_only_text() {
+        assert!(required_value_missing(true, ""));
+        assert!(required_value_missing(true, "   "));
+        assert!(!required_value_missing(true, "value"));
+        assert!(!required_value_missing(false, ""));
+    }
 }
 
 #[cfg(test)]

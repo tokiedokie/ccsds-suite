@@ -2,7 +2,7 @@ use gpui::{
     App, AppContext, Context, Entity, IntoElement, ParentElement, Render, Styled, Window, div,
     prelude::FluentBuilder,
 };
-use gpui_component::{IconName, Sizable, StyledExt, button::Button, h_flex, v_flex};
+use gpui_component::{StyledExt, h_flex, v_flex};
 
 use super::{default_calibrator::DefaultCalibratorForm, message::MessageCriteriaForm};
 
@@ -99,14 +99,14 @@ impl Render for ContextCalibratorListForm {
                     .justify_between()
                     .child(div().text_sm().font_medium().child("Context calibrators"))
                     .child(
-                        Button::new("add-context-calibrator")
-                            .small()
-                            .icon(IconName::Plus)
-                            .label("Add context calibrator")
-                            .on_click(cx.listener(|this, _, window, cx| {
-                                this.rows.push(new_row(None, window, cx));
-                                cx.notify();
-                            })),
+                        super::collection_add_button(
+                            "add-context-calibrator",
+                            "Add context calibrator",
+                        )
+                        .on_click(cx.listener(|this, _, window, cx| {
+                            this.rows.push(new_row(None, window, cx));
+                            cx.notify();
+                        })),
                     ),
             )
             .when(self.rows.is_empty(), |form| {

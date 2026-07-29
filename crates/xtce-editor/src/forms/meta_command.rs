@@ -730,11 +730,8 @@ impl MetaCommandForm {
         value(&self.name_or_ref_input, cx)
     }
 
-    pub(super) fn render_name_editor(&self) -> Div {
-        v_flex()
-            .w_full()
-            .max_w(gpui::px(520.))
-            .child(Input::new(&self.name_or_ref_input))
+    pub(super) fn render_name_editor(&self, cx: &App) -> Div {
+        super::name_editor(&self.name_or_ref_input, cx)
     }
 
     pub(super) fn apply_to(&self, command: &mut xtce::MetaCommandSetTypeContent, cx: &App) {
@@ -1682,10 +1679,10 @@ impl Render for BaseAssignmentListView {
                             ),
                     )
                     .child(
-                        Button::new("add-base-argument-assignment")
-                            .small()
-                            .icon(IconName::Plus)
-                            .label("Add assignment")
+                        super::collection_add_button(
+                            "add-base-argument-assignment",
+                            "Add assignment",
+                        )
                             .on_click(cx.listener(|this, _, _, cx| {
                                 let index = this.rows.len();
                                 this.rows.push(BaseAssignmentData::default());
@@ -1871,14 +1868,16 @@ impl Render for ArgumentListView {
                                     })),
                             )
                             .child(
-                                Button::new("add-command-argument")
-                                    .small()
-                                    .icon(IconName::Plus)
-                                    .label("Add argument")
-                                    .on_click(cx.listener(|this, _, _, cx| {
+                                super::collection_add_button(
+                                    "add-command-argument",
+                                    "Add argument",
+                                )
+                                .on_click(cx.listener(
+                                    |this, _, _, cx| {
                                         this.rows.push(CommandArgumentData::default());
                                         cx.notify();
-                                    })),
+                                    },
+                                )),
                             ),
                     ),
             )
@@ -2304,10 +2303,7 @@ impl Render for EntryListView {
                             .child(super::count_label(row_count, "entry", "entries")),
                     )
                     .child(
-                        Button::new("add-command-container-entry")
-                            .small()
-                            .icon(IconName::Plus)
-                            .label("Add entry")
+                        super::collection_add_button("add-command-container-entry", "Add entry")
                             .on_click(cx.listener(|this, _, _, cx| {
                                 this.rows.push(EditableContainerEntry::ArgumentRef {
                                     reference: String::new(),
@@ -7056,36 +7052,35 @@ impl Render for ParameterToSetListForm {
                             ),
                     )
                     .child(
-                        Button::new("add-parameter-to-set")
-                            .small()
-                            .icon(IconName::Plus)
-                            .label("Add parameter to set")
-                            .on_click(cx.listener(|this, _, window, cx| {
-                                let parameter = input("", false, window, cx);
-                                let value_input = input("", false, window, cx);
-                                let content_kind = select(
-                                    ParameterToSetContentChoice::VARIANTS,
-                                    ParameterToSetContentChoice::NewValue,
-                                    window,
-                                    cx,
-                                );
-                                let derivation =
-                                    RpnOperationForm::new_argument(Vec::new(), window, cx);
-                                let trigger = select(
-                                    VerifierStageChoice::VARIANTS,
-                                    VerifierStageChoice::Complete,
-                                    window,
-                                    cx,
-                                );
-                                this.rows.push(cx.new(|_| ParameterToSetRowForm {
-                                    parameter,
-                                    value: value_input,
-                                    content_kind,
-                                    derivation,
-                                    trigger,
-                                }));
-                                cx.notify();
-                            })),
+                        super::collection_add_button(
+                            "add-parameter-to-set",
+                            "Add parameter to set",
+                        )
+                        .on_click(cx.listener(|this, _, window, cx| {
+                            let parameter = input("", false, window, cx);
+                            let value_input = input("", false, window, cx);
+                            let content_kind = select(
+                                ParameterToSetContentChoice::VARIANTS,
+                                ParameterToSetContentChoice::NewValue,
+                                window,
+                                cx,
+                            );
+                            let derivation = RpnOperationForm::new_argument(Vec::new(), window, cx);
+                            let trigger = select(
+                                VerifierStageChoice::VARIANTS,
+                                VerifierStageChoice::Complete,
+                                window,
+                                cx,
+                            );
+                            this.rows.push(cx.new(|_| ParameterToSetRowForm {
+                                parameter,
+                                value: value_input,
+                                content_kind,
+                                derivation,
+                                trigger,
+                            }));
+                            cx.notify();
+                        })),
                     ),
             )
             .when(self.rows.is_empty(), |form| {
@@ -7390,27 +7385,27 @@ impl Render for ParametersToSuspendAlarmsOnSetForm {
                             ),
                     )
                     .child(
-                        Button::new("add-parameter-to-suspend-alarm")
-                            .small()
-                            .icon(IconName::Plus)
-                            .label("Add alarm suspension")
-                            .on_click(cx.listener(|this, _, window, cx| {
-                                let parameter = input("", false, window, cx);
-                                let suspense_time = input("", false, window, cx);
-                                let trigger = select(
-                                    VerifierStageChoice::VARIANTS,
-                                    VerifierStageChoice::Release,
-                                    window,
-                                    cx,
-                                );
-                                this.rows
-                                    .push(cx.new(|_| ParameterToSuspendAlarmsOnRowForm {
-                                        parameter,
-                                        suspense_time,
-                                        trigger,
-                                    }));
-                                cx.notify();
-                            })),
+                        super::collection_add_button(
+                            "add-parameter-to-suspend-alarm",
+                            "Add alarm suspension",
+                        )
+                        .on_click(cx.listener(|this, _, window, cx| {
+                            let parameter = input("", false, window, cx);
+                            let suspense_time = input("", false, window, cx);
+                            let trigger = select(
+                                VerifierStageChoice::VARIANTS,
+                                VerifierStageChoice::Release,
+                                window,
+                                cx,
+                            );
+                            this.rows
+                                .push(cx.new(|_| ParameterToSuspendAlarmsOnRowForm {
+                                    parameter,
+                                    suspense_time,
+                                    trigger,
+                                }));
+                            cx.notify();
+                        })),
                     ),
             )
             .when(self.rows.is_empty(), |form| {
@@ -7507,14 +7502,12 @@ impl Render for VerifierListForm {
                             ),
                     )
                     .child(
-                        Button::new("add-verifier")
-                            .small()
-                            .icon(IconName::Plus)
-                            .label("Add verifier")
-                            .on_click(cx.listener(|this, _, window, cx| {
+                        super::collection_add_button("add-verifier", "Add verifier").on_click(
+                            cx.listener(|this, _, window, cx| {
                                 this.rows.push(default_verifier_entity(window, cx));
                                 cx.notify();
-                            })),
+                            }),
+                        ),
                     ),
             )
             .when(self.rows.is_empty(), |form| {
@@ -8059,14 +8052,14 @@ impl Render for TransmissionConstraintListForm {
                             ),
                     )
                     .child(
-                        Button::new("add-transmission-constraint")
-                            .small()
-                            .icon(IconName::Plus)
-                            .label("Add constraint")
-                            .on_click(cx.listener(|this, _, window, cx| {
-                                this.rows.push(constraint_entity(None, window, cx));
-                                cx.notify();
-                            })),
+                        super::collection_add_button(
+                            "add-transmission-constraint",
+                            "Add constraint",
+                        )
+                        .on_click(cx.listener(|this, _, window, cx| {
+                            this.rows.push(constraint_entity(None, window, cx));
+                            cx.notify();
+                        })),
                     ),
             )
             .when(self.rows.is_empty(), |form| {
