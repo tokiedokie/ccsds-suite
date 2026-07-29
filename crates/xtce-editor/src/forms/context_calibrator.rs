@@ -1,7 +1,7 @@
 use gpui::{
     App, AppContext, Context, Entity, IntoElement, ParentElement, Render, Styled, Window, div,
 };
-use gpui_component::{ActiveTheme, IconName, Sizable, StyledExt, button::Button, h_flex, v_flex};
+use gpui_component::{IconName, Sizable, StyledExt, button::Button, h_flex, v_flex};
 
 use super::{default_calibrator::DefaultCalibratorForm, message::MessageCriteriaForm};
 
@@ -61,13 +61,7 @@ impl Render for ContextCalibratorListForm {
             .iter()
             .enumerate()
             .map(|(index, row)| {
-                v_flex()
-                    .w_full()
-                    .p_3()
-                    .gap_4()
-                    .rounded_md()
-                    .border_1()
-                    .border_color(cx.theme().border)
+                super::detail_list_card(cx)
                     .child(
                         h_flex()
                             .justify_between()

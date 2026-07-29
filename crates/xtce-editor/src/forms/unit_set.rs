@@ -108,14 +108,8 @@ impl Render for UnitSetForm {
             )
             .children(self.rows.iter().enumerate().map(|(index, row)| {
                 let row_read = row.read(cx);
-                h_flex()
-                    .w_full()
-                    .p_3()
-                    .gap_3()
+                super::compact_list_row(cx)
                     .items_start()
-                    .rounded_md()
-                    .border_1()
-                    .border_color(cx.theme().border)
                     .child(
                         div()
                             .flex_1()

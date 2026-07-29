@@ -123,13 +123,7 @@ impl Render for AliasRowsForm {
             )
             .children(self.rows.iter().enumerate().map(|(index, row)| {
                 let row_read = row.read(cx);
-                v_flex()
-                    .w_full()
-                    .gap_3()
-                    .p_3()
-                    .rounded_md()
-                    .border_1()
-                    .border_color(cx.theme().border)
+                super::detail_list_card(cx)
                     .child(
                         h_flex()
                             .justify_between()

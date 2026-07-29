@@ -7086,14 +7086,8 @@ impl Render for ParameterToSetListForm {
             )
             .children(self.rows.iter().enumerate().map(|(index, row)| {
                 let row_read = row.read(cx);
-                h_flex()
-                    .w_full()
-                    .p_3()
-                    .gap_3()
+                super::compact_list_row(cx)
                     .items_end()
-                    .rounded_md()
-                    .border_1()
-                    .border_color(cx.theme().border)
                     .child(
                         div()
                             .flex_1()
@@ -7411,14 +7405,8 @@ impl Render for ParametersToSuspendAlarmsOnSetForm {
             )
             .children(self.rows.iter().enumerate().map(|(index, row)| {
                 let row_read = row.read(cx);
-                h_flex()
-                    .w_full()
-                    .p_3()
-                    .gap_3()
+                super::compact_list_row(cx)
                     .items_end()
-                    .rounded_md()
-                    .border_1()
-                    .border_color(cx.theme().border)
                     .child(
                         div()
                             .flex_1()
@@ -7524,33 +7512,18 @@ impl Render for VerifierListForm {
                 );
                 let window_kind =
                     selected_value(&row_read.window_kind, VerifierWindowChoice::Fixed, cx);
-                v_flex()
-                    .w_full()
-                    .p_3()
-                    .gap_4()
-                    .rounded_md()
-                    .border_1()
-                    .border_color(cx.theme().border)
+                super::detail_list_card(cx)
                     .child(
                         h_flex()
-                            .w_full()
-                            .gap_3()
-                            .items_end()
-                            .child(div().w(px(180.)).child(select_field(
-                                "Stage",
-                                "Required",
-                                &row_read.stage,
-                                cx,
-                            )))
-                            .child(div().flex_1().child(field(
-                                "Name (optional)",
-                                "",
-                                &row_read.name,
-                                cx,
-                            )))
+                            .justify_between()
+                            .child(
+                                div()
+                                    .text_sm()
+                                    .font_medium()
+                                    .child(format!("Verifier {}", index + 1)),
+                            )
                             .child(
                                 h_flex()
-                                    .mb(px(6.))
                                     .gap_1()
                                     .child(
                                         Button::new(format!("verifier-options-{index}"))
@@ -7578,6 +7551,24 @@ impl Render for VerifierListForm {
                                         ),
                                     ),
                             ),
+                    )
+                    .child(
+                        h_flex()
+                            .w_full()
+                            .gap_3()
+                            .items_start()
+                            .child(div().w(px(180.)).child(select_field(
+                                "Stage",
+                                "Required",
+                                &row_read.stage,
+                                cx,
+                            )))
+                            .child(div().flex_1().child(field(
+                                "Name (optional)",
+                                "",
+                                &row_read.name,
+                                cx,
+                            ))),
                     )
                     .child(field(
                         "Short description",
@@ -8066,17 +8057,33 @@ impl Render for TransmissionConstraintListForm {
                     TransmissionConstraintConditionChoice::MatchCriteria,
                     cx,
                 );
-                v_flex()
-                    .w_full()
-                    .p_3()
-                    .gap_3()
-                    .rounded_md()
-                    .border_1()
-                    .border_color(cx.theme().border)
+                super::detail_list_card(cx)
+                    .child(
+                        h_flex()
+                            .justify_between()
+                            .child(
+                                div()
+                                    .text_sm()
+                                    .font_medium()
+                                    .child(format!("Constraint {}", index + 1)),
+                            )
+                            .child(
+                                super::row_remove_button(
+                                    format!("remove-transmission-constraint-{index}"),
+                                    "Remove transmission constraint",
+                                )
+                                .on_click(cx.listener(
+                                    move |this, _, _, cx| {
+                                        this.rows.remove(index);
+                                        cx.notify();
+                                    },
+                                )),
+                            ),
+                    )
                     .child(
                         h_flex()
                             .gap_3()
-                            .items_end()
+                            .items_start()
                             .child(div().flex_1().child(select_field(
                                 "Condition type",
                                 "Required",
@@ -8094,21 +8101,7 @@ impl Render for TransmissionConstraintListForm {
                                 "Required",
                                 &row_read.suspendable,
                                 cx,
-                            )))
-                            .child(
-                                div().mb(px(6.)).child(
-                                    super::row_remove_button(
-                                        format!("remove-transmission-constraint-{index}"),
-                                        "Remove transmission constraint",
-                                    )
-                                    .on_click(cx.listener(
-                                        move |this, _, _, cx| {
-                                            this.rows.remove(index);
-                                            cx.notify();
-                                        },
-                                    )),
-                                ),
-                            ),
+                            ))),
                     )
                     .when(
                         condition_kind == TransmissionConstraintConditionChoice::MatchCriteria,

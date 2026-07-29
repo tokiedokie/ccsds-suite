@@ -182,20 +182,22 @@ impl Render for ServiceForm {
                             .iter()
                             .enumerate()
                             .map(|(index, reference)| {
-                                h_flex().gap_2().child(Input::new(reference)).child(
-                                    super::row_remove_button(
-                                        format!("remove-service-reference-{index}"),
-                                        "Remove reference",
+                                super::compact_list_row(cx)
+                                    .child(Input::new(reference))
+                                    .child(
+                                        super::row_remove_button(
+                                            format!("remove-service-reference-{index}"),
+                                            "Remove reference",
+                                        )
+                                        .on_click(
+                                            cx.listener(move |this, _, _, cx| {
+                                                if index < this.references.len() {
+                                                    this.references.remove(index);
+                                                    cx.notify();
+                                                }
+                                            }),
+                                        ),
                                     )
-                                    .on_click(cx.listener(
-                                        move |this, _, _, cx| {
-                                            if index < this.references.len() {
-                                                this.references.remove(index);
-                                                cx.notify();
-                                            }
-                                        },
-                                    )),
-                                )
                             }),
                     )
                     .when(reference_count == 0, |list| {

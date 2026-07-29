@@ -3,7 +3,7 @@ use gpui::{
     prelude::FluentBuilder,
 };
 use gpui_component::{
-    ActiveTheme, Disableable, IconName, IndexPath, Sizable, StyledExt,
+    Disableable, IconName, IndexPath, Sizable, StyledExt,
     button::Button,
     h_flex,
     input::InputState,
@@ -130,13 +130,7 @@ impl Render for DiscreteLookupListForm {
             .iter()
             .enumerate()
             .map(|(index, row)| {
-                v_flex()
-                    .w_full()
-                    .p_3()
-                    .gap_3()
-                    .rounded_md()
-                    .border_1()
-                    .border_color(cx.theme().border)
+                super::detail_list_card(cx)
                     .child(
                         h_flex()
                             .justify_between()

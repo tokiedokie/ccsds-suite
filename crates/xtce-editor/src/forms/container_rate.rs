@@ -203,9 +203,7 @@ impl Render for StreamRateList {
             .iter()
             .enumerate()
             .map(|(index, row)| {
-                h_flex()
-                    .w_full()
-                    .gap_2()
+                super::compact_list_row(cx)
                     .items_end()
                     .child(row.clone())
                     .child(

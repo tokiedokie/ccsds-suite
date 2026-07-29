@@ -85,13 +85,7 @@ impl Render for ContextSignificanceListForm {
             .iter()
             .enumerate()
             .map(|(index, row)| {
-                v_flex()
-                    .w_full()
-                    .p_3()
-                    .gap_4()
-                    .rounded_md()
-                    .border_1()
-                    .border_color(cx.theme().border)
+                super::detail_list_card(cx)
                     .child(
                         h_flex()
                             .justify_between()

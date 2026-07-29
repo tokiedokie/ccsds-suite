@@ -140,6 +140,26 @@ pub(super) fn row_remove_button(
         .tooltip(tooltip)
 }
 
+pub(super) fn detail_list_card(cx: &App) -> Div {
+    v_flex()
+        .w_full()
+        .p_3()
+        .gap_3()
+        .rounded_md()
+        .border_1()
+        .border_color(cx.theme().border)
+}
+
+pub(super) fn compact_list_row(cx: &App) -> Div {
+    gpui_component::h_flex()
+        .w_full()
+        .p_2()
+        .gap_2()
+        .rounded_md()
+        .border_1()
+        .border_color(cx.theme().border)
+}
+
 fn field_requirement(hint: &'static str) -> (bool, &'static str) {
     let Some(suffix) = hint.strip_prefix("Required") else {
         return (false, hint);
