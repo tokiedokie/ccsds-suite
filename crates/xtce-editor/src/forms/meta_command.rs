@@ -1724,6 +1724,12 @@ impl Render for BaseAssignmentListView {
                         )
                     }),
             )
+            .when(row_count == 0, |form| {
+                form.child(super::empty_list_state(
+                    "No base argument assignments defined.",
+                    cx,
+                ))
+            })
     }
 }
 
@@ -1934,6 +1940,9 @@ impl Render for ArgumentListView {
                             ),
                     ),
             )
+            .when(row_count == 0, |form| {
+                form.child(super::empty_list_state("No arguments defined.", cx))
+            })
     }
 }
 
@@ -2279,7 +2288,7 @@ impl Render for EntryListView {
                                             cx.processor(EntryListView::render_list_item),
                                         )
                                         .w_full()
-                                        .h(px(352.)),
+                                        .h(px(if row_count == 0 { 0. } else { 352. })),
                                     ),
                             ),
                     ),
@@ -2313,6 +2322,9 @@ impl Render for EntryListView {
                     ),
             )
             .child(entry_table)
+            .when(row_count == 0, |form| {
+                form.child(super::empty_list_state("No entries defined.", cx))
+            })
             .child(
                 Collapsible::new()
                     .open(self.packet_layout_open)
@@ -7086,6 +7098,9 @@ impl Render for ParameterToSetListForm {
                             })),
                     ),
             )
+            .when(self.rows.is_empty(), |form| {
+                form.child(super::empty_list_state("No parameters to set defined.", cx))
+            })
             .children(self.rows.iter().enumerate().map(|(index, row)| {
                 let row_read = row.read(cx);
                 super::compact_list_row(cx)
@@ -7409,6 +7424,9 @@ impl Render for ParametersToSuspendAlarmsOnSetForm {
                             })),
                     ),
             )
+            .when(self.rows.is_empty(), |form| {
+                form.child(super::empty_list_state("No alarm suspensions defined.", cx))
+            })
             .children(self.rows.iter().enumerate().map(|(index, row)| {
                 let row_read = row.read(cx);
                 super::compact_list_row(cx)
@@ -7513,6 +7531,9 @@ impl Render for VerifierListForm {
                             })),
                     ),
             )
+            .when(self.rows.is_empty(), |form| {
+                form.child(super::empty_list_state("No command verifiers defined.", cx))
+            })
             .children(self.rows.iter().enumerate().map(|(index, row)| {
                 let row_read = row.read(cx);
                 let condition_kind = selected_value(
@@ -8064,6 +8085,12 @@ impl Render for TransmissionConstraintListForm {
                             })),
                     ),
             )
+            .when(self.rows.is_empty(), |form| {
+                form.child(super::empty_list_state(
+                    "No transmission constraints defined.",
+                    cx,
+                ))
+            })
             .children(self.rows.iter().enumerate().map(|(index, row)| {
                 let row_read = row.read(cx);
                 let condition_kind = selected_value(

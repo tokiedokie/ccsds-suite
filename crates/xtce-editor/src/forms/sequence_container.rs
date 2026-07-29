@@ -923,12 +923,10 @@ impl Render for ComparisonListForm {
                     ),
             )
             .when(count == 0, |form| {
-                form.child(
-                    div()
-                        .text_xs()
-                        .text_color(cx.theme().muted_foreground)
-                        .child("No restriction comparison is defined."),
-                )
+                form.child(super::empty_list_state(
+                    "No restriction comparisons defined.",
+                    cx,
+                ))
             })
     }
 }
@@ -1264,11 +1262,14 @@ impl Render for TelemetryEntryListView {
                                             cx.processor(TelemetryEntryListView::render_list_item),
                                         )
                                         .w_full()
-                                        .h(px(352.)),
+                                        .h(px(if row_count == 0 { 0. } else { 352. })),
                                     ),
                             ),
                     ),
             )
+            .when(row_count == 0, |form| {
+                form.child(super::empty_list_state("No entries defined.", cx))
+            })
             .child(
                 Collapsible::new()
                     .open(self.packet_layout_open)

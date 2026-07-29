@@ -168,6 +168,9 @@ impl Render for DiscreteLookupListForm {
                 cx,
             ))
             .children(rows)
+            .when(self.rows.is_empty(), |form| {
+                form.child(super::empty_list_state("No discrete lookups defined.", cx))
+            })
             .child(
                 Button::new("add-discrete-lookup")
                     .small()

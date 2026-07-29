@@ -240,6 +240,9 @@ impl Render for StreamRateList {
                             })),
                     ),
             )
+            .when(self.rows.is_empty(), |form| {
+                form.child(super::empty_list_state("No per-stream rates defined.", cx))
+            })
             .children(rows)
     }
 }

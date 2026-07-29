@@ -1,6 +1,6 @@
 use gpui::{
     App, AppContext, Context, Div, Entity, IntoElement, ParentElement, Render, Styled, Window, div,
-    px,
+    prelude::FluentBuilder, px,
 };
 use gpui_component::{
     ActiveTheme, IconName, IndexPath, Sizable, StyledExt, WindowExt,
@@ -106,6 +106,9 @@ impl Render for UnitSetForm {
                             })),
                     ),
             )
+            .when(self.rows.is_empty(), |form| {
+                form.child(super::empty_list_state("No units defined.", cx))
+            })
             .children(self.rows.iter().enumerate().map(|(index, row)| {
                 let row_read = row.read(cx);
                 super::compact_list_row(cx)

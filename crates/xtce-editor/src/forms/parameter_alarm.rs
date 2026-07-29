@@ -1,5 +1,6 @@
 use gpui::{
     App, AppContext, Context, Div, Entity, IntoElement, ParentElement, Render, Styled, Window, div,
+    prelude::FluentBuilder,
 };
 use gpui_component::{
     ActiveTheme, IconName, IndexPath, Sizable, StyledExt,
@@ -418,6 +419,9 @@ impl Render for ContextAlarmListForm {
                             })),
                     ),
             )
+            .when(self.rows.is_empty(), |form| {
+                form.child(super::empty_list_state("No context alarms defined.", cx))
+            })
             .children(self.rows.iter().enumerate().map(|(index, row)| {
                 super::detail_list_card(cx)
                     .child(

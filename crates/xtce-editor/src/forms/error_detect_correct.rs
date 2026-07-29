@@ -223,7 +223,14 @@ impl Render for ErrorDetectCorrectForm {
                     }),
             )
             .when(self.present, |form| {
-                form.children(rows).child(
+                form.when(self.rows.is_empty(), |form| {
+                    form.child(super::empty_list_state(
+                        "No detection/correction methods defined.",
+                        cx,
+                    ))
+                })
+                .children(rows)
+                .child(
                     Button::new("add-error-detect-correct-row")
                         .small()
                         .icon(IconName::Plus)

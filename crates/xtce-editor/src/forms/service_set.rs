@@ -3,7 +3,7 @@ use gpui::{
     prelude::FluentBuilder, px,
 };
 use gpui_component::{
-    ActiveTheme, IconName, IndexPath, Sizable, StyledExt,
+    IconName, IndexPath, Sizable, StyledExt,
     button::Button,
     h_flex,
     input::{Input, InputState},
@@ -201,12 +201,7 @@ impl Render for ServiceForm {
                             }),
                     )
                     .when(reference_count == 0, |list| {
-                        list.child(
-                            div()
-                                .text_xs()
-                                .text_color(cx.theme().muted_foreground)
-                                .child("No references."),
-                        )
+                        list.child(super::empty_list_state("No references defined.", cx))
                     }),
             )
     }

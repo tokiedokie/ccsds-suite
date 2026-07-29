@@ -192,12 +192,7 @@ impl Render for AncillaryDataRowsForm {
                     )
             }))
             .when(self.rows.is_empty(), |form| {
-                form.child(
-                    div()
-                        .text_xs()
-                        .text_color(cx.theme().muted_foreground)
-                        .child("No ancillary data."),
-                )
+                form.child(super::empty_list_state("No ancillary data defined.", cx))
             })
     }
 }

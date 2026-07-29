@@ -548,6 +548,16 @@ fn render_rows(
                     ),
                 )
         }))
+        .when(rows.is_empty(), |table| {
+            table.child(super::empty_list_state(
+                if kind == CalibratorKind::Polynomial {
+                    "No polynomial terms defined."
+                } else {
+                    "No spline points defined."
+                },
+                cx,
+            ))
+        })
         .child(
             Button::new("add-calibrator-row")
                 .small()

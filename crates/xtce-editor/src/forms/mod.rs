@@ -137,6 +137,18 @@ pub(super) fn count_label(count: usize, singular: &str, plural: &str) -> String 
     format!("{count} {}", if count == 1 { singular } else { plural })
 }
 
+pub(super) fn empty_list_state(message: impl Into<SharedString>, cx: &App) -> Div {
+    div()
+        .w_full()
+        .p_4()
+        .rounded_md()
+        .border_1()
+        .border_color(cx.theme().border)
+        .text_sm()
+        .text_color(cx.theme().muted_foreground)
+        .child(message.into())
+}
+
 pub(super) fn row_remove_button(
     id: impl Into<ElementId>,
     tooltip: impl Into<SharedString>,
@@ -275,15 +287,7 @@ pub(super) fn collection_summary(
                 .child(count_label(row_count, "item", "items")),
         )
         .child(if row_count == 0 {
-            div()
-                .p_4()
-                .rounded_md()
-                .border_1()
-                .border_color(cx.theme().border)
-                .text_sm()
-                .text_color(cx.theme().muted_foreground)
-                .child(empty_message)
-                .into_any_element()
+            empty_list_state(empty_message, cx).into_any_element()
         } else {
             div()
                 .id("collection-summary-scroll-boundary")

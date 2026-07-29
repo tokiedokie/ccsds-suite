@@ -3,8 +3,8 @@ use gpui::{
     prelude::FluentBuilder,
 };
 use gpui_component::{
-    ActiveTheme, IconName, IndexPath, Sizable, StyledExt, button::Button, h_flex,
-    input::InputState, select::SelectState, v_flex,
+    IconName, IndexPath, Sizable, StyledExt, button::Button, h_flex, input::InputState,
+    select::SelectState, v_flex,
 };
 use strum::{Display, EnumString, VariantArray};
 
@@ -133,12 +133,10 @@ impl Render for ContextSignificanceListForm {
                     ),
             )
             .when(self.rows.is_empty(), |form| {
-                form.child(
-                    div()
-                        .text_sm()
-                        .text_color(cx.theme().muted_foreground)
-                        .child("No context-specific significance is defined."),
-                )
+                form.child(super::empty_list_state(
+                    "No context-specific significance defined.",
+                    cx,
+                ))
             })
             .children(rows)
     }

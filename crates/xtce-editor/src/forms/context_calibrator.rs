@@ -1,5 +1,6 @@
 use gpui::{
     App, AppContext, Context, Entity, IntoElement, ParentElement, Render, Styled, Window, div,
+    prelude::FluentBuilder,
 };
 use gpui_component::{IconName, Sizable, StyledExt, button::Button, h_flex, v_flex};
 
@@ -108,6 +109,12 @@ impl Render for ContextCalibratorListForm {
                             })),
                     ),
             )
+            .when(self.rows.is_empty(), |form| {
+                form.child(super::empty_list_state(
+                    "No context calibrators defined.",
+                    cx,
+                ))
+            })
             .children(rows)
     }
 }
