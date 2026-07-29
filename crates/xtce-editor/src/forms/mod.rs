@@ -244,6 +244,16 @@ pub(super) fn list_table_frame(cx: &App) -> Div {
         .border_color(cx.theme().border)
 }
 
+pub(super) fn list_table_header(cx: &App) -> Div {
+    gpui_component::h_flex()
+        .h(px(34.))
+        .px_2()
+        .gap_2()
+        .bg(cx.theme().muted.opacity(0.5))
+        .text_xs()
+        .font_medium()
+}
+
 pub(super) fn compact_list_row(cx: &App) -> Div {
     gpui_component::h_flex()
         .w_full()
@@ -300,26 +310,14 @@ pub(super) fn collection_summary(
     cx: &App,
 ) -> Div {
     let row_count = rows.len();
-    let table = v_flex()
-        .w_full()
+    let table = list_table_frame(cx)
         .min_w(gpui::px(headers.len() as f32 * 180.))
-        .rounded_md()
-        .border_1()
-        .border_color(cx.theme().border)
         .child(
-            gpui_component::h_flex()
-                .h(gpui::px(34.))
-                .px_2()
-                .gap_2()
-                .items_center()
-                .bg(cx.theme().muted.opacity(0.5))
-                .text_xs()
-                .font_medium()
-                .children(
-                    headers
-                        .iter()
-                        .map(|header| div().flex_1().min_w_0().truncate().child(*header)),
-                ),
+            list_table_header(cx).items_center().children(
+                headers
+                    .iter()
+                    .map(|header| div().flex_1().min_w_0().truncate().child(*header)),
+            ),
         )
         .when(row_count > 0, |table| {
             let rows = Rc::new(rows);

@@ -395,13 +395,7 @@ impl Render for AggregateMemberListForm {
             .child(
                 super::list_table_frame(cx)
                     .child(
-                        h_flex()
-                            .h(px(34.))
-                            .px_2()
-                            .gap_2()
-                            .bg(cx.theme().muted.opacity(0.5))
-                            .text_xs()
-                            .font_medium()
+                        super::list_table_header(cx)
                             .child(
                                 div()
                                     .w(px(NAME_WIDTH))

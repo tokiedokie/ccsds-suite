@@ -1693,19 +1693,9 @@ impl Render for BaseAssignmentListView {
                     ),
             )
             .child(
-                v_flex()
-                    .w_full()
-                    .rounded_md()
-                    .border_1()
-                    .border_color(cx.theme().border)
+                super::list_table_frame(cx)
                     .child(
-                        h_flex()
-                            .h(px(34.))
-                            .px_2()
-                            .gap_2()
-                            .bg(cx.theme().muted.opacity(0.5))
-                            .text_xs()
-                            .font_medium()
+                        super::list_table_header(cx)
                             .child(div().flex_1().child("Argument name"))
                             .child(div().flex_1().child("Value"))
                             .child(div().w(px(52.)).flex_none().child("Actions")),
@@ -1897,23 +1887,14 @@ impl Render for ArgumentListView {
                             .w_full()
                             .overflow_x_scroll()
                             .child(
-                                v_flex()
+                                super::list_table_frame(cx)
                                     .min_w(if self.optional_fields_open {
                                         px(900.)
                                     } else {
                                         px(620.)
                                     })
-                                    .rounded_md()
-                                    .border_1()
-                                    .border_color(cx.theme().border)
                                     .child(
-                                        h_flex()
-                                            .h(px(34.))
-                                            .px_2()
-                                            .gap_2()
-                                            .bg(cx.theme().muted.opacity(0.5))
-                                            .text_xs()
-                                            .font_medium()
+                                        super::list_table_header(cx)
                                             .child(
                                                 div()
                                                     .w(px(180.))
@@ -2241,13 +2222,7 @@ impl Render for EntryListView {
             .then(|| command_packet_layout(&rows, &self.arguments, &command_name, cx));
         let entry_table = super::list_table_frame(cx)
             .child(
-                h_flex()
-                    .h(px(34.))
-                    .px_2()
-                    .gap_2()
-                    .bg(cx.theme().muted.opacity(0.5))
-                    .text_xs()
-                    .font_medium()
+                super::list_table_header(cx)
                     .child(div().w(px(52.)).flex_none().child("Bit"))
                     .child(div().w(px(190.)).flex_none().child("Type"))
                     .child(div().flex_1().min_w_0().child("Entry"))

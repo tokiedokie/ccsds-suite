@@ -493,19 +493,9 @@ fn render_rows(
     rows: &[Entity<CalibratorRow>],
     cx: &mut Context<DefaultCalibratorForm>,
 ) -> impl IntoElement {
-    v_flex()
-        .w_full()
-        .rounded_md()
-        .border_1()
-        .border_color(cx.theme().border)
+    super::list_table_frame(cx)
         .child(
-            h_flex()
-                .h(px(34.))
-                .px_2()
-                .gap_2()
-                .bg(cx.theme().muted.opacity(0.5))
-                .text_xs()
-                .font_medium()
+            super::list_table_header(cx)
                 .child(div().flex_1().child(if kind == CalibratorKind::Polynomial {
                     "Coefficient"
                 } else {

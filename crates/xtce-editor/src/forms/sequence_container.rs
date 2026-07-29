@@ -869,13 +869,7 @@ impl Render for ComparisonListForm {
             .child(
                 super::list_table_frame(cx)
                     .child(
-                        h_flex()
-                            .h(px(34.))
-                            .px_2()
-                            .gap_2()
-                            .bg(cx.theme().muted.opacity(0.5))
-                            .text_xs()
-                            .font_medium()
+                        super::list_table_header(cx)
                             .child(
                                 div()
                                     .flex_1()
@@ -1267,13 +1261,7 @@ impl Render for TelemetryEntryListView {
             .child(
                 super::list_table_frame(cx)
                     .child(
-                        h_flex()
-                            .h(px(34.))
-                            .px_2()
-                            .gap_2()
-                            .bg(cx.theme().muted.opacity(0.5))
-                            .text_xs()
-                            .font_medium()
+                        super::list_table_header(cx)
                             .child(div().w(px(72.)).flex_none().child("Bit position"))
                             .child(div().w(px(170.)).flex_none().child("Type"))
                             .child(div().flex_1().min_w_0().child("Reference target"))
