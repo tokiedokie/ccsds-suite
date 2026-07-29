@@ -1119,13 +1119,13 @@ impl MetaCommandForm {
                             .items_end()
                             .child(div().flex_1().child(select_field(
                                 "Verification to wait for",
-                                "",
+                                "Optional; select None to disable",
                                 &self.interlock_verification_select,
                                 cx,
                             )))
                             .child(div().flex_1().child(field(
                                 "Scope to space system",
-                                "",
+                                "Optional",
                                 &self.interlock_scope_input,
                                 cx,
                             ))),
@@ -1136,13 +1136,13 @@ impl MetaCommandForm {
                             .items_end()
                             .child(div().flex_1().child(field(
                                 "Progress percentage",
-                                "",
+                                "Optional",
                                 &self.interlock_progress_input,
                                 cx,
                             )))
                             .child(div().w(px(140.)).child(select_field(
                                 "Suspendable",
-                                "",
+                                "Defaults to false",
                                 &self.interlock_suspendable_select,
                                 cx,
                             ))),
@@ -7095,25 +7095,27 @@ impl Render for ParameterToSetListForm {
                 let row_read = row.read(cx);
                 super::compact_list_row(cx)
                     .items_start()
-                    .child(
-                        div()
-                            .flex_1()
-                            .child(field("Parameter", "", &row_read.parameter, cx)),
-                    )
-                    .child(
-                        div()
-                            .flex_1()
-                            .child(field("New value", "", &row_read.value, cx)),
-                    )
+                    .child(div().flex_1().child(field(
+                        "Parameter",
+                        "Required",
+                        &row_read.parameter,
+                        cx,
+                    )))
+                    .child(div().flex_1().child(field(
+                        "New value",
+                        "Required for New value source",
+                        &row_read.value,
+                        cx,
+                    )))
                     .child(div().w(px(140.)).child(select_field(
                         "Value source",
-                        "",
+                        "Required",
                         &row_read.content_kind,
                         cx,
                     )))
                     .child(div().w(px(140.)).child(select_field(
                         "Verification trigger",
-                        "",
+                        "Required",
                         &row_read.trigger,
                         cx,
                     )))
@@ -7418,20 +7420,21 @@ impl Render for ParametersToSuspendAlarmsOnSetForm {
                 let row_read = row.read(cx);
                 super::compact_list_row(cx)
                     .items_start()
-                    .child(
-                        div()
-                            .flex_1()
-                            .child(field("Parameter", "", &row_read.parameter, cx)),
-                    )
+                    .child(div().flex_1().child(field(
+                        "Parameter",
+                        "Required",
+                        &row_read.parameter,
+                        cx,
+                    )))
                     .child(div().w(px(140.)).child(field(
-                        "Suspense time (e.g. PT30S)",
-                        "",
+                        "Suspense time",
+                        "Required; e.g. PT30S",
                         &row_read.suspense_time,
                         cx,
                     )))
                     .child(div().w(px(140.)).child(select_field(
                         "Verification trigger",
-                        "",
+                        "Required",
                         &row_read.trigger,
                         cx,
                     )))
@@ -7578,8 +7581,8 @@ impl Render for VerifierListForm {
                                 cx,
                             )))
                             .child(div().flex_1().child(field(
-                                "Name (optional)",
-                                "",
+                                "Name",
+                                "Optional",
                                 &row_read.name,
                                 cx,
                             ))),
@@ -7655,10 +7658,10 @@ impl Render for VerifierListForm {
                                     h_flex()
                                         .w_full()
                                         .gap_3()
-                                        .items_end()
+                                        .items_start()
                                         .child(div().flex_1().child(field(
-                                            "Start checking after (optional)",
-                                            "",
+                                            "Start checking after",
+                                            "Optional",
                                             &row_read.time_to_start,
                                             cx,
                                         )))
@@ -8113,8 +8116,8 @@ impl Render for TransmissionConstraintListForm {
                                 cx,
                             )))
                             .child(div().flex_1().child(field(
-                                "Timeout (optional, e.g. PT5S)",
-                                "",
+                                "Timeout",
+                                "Optional; e.g. PT5S",
                                 &row_read.time_out,
                                 cx,
                             )))
