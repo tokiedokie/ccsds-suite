@@ -2568,7 +2568,7 @@ impl ElementTree {
         let selected_id = selected.map(Self::node_id);
         let selected_item = selected_id
             .as_ref()
-            .and_then(|id| Self::find_item(&items, id))
+            .and_then(|id| Self::find_visible_item(&items, id))
             .cloned();
         self.tree_state.update(cx, |state, cx| {
             state.set_items(items, cx);
@@ -2619,12 +2619,14 @@ impl ElementTree {
         items
     }
 
-    fn find_item<'a>(items: &'a [TreeItem], id: &SharedString) -> Option<&'a TreeItem> {
+    fn find_visible_item<'a>(items: &'a [TreeItem], id: &SharedString) -> Option<&'a TreeItem> {
         items.iter().find_map(|item| {
             if &item.id == id {
                 Some(item)
+            } else if item.is_expanded() {
+                Self::find_visible_item(&item.children, id)
             } else {
-                Self::find_item(&item.children, id)
+                None
             }
         })
     }
@@ -4669,6 +4671,36 @@ mod tests {
 
         assert_eq!(visible.len(), 1);
         assert_eq!(visible[0].selection.kind, ElementKind::SpaceSystem);
+    }
+
+    #[test]
+    fn a_selection_inside_a_collapsed_set_is_not_revealed_during_rebuild() {
+        let document = sample_document();
+        let mut nodes = Vec::new();
+        XtceDocument::collect_tree_nodes(&document, &mut Vec::new(), 0, &mut nodes);
+        let collapsed = HashSet::from([ElementSelection {
+            system_path: Vec::new(),
+            kind: ElementKind::TelemetryParameterTypeSet,
+        }]);
+        let mut index = 0;
+        let items = ElementTree::build_items(&nodes, &mut index, 0, "", &collapsed);
+        let hidden_parameter_type = ElementTree::node_id(&ElementSelection {
+            system_path: Vec::new(),
+            kind: ElementKind::TelemetryParameterType(0),
+        });
+        let visible_parameter = ElementTree::node_id(&ElementSelection {
+            system_path: Vec::new(),
+            kind: ElementKind::TelemetryParameter(0),
+        });
+
+        assert!(
+            ElementTree::find_visible_item(&items, &hidden_parameter_type).is_none(),
+            "a hidden selection must not be passed to TreeState, which would reopen its ancestors"
+        );
+        assert!(
+            ElementTree::find_visible_item(&items, &visible_parameter).is_some(),
+            "a selection in an expanded sibling set should remain selectable"
+        );
     }
 
     #[test]
