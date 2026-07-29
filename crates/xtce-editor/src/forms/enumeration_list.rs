@@ -419,7 +419,7 @@ impl Render for EnumerationListForm {
                                 div()
                                     .text_xs()
                                     .text_color(cx.theme().muted_foreground)
-                                    .child(format!("{count} values")),
+                                    .child(super::count_label(count, "value", "values")),
                             ),
                     )
                     .child(

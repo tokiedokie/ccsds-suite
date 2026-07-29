@@ -133,6 +133,10 @@ pub(super) fn section_add_button(id: impl Into<ElementId>) -> Button {
     Button::new(id).small().icon(IconName::Plus).label("Add")
 }
 
+pub(super) fn count_label(count: usize, singular: &str, plural: &str) -> String {
+    format!("{count} {}", if count == 1 { singular } else { plural })
+}
+
 pub(super) fn row_remove_button(
     id: impl Into<ElementId>,
     tooltip: impl Into<SharedString>,
@@ -268,7 +272,7 @@ pub(super) fn collection_summary(
             div()
                 .text_xs()
                 .text_color(cx.theme().muted_foreground)
-                .child(format!("{row_count} items")),
+                .child(count_label(row_count, "item", "items")),
         )
         .child(if row_count == 0 {
             div()

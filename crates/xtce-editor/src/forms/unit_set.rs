@@ -92,7 +92,7 @@ impl Render for UnitSetForm {
                                 div()
                                     .text_xs()
                                     .text_color(cx.theme().muted_foreground)
-                                    .child(format!("{} unit(s)", self.rows.len())),
+                                    .child(super::count_label(self.rows.len(), "unit", "units")),
                             ),
                     )
                     .child(

@@ -354,7 +354,10 @@ impl Render for AggregateMemberListForm {
                                 div()
                                     .text_xs()
                                     .text_color(cx.theme().muted_foreground)
-                                    .child(format!("{count} members · packed in this order")),
+                                    .child(format!(
+                                        "{} · packed in this order",
+                                        super::count_label(count, "member", "members")
+                                    )),
                             ),
                     )
                     .child(

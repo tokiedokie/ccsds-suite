@@ -128,7 +128,7 @@ impl Render for AncillaryDataRowsForm {
                                 div()
                                     .text_xs()
                                     .text_color(cx.theme().muted_foreground)
-                                    .child(format!("{} entries", self.rows.len())),
+                                    .child(super::count_label(self.rows.len(), "entry", "entries")),
                             ),
                     )
                     .child(

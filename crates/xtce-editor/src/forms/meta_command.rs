@@ -2294,7 +2294,7 @@ impl Render for EntryListView {
                         div()
                             .text_sm()
                             .font_medium()
-                            .child(format!("{row_count} entries")),
+                            .child(super::count_label(row_count, "entry", "entries")),
                     )
                     .child(
                         Button::new("add-command-container-entry")
@@ -7046,7 +7046,11 @@ impl Render for ParameterToSetListForm {
                                 div()
                                     .text_xs()
                                     .text_color(cx.theme().muted_foreground)
-                                    .child(format!("{} entry(ies)", self.rows.len())),
+                                    .child(super::count_label(
+                                        self.rows.len(),
+                                        "parameter",
+                                        "parameters",
+                                    )),
                             ),
                     )
                     .child(
@@ -7374,7 +7378,11 @@ impl Render for ParametersToSuspendAlarmsOnSetForm {
                                 div()
                                     .text_xs()
                                     .text_color(cx.theme().muted_foreground)
-                                    .child(format!("{} entry(ies)", self.rows.len())),
+                                    .child(super::count_label(
+                                        self.rows.len(),
+                                        "parameter",
+                                        "parameters",
+                                    )),
                             ),
                     )
                     .child(
@@ -7487,7 +7495,11 @@ impl Render for VerifierListForm {
                                 div()
                                     .text_xs()
                                     .text_color(cx.theme().muted_foreground)
-                                    .child(format!("{} verifier(s)", self.rows.len())),
+                                    .child(super::count_label(
+                                        self.rows.len(),
+                                        "verifier",
+                                        "verifiers",
+                                    )),
                             ),
                     )
                     .child(
@@ -8034,7 +8046,11 @@ impl Render for TransmissionConstraintListForm {
                                 div()
                                     .text_xs()
                                     .text_color(cx.theme().muted_foreground)
-                                    .child(format!("{} constraint(s)", self.rows.len())),
+                                    .child(super::count_label(
+                                        self.rows.len(),
+                                        "constraint",
+                                        "constraints",
+                                    )),
                             ),
                     )
                     .child(

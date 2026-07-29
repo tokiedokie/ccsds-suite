@@ -399,7 +399,11 @@ impl Render for ContextAlarmListForm {
                                 div()
                                     .text_xs()
                                     .text_color(cx.theme().muted_foreground)
-                                    .child(format!("{} context alarm(s)", self.rows.len())),
+                                    .child(super::count_label(
+                                        self.rows.len(),
+                                        "context alarm",
+                                        "context alarms",
+                                    )),
                             ),
                     )
                     .child(
