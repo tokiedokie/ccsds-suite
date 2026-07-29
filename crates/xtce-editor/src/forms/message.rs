@@ -733,7 +733,7 @@ fn input(
     cx.new(|cx| {
         let input = InputState::new(window, cx).default_value(value.to_owned());
         if multiline {
-            input.auto_grow(4, 20)
+            input.auto_grow(super::MULTILINE_MIN_ROWS, super::MULTILINE_MAX_ROWS)
         } else {
             input
         }

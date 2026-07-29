@@ -150,6 +150,8 @@ pub(super) fn empty_list_state(message: impl Into<SharedString>, cx: &App) -> Di
 }
 
 pub(super) const FORM_DIALOG_WIDTH: f32 = 720.;
+pub(super) const MULTILINE_MIN_ROWS: usize = 4;
+pub(super) const MULTILINE_MAX_ROWS: usize = 20;
 
 pub(super) fn form_dialog_content() -> Div {
     v_flex().w_full().p_4().gap_4()
