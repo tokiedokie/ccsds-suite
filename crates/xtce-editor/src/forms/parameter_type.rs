@@ -1568,14 +1568,8 @@ impl ParameterTypeForm {
         if let Some(encoding) = find_data_encoding_mut(parameter_type) {
             self.data_encoding.read(cx).apply_to(encoding, cx);
         }
-        set_parameter_type_alias_set(
-            parameter_type,
-            AliasSetForm::parse(&self.alias_set.text(cx)),
-        );
-        set_parameter_type_ancillary_data_set(
-            parameter_type,
-            AncillaryDataSetForm::parse(&self.ancillary_data_set.text(cx)),
-        );
+        set_parameter_type_alias_set(parameter_type, self.alias_set.value(cx));
+        set_parameter_type_ancillary_data_set(parameter_type, self.ancillary_data_set.value(cx));
         set_parameter_type_unit_set(parameter_type, self.unit_set.read(cx).to_set(cx));
         set_parameter_type_time_encoding(parameter_type, self.time_encoding.read(cx).to_value(cx));
         set_parameter_type_reference_time(

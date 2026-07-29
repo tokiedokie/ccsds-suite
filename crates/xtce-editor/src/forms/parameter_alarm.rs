@@ -609,7 +609,7 @@ impl CustomAlarmForm {
         self.active.then(|| xtce::CustomAlarmType {
             name: optional_text(value(&self.name, cx)),
             short_description: optional_text(value(&self.short_description, cx)),
-            ancillary_data_set: AncillaryDataSetForm::parse(&self.ancillary_data_set.text(cx)),
+            ancillary_data_set: self.ancillary_data_set.value(cx),
             input_algorithm: self.algorithm.read(cx).algorithm(cx),
         })
     }
@@ -726,7 +726,7 @@ impl StaticAlarmRangesForm {
             range_form: selected_value(&self.range_form, RangeFormChoice::Outside, cx).to_xtce(),
             time_units: selected_value(&self.time_units, TimeUnitsChoice::Seconds, cx).to_xtce(),
             details,
-            ancillary_data_set: AncillaryDataSetForm::parse(&self.ancillary_data_set.text(cx)),
+            ancillary_data_set: self.ancillary_data_set.value(cx),
         }
     }
 }
@@ -906,7 +906,7 @@ impl ChangeAlarmRangesForm {
                     .to_xtce(),
                 span_of_interest_in_samples: parse_or(&value(&self.span_samples, cx), 1),
                 span_of_interest_in_seconds: parse_or(&value(&self.span_seconds, cx), 0.0),
-                ancillary_data_set: AncillaryDataSetForm::parse(&self.ancillary_data_set.text(cx)),
+                ancillary_data_set: self.ancillary_data_set.value(cx),
                 watch_range,
                 warning_range,
                 distress_range,
@@ -1010,7 +1010,7 @@ impl AlarmMultiRangesForm {
         (self.active && !ranges.is_empty()).then(|| xtce::AlarmMultiRangesType {
             name: optional_text(value(&self.name, cx)),
             short_description: optional_text(value(&self.short_description, cx)),
-            ancillary_data_set: AncillaryDataSetForm::parse(&self.ancillary_data_set.text(cx)),
+            ancillary_data_set: self.ancillary_data_set.value(cx),
             range: ranges,
         })
     }
@@ -1108,7 +1108,7 @@ impl TimeChangeAlarmRangesForm {
                     .to_xtce(),
                 time_units: selected_value(&self.time_units, TimeUnitsChoice::Seconds, cx)
                     .to_xtce(),
-                ancillary_data_set: AncillaryDataSetForm::parse(&self.ancillary_data_set.text(cx)),
+                ancillary_data_set: self.ancillary_data_set.value(cx),
                 watch_range,
                 warning_range,
                 distress_range,
@@ -1184,7 +1184,7 @@ impl AlarmEditor {
                 value(&self.details, cx)
             },
             static_ranges_active: uses_static_ranges && static_ranges.active,
-            ancillary_data_set: AncillaryDataSetForm::parse(&self.ancillary_data_set.text(cx)),
+            ancillary_data_set: self.ancillary_data_set.value(cx),
             alarm_conditions: self.alarm_conditions.read(cx).value(cx),
             custom_alarm: self.custom_alarm.read(cx).value(cx),
             static_range_name: static_ranges.name,

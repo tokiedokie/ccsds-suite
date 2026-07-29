@@ -109,14 +109,8 @@ impl ServiceForm {
         }
         service.short_description = optional_value(value(&self.short_description, cx));
         set_long_description(&mut service.content, value(&self.long_description, cx));
-        set_alias_set(
-            &mut service.content,
-            AliasSetForm::parse(&self.alias_set.text(cx)),
-        );
-        set_ancillary_data_set(
-            &mut service.content,
-            AncillaryDataSetForm::parse(&self.ancillary_data_set.text(cx)),
-        );
+        set_alias_set(&mut service.content, self.alias_set.value(cx));
+        set_ancillary_data_set(&mut service.content, self.ancillary_data_set.value(cx));
         let references = self
             .references
             .iter()
