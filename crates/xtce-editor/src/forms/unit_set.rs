@@ -144,13 +144,16 @@ impl Render for UnitSetForm {
                                     }),
                             )
                             .child(
-                                Button::new(format!("remove-parameter-type-unit-{index}"))
-                                    .small()
-                                    .icon(IconName::Minus)
-                                    .on_click(cx.listener(move |this, _, _, cx| {
+                                super::row_remove_button(
+                                    format!("remove-parameter-type-unit-{index}"),
+                                    "Remove unit",
+                                )
+                                .on_click(cx.listener(
+                                    move |this, _, _, cx| {
                                         this.rows.remove(index);
                                         cx.notify();
-                                    })),
+                                    },
+                                )),
                             ),
                     )
             }))

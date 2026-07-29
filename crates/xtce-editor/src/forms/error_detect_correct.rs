@@ -4,7 +4,7 @@ use gpui::{
 };
 use gpui_component::{
     ActiveTheme, IconName, IndexPath, Sizable, StyledExt,
-    button::{Button, ButtonVariants},
+    button::Button,
     h_flex,
     input::InputState,
     select::{SelectEvent, SelectState},
@@ -174,16 +174,18 @@ impl Render for ErrorDetectCorrectForm {
                                     .child(format!("Detection/correction {}", index + 1)),
                             )
                             .child(
-                                Button::new(format!("remove-error-detect-correct-{index}"))
-                                    .ghost()
-                                    .small()
-                                    .icon(IconName::Minus)
-                                    .on_click(cx.listener(move |this, _, _, cx| {
+                                super::row_remove_button(
+                                    format!("remove-error-detect-correct-{index}"),
+                                    "Remove error detection/correction entry",
+                                )
+                                .on_click(cx.listener(
+                                    move |this, _, _, cx| {
                                         if index < this.rows.len() {
                                             this.rows.remove(index);
                                             cx.notify();
                                         }
-                                    })),
+                                    },
+                                )),
                             ),
                     )
                     .child(row.clone())
@@ -203,14 +205,12 @@ impl Render for ErrorDetectCorrectForm {
                             .child("Error detection/correction"),
                     )
                     .child(if self.present {
-                        Button::new("remove-error-detect-correct")
-                            .small()
-                            .danger()
-                            .label("Remove")
-                            .on_click(cx.listener(|this, _, _, cx| {
+                        super::section_remove_button("remove-error-detect-correct").on_click(
+                            cx.listener(|this, _, _, cx| {
                                 this.present = false;
                                 cx.notify();
-                            }))
+                            }),
+                        )
                     } else {
                         Button::new("add-error-detect-correct")
                             .small()
@@ -350,10 +350,7 @@ impl Render for ErrorRow {
                         .justify_between()
                         .child(div().text_sm().font_medium().child("Input algorithm"))
                         .child(if self.input_algorithm_present {
-                            Button::new("remove-checksum-input-algorithm")
-                                .small()
-                                .danger()
-                                .label("Remove")
+                            super::section_remove_button("remove-checksum-input-algorithm")
                                 .on_click(cx.listener(|this, _, _, cx| {
                                     this.input_algorithm_present = false;
                                     cx.notify();

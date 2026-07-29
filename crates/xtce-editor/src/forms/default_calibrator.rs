@@ -4,7 +4,7 @@ use gpui::{
 };
 use gpui_component::{
     ActiveTheme, Disableable, IconName, IndexPath, Sizable, StyledExt,
-    button::{Button, ButtonVariants},
+    button::Button,
     h_flex,
     input::{Input, InputEvent, InputState},
     select::{Select, SelectEvent, SelectState},
@@ -397,14 +397,12 @@ impl Render for DefaultCalibratorForm {
                         .justify_between()
                         .child(div().text_sm().font_medium().child("Default calibrator"))
                         .child(if present {
-                            Button::new("remove-default-calibrator")
-                                .small()
-                                .icon(IconName::Minus)
-                                .label("Remove")
-                                .on_click(cx.listener(|this, _, _, cx| {
+                            super::section_remove_button("remove-default-calibrator").on_click(
+                                cx.listener(|this, _, _, cx| {
                                     this.present = false;
                                     cx.notify();
-                                }))
+                                }),
+                            )
                         } else {
                             Button::new("add-default-calibrator")
                                 .small()
@@ -536,20 +534,19 @@ fn render_rows(
                 .child(row.clone())
                 .child(
                     div().w(px(52.)).flex_none().child(
-                        Button::new(format!("remove-calibrator-row-{index}"))
-                            .small()
-                            .ghost()
-                            .icon(IconName::Minus)
-                            .disabled(kind == CalibratorKind::Spline && rows.len() <= 2)
-                            .on_click(cx.listener(move |this, _, _, cx| {
-                                if index < this.rows.len()
-                                    && !(this.kind == CalibratorKind::Spline
-                                        && this.rows.len() <= 2)
-                                {
-                                    this.rows.remove(index);
-                                    cx.notify();
-                                }
-                            })),
+                        super::row_remove_button(
+                            format!("remove-calibrator-row-{index}"),
+                            "Remove calibrator row",
+                        )
+                        .disabled(kind == CalibratorKind::Spline && rows.len() <= 2)
+                        .on_click(cx.listener(move |this, _, _, cx| {
+                            if index < this.rows.len()
+                                && !(this.kind == CalibratorKind::Spline && this.rows.len() <= 2)
+                            {
+                                this.rows.remove(index);
+                                cx.notify();
+                            }
+                        })),
                     ),
                 )
         }))

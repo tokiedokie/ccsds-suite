@@ -315,14 +315,12 @@ impl Render for DefaultAlarmForm {
                     ),
             )
             .child(if self.active {
-                Button::new("remove-parameter-type-default-alarm")
-                    .small()
-                    .icon(IconName::Minus)
-                    .label("Remove")
-                    .on_click(cx.listener(|this, _, _, cx| {
+                super::section_remove_button("remove-parameter-type-default-alarm").on_click(
+                    cx.listener(|this, _, _, cx| {
                         this.active = false;
                         cx.notify();
-                    }))
+                    }),
+                )
             } else {
                 Button::new("add-parameter-type-default-alarm")
                     .small()
@@ -436,13 +434,16 @@ impl Render for ContextAlarmListForm {
                                     .child(format!("Context alarm {}", index + 1)),
                             )
                             .child(
-                                Button::new(format!("remove-parameter-context-alarm-{index}"))
-                                    .small()
-                                    .icon(IconName::Minus)
-                                    .on_click(cx.listener(move |this, _, _, cx| {
+                                super::row_remove_button(
+                                    format!("remove-parameter-context-alarm-{index}"),
+                                    "Remove context alarm",
+                                )
+                                .on_click(cx.listener(
+                                    move |this, _, _, cx| {
                                         this.rows.remove(index);
                                         cx.notify();
-                                    })),
+                                    },
+                                )),
                             ),
                     )
                     .child(row.clone())
@@ -543,19 +544,19 @@ impl Render for AlarmConditionsForm {
                             .justify_between()
                             .child(div().text_sm().child(row_read.level))
                             .child(if row_read.active {
-                                Button::new(format!("remove-{}-alarm-condition", row_read.level))
-                                    .small()
-                                    .icon(IconName::Minus)
-                                    .label("Remove")
-                                    .on_click({
-                                        let row = row.clone();
-                                        move |_, _, cx| {
-                                            row.update(cx, |row, cx| {
-                                                row.active = false;
-                                                cx.notify();
-                                            });
-                                        }
-                                    })
+                                super::section_remove_button(format!(
+                                    "remove-{}-alarm-condition",
+                                    row_read.level
+                                ))
+                                .on_click({
+                                    let row = row.clone();
+                                    move |_, _, cx| {
+                                        row.update(cx, |row, cx| {
+                                            row.active = false;
+                                            cx.notify();
+                                        });
+                                    }
+                                })
                             } else {
                                 Button::new(format!("add-{}-alarm-condition", row_read.level))
                                     .small()
@@ -621,14 +622,12 @@ impl Render for CustomAlarmForm {
             .justify_between()
             .child(div().text_sm().font_medium().child("Custom alarm"))
             .child(if self.active {
-                Button::new("remove-parameter-custom-alarm")
-                    .small()
-                    .icon(IconName::Minus)
-                    .label("Remove")
-                    .on_click(cx.listener(|this, _, _, cx| {
+                super::section_remove_button("remove-parameter-custom-alarm").on_click(cx.listener(
+                    |this, _, _, cx| {
                         this.active = false;
                         cx.notify();
-                    }))
+                    },
+                ))
             } else {
                 Button::new("add-parameter-custom-alarm")
                     .small()
@@ -773,19 +772,19 @@ impl Render for StaticAlarmRangesForm {
                         .justify_between()
                         .child(div().text_sm().font_medium().child(row_read.level))
                         .child(if row_read.active {
-                            Button::new(format!("remove-static-range-{}", row.entity_id()))
-                                .small()
-                                .icon(IconName::Minus)
-                                .label("Remove")
-                                .on_click({
-                                    let row = row.clone();
-                                    move |_, _, cx| {
-                                        row.update(cx, |row, cx| {
-                                            row.active = false;
-                                            cx.notify();
-                                        });
-                                    }
-                                })
+                            super::section_remove_button(format!(
+                                "remove-static-range-{}",
+                                row.entity_id()
+                            ))
+                            .on_click({
+                                let row = row.clone();
+                                move |_, _, cx| {
+                                    row.update(cx, |row, cx| {
+                                        row.active = false;
+                                        cx.notify();
+                                    });
+                                }
+                            })
                         } else {
                             Button::new(format!("add-static-range-{}", row.entity_id()))
                                 .small()
@@ -3001,14 +3000,12 @@ fn optional_section_header<T: 'static>(
         .justify_between()
         .child(div().text_sm().font_medium().child(title))
         .child(if active {
-            Button::new(format!("remove-{id}"))
-                .small()
-                .icon(IconName::Minus)
-                .label("Remove")
-                .on_click(cx.listener(move |this, _, _, cx| {
+            super::section_remove_button(format!("remove-{id}")).on_click(cx.listener(
+                move |this, _, _, cx| {
                     *active_field(this) = false;
                     cx.notify();
-                }))
+                },
+            ))
         } else {
             Button::new(format!("add-{id}"))
                 .small()

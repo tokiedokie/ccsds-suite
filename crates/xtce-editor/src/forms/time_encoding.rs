@@ -117,14 +117,12 @@ impl Render for TimeEncodingForm {
                     ),
             )
             .child(if self.active {
-                Button::new("remove-parameter-type-time-encoding")
-                    .small()
-                    .icon(IconName::Minus)
-                    .label("Remove")
-                    .on_click(cx.listener(|this, _, _, cx| {
+                super::section_remove_button("remove-parameter-type-time-encoding").on_click(
+                    cx.listener(|this, _, _, cx| {
                         this.active = false;
                         cx.notify();
-                    }))
+                    }),
+                )
             } else {
                 Button::new("add-parameter-type-time-encoding")
                     .small()

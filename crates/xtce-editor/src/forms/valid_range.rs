@@ -151,14 +151,12 @@ impl Render for ValidRangeForm {
                     ),
             )
             .child(if self.active {
-                Button::new("remove-parameter-type-valid-range")
-                    .small()
-                    .icon(IconName::Minus)
-                    .label("Remove")
-                    .on_click(cx.listener(|this, _, _, cx| {
+                super::section_remove_button("remove-parameter-type-valid-range").on_click(
+                    cx.listener(|this, _, _, cx| {
                         this.active = false;
                         cx.notify();
-                    }))
+                    }),
+                )
             } else {
                 Button::new("add-parameter-type-valid-range")
                     .small()

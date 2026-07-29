@@ -3,11 +3,7 @@ use gpui::{
     prelude::FluentBuilder,
 };
 use gpui_component::{
-    ActiveTheme, IconName, Sizable, StyledExt,
-    button::{Button, ButtonVariants},
-    h_flex,
-    input::InputState,
-    v_flex,
+    ActiveTheme, IconName, Sizable, StyledExt, button::Button, h_flex, input::InputState, v_flex,
 };
 
 use super::field;
@@ -144,17 +140,18 @@ impl Render for AliasRowsForm {
                                     .child(format!("Alias {}", index + 1)),
                             )
                             .child(
-                                Button::new(format!("remove-alias-{}", row.entity_id()))
-                                    .small()
-                                    .danger()
-                                    .icon(IconName::Minus)
-                                    .label("Remove")
-                                    .on_click(cx.listener(move |this, _, _, cx| {
+                                super::row_remove_button(
+                                    format!("remove-alias-{}", row.entity_id()),
+                                    "Remove alias",
+                                )
+                                .on_click(cx.listener(
+                                    move |this, _, _, cx| {
                                         if index < this.rows.len() {
                                             this.rows.remove(index);
                                             cx.notify();
                                         }
-                                    })),
+                                    },
+                                )),
                             ),
                     )
                     .child(

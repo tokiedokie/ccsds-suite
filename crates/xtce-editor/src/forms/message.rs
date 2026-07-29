@@ -4,7 +4,7 @@ use gpui::{
 };
 use gpui_component::{
     ActiveTheme, Disableable, IconName, IndexPath, Sizable, StyledExt,
-    button::{Button, ButtonVariants},
+    button::Button,
     h_flex,
     input::{Input, InputEvent, InputState},
     select::{Select, SelectEvent, SelectState},
@@ -440,13 +440,12 @@ impl Render for MessageCriteriaForm {
                                                                 .w(px(52.))
                                                                 .flex_none()
                                                                 .child(
-                                                                    Button::new(format!(
-                                                                        "remove-message-comparison-{index}"
-                                                                    ))
-                                                                    .small()
-                                                                    .ghost()
-                                                                    .icon(IconName::Minus)
-                                                                    .tooltip("Remove comparison")
+                                                                    super::row_remove_button(
+                                                                        format!(
+                                                                            "remove-message-comparison-{index}"
+                                                                        ),
+                                                                        "Remove comparison",
+                                                                    )
                                                                     .disabled(count == 1)
                                                                     .on_click(cx.listener(
                                                                         move |this, _, _, cx| {

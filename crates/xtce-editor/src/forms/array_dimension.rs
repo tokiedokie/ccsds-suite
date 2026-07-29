@@ -146,15 +146,16 @@ impl Render for DimensionListForm {
                     .child(index_summary("Starting index", &row_read.starting, cx))
                     .child(index_summary("Ending index", &row_read.ending, cx))
                     .child(
-                        Button::new(format!("remove-parameter-type-dimension-{index}"))
-                            .small()
-                            .icon(IconName::Minus)
-                            .on_click(cx.listener(move |this, _, _, cx| {
-                                if this.rows.len() > 1 {
-                                    this.rows.remove(index);
-                                    cx.notify();
-                                }
-                            })),
+                        super::row_remove_button(
+                            format!("remove-parameter-type-dimension-{index}"),
+                            "Remove dimension",
+                        )
+                        .on_click(cx.listener(move |this, _, _, cx| {
+                            if this.rows.len() > 1 {
+                                this.rows.remove(index);
+                                cx.notify();
+                            }
+                        })),
                     )
             }))
     }

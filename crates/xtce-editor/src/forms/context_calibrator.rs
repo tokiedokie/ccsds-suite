@@ -1,11 +1,7 @@
 use gpui::{
     App, AppContext, Context, Entity, IntoElement, ParentElement, Render, Styled, Window, div,
 };
-use gpui_component::{
-    ActiveTheme, IconName, Sizable, StyledExt,
-    button::{Button, ButtonVariants},
-    h_flex, v_flex,
-};
+use gpui_component::{ActiveTheme, IconName, Sizable, StyledExt, button::Button, h_flex, v_flex};
 
 use super::{default_calibrator::DefaultCalibratorForm, message::MessageCriteriaForm};
 
@@ -82,16 +78,18 @@ impl Render for ContextCalibratorListForm {
                                     .child(format!("Context calibrator {}", index + 1)),
                             )
                             .child(
-                                Button::new(format!("remove-context-calibrator-{index}"))
-                                    .ghost()
-                                    .small()
-                                    .icon(IconName::Minus)
-                                    .on_click(cx.listener(move |this, _, _, cx| {
+                                super::row_remove_button(
+                                    format!("remove-context-calibrator-{index}"),
+                                    "Remove context calibrator",
+                                )
+                                .on_click(cx.listener(
+                                    move |this, _, _, cx| {
                                         if index < this.rows.len() {
                                             this.rows.remove(index);
                                             cx.notify();
                                         }
-                                    })),
+                                    },
+                                )),
                             ),
                     )
                     .child(row.clone())

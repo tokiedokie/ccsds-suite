@@ -4,7 +4,7 @@ use gpui::{
 };
 use gpui_component::{
     ActiveTheme, IconName, IndexPath, Sizable, StyledExt,
-    button::{Button, ButtonVariants},
+    button::Button,
     h_flex,
     input::{Input, InputState},
     select::{Select, SelectState},
@@ -183,16 +183,18 @@ impl Render for ServiceForm {
                             .enumerate()
                             .map(|(index, reference)| {
                                 h_flex().gap_2().child(Input::new(reference)).child(
-                                    Button::new(format!("remove-service-reference-{index}"))
-                                        .small()
-                                        .ghost()
-                                        .icon(IconName::Minus)
-                                        .on_click(cx.listener(move |this, _, _, cx| {
+                                    super::row_remove_button(
+                                        format!("remove-service-reference-{index}"),
+                                        "Remove reference",
+                                    )
+                                    .on_click(cx.listener(
+                                        move |this, _, _, cx| {
                                             if index < this.references.len() {
                                                 this.references.remove(index);
                                                 cx.notify();
                                             }
-                                        })),
+                                        },
+                                    )),
                                 )
                             }),
                     )

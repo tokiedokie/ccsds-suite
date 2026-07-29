@@ -503,10 +503,7 @@ impl SequenceContainerForm {
                             .justify_between()
                             .child(div().text_sm().font_medium().child("Base container"))
                             .child(if base_present {
-                                Button::new("remove-telemetry-base-container")
-                                    .small()
-                                    .danger()
-                                    .label("Remove base container")
+                                super::section_remove_button("remove-telemetry-base-container")
                                     .on_click(cx.listener(|this, _, _, cx| {
                                         this.base_container_present.set(false);
                                         cx.notify();
@@ -910,19 +907,18 @@ impl Render for ComparisonListForm {
                                     .child(row.clone())
                                     .child(
                                         div().w(px(52.)).flex_none().child(
-                                            Button::new(format!(
-                                                "remove-restriction-comparison-{index}"
-                                            ))
-                                            .small()
-                                            .ghost()
-                                            .icon(IconName::Minus)
-                                            .tooltip("Remove comparison")
-                                            .on_click(cx.listener(move |this, _, _, cx| {
-                                                if index < this.rows.len() {
-                                                    this.rows.remove(index);
-                                                    cx.notify();
-                                                }
-                                            })),
+                                            super::row_remove_button(
+                                                format!("remove-restriction-comparison-{index}"),
+                                                "Remove comparison",
+                                            )
+                                            .on_click(
+                                                cx.listener(move |this, _, _, cx| {
+                                                    if index < this.rows.len() {
+                                                        this.rows.remove(index);
+                                                        cx.notify();
+                                                    }
+                                                }),
+                                            ),
                                         ),
                                     )
                             })),
@@ -1129,11 +1125,7 @@ impl TelemetryEntryListView {
                     })),
             )
             .child(
-                Button::new(format!("remove-telemetry-entry-{index}"))
-                    .ghost()
-                    .small()
-                    .icon(IconName::Minus)
-                    .tooltip("Remove entry")
+                super::row_remove_button(format!("remove-telemetry-entry-{index}"), "Remove entry")
                     .on_click(cx.listener(move |this, _, _, cx| {
                         this.remove_entry(index, cx);
                     })),

@@ -1244,14 +1244,12 @@ impl MetaCommandForm {
                     .justify_between()
                     .child(div().text_lg().font_semibold().child("Command container"))
                     .child(
-                        Button::new("remove-command-container")
-                            .ghost()
-                            .icon(IconName::Minus)
-                            .label("Remove command container")
-                            .on_click(cx.listener(|this, _, _, cx| {
+                        super::section_remove_button("remove-command-container").on_click(
+                            cx.listener(|this, _, _, cx| {
                                 this.command_container_present.set(false);
                                 cx.notify();
-                            })),
+                            }),
+                        ),
                     ),
             )
             .child(
@@ -1640,21 +1638,20 @@ impl BaseAssignmentListView {
             .child(row)
             .child(
                 div().w(px(52.)).flex_none().child(
-                    Button::new(format!("remove-base-assignment-{index}"))
-                        .ghost()
-                        .small()
-                        .icon(IconName::Minus)
-                        .tooltip("Remove assignment")
-                        .on_click(cx.listener(move |this, _, _, cx| {
-                            if index < this.rows.len() {
-                                this.flush_editors(cx);
-                                this.rows.remove(index);
-                                this.editors.clear();
-                                this.cache_order.clear();
-                                this.list_state.splice(index..index + 1, 0);
-                                cx.notify();
-                            }
-                        })),
+                    super::row_remove_button(
+                        format!("remove-base-assignment-{index}"),
+                        "Remove assignment",
+                    )
+                    .on_click(cx.listener(move |this, _, _, cx| {
+                        if index < this.rows.len() {
+                            this.flush_editors(cx);
+                            this.rows.remove(index);
+                            this.editors.clear();
+                            this.cache_order.clear();
+                            this.list_state.splice(index..index + 1, 0);
+                            cx.notify();
+                        }
+                    })),
                 ),
             )
             .into_any_element()
@@ -1810,19 +1807,18 @@ impl ArgumentListView {
                             }),
                     )
                     .child(
-                        Button::new(format!("remove-command-argument-{index}"))
-                            .ghost()
-                            .small()
-                            .icon(IconName::Minus)
-                            .tooltip("Remove argument")
-                            .on_click(cx.listener(move |this, _, _, cx| {
-                                if index < this.rows.len() {
-                                    this.flush_editors(cx);
-                                    this.rows.remove(index);
-                                    this.editors.clear();
-                                    cx.notify();
-                                }
-                            })),
+                        super::row_remove_button(
+                            format!("remove-command-argument-{index}"),
+                            "Remove argument",
+                        )
+                        .on_click(cx.listener(move |this, _, _, cx| {
+                            if index < this.rows.len() {
+                                this.flush_editors(cx);
+                                this.rows.remove(index);
+                                this.editors.clear();
+                                cx.notify();
+                            }
+                        })),
                     ),
             )
             .into_any_element()
@@ -2216,14 +2212,13 @@ impl EntryListView {
                             })),
                     )
                     .child(
-                        Button::new(format!("remove-command-container-entry-{index}"))
-                            .ghost()
-                            .small()
-                            .icon(IconName::Minus)
-                            .tooltip("Remove entry")
-                            .on_click(cx.listener(move |this, _, _, cx| {
-                                this.remove_entry(index, cx);
-                            })),
+                        super::row_remove_button(
+                            format!("remove-command-container-entry-{index}"),
+                            "Remove entry",
+                        )
+                        .on_click(cx.listener(move |this, _, _, cx| {
+                            this.remove_entry(index, cx);
+                        })),
                     ),
             )
             .child(editor)
@@ -7139,13 +7134,16 @@ impl Render for ParameterToSetListForm {
                                     }),
                             )
                             .child(
-                                Button::new(format!("remove-parameter-to-set-{index}"))
-                                    .small()
-                                    .icon(IconName::Minus)
-                                    .on_click(cx.listener(move |this, _, _, cx| {
+                                super::row_remove_button(
+                                    format!("remove-parameter-to-set-{index}"),
+                                    "Remove parameter assignment",
+                                )
+                                .on_click(cx.listener(
+                                    move |this, _, _, cx| {
                                         this.rows.remove(index);
                                         cx.notify();
-                                    })),
+                                    },
+                                )),
                             ),
                     )
             }))
@@ -7440,13 +7438,16 @@ impl Render for ParametersToSuspendAlarmsOnSetForm {
                     )))
                     .child(
                         div().mb(px(6.)).child(
-                            Button::new(format!("remove-suspend-alarm-{index}"))
-                                .small()
-                                .icon(IconName::Minus)
-                                .on_click(cx.listener(move |this, _, _, cx| {
+                            super::row_remove_button(
+                                format!("remove-suspend-alarm-{index}"),
+                                "Remove alarm suspension",
+                            )
+                            .on_click(cx.listener(
+                                move |this, _, _, cx| {
                                     this.rows.remove(index);
                                     cx.notify();
-                                })),
+                                },
+                            )),
                         ),
                     )
             }))
@@ -7565,13 +7566,16 @@ impl Render for VerifierListForm {
                                             }),
                                     )
                                     .child(
-                                        Button::new(format!("remove-verifier-{index}"))
-                                            .small()
-                                            .icon(IconName::Minus)
-                                            .on_click(cx.listener(move |this, _, _, cx| {
+                                        super::row_remove_button(
+                                            format!("remove-verifier-{index}"),
+                                            "Remove verifier",
+                                        )
+                                        .on_click(
+                                            cx.listener(move |this, _, _, cx| {
                                                 this.rows.remove(index);
                                                 cx.notify();
-                                            })),
+                                            }),
+                                        ),
                                     ),
                             ),
                     )
@@ -8093,13 +8097,16 @@ impl Render for TransmissionConstraintListForm {
                             )))
                             .child(
                                 div().mb(px(6.)).child(
-                                    Button::new(format!("remove-transmission-constraint-{index}"))
-                                        .small()
-                                        .icon(IconName::Minus)
-                                        .on_click(cx.listener(move |this, _, _, cx| {
+                                    super::row_remove_button(
+                                        format!("remove-transmission-constraint-{index}"),
+                                        "Remove transmission constraint",
+                                    )
+                                    .on_click(cx.listener(
+                                        move |this, _, _, cx| {
                                             this.rows.remove(index);
                                             cx.notify();
-                                        })),
+                                        },
+                                    )),
                                 ),
                             ),
                     )

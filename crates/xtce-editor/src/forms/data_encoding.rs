@@ -4,7 +4,7 @@ use gpui::{
 };
 use gpui_component::{
     IconName, IndexPath, Sizable, StyledExt,
-    button::{Button, ButtonVariants},
+    button::Button,
     h_flex,
     input::InputState,
     select::{Select, SelectEvent, SelectState},
@@ -787,10 +787,7 @@ impl DataEncodingForm {
                             .justify_between()
                             .child(div().text_sm().font_medium().child("From-binary transform"))
                             .child(if self.from_transform_present {
-                                Button::new("remove-data-from-binary-transform")
-                                    .small()
-                                    .danger()
-                                    .label("Remove")
+                                super::section_remove_button("remove-data-from-binary-transform")
                                     .on_click(cx.listener(|this, _, _, cx| {
                                         this.from_transform_present = false;
                                         cx.notify();
@@ -818,10 +815,7 @@ impl DataEncodingForm {
                             .justify_between()
                             .child(div().text_sm().font_medium().child("To-binary transform"))
                             .child(if self.to_transform_present {
-                                Button::new("remove-data-to-binary-transform")
-                                    .small()
-                                    .danger()
-                                    .label("Remove")
+                                super::section_remove_button("remove-data-to-binary-transform")
                                     .on_click(cx.listener(|this, _, _, cx| {
                                         this.to_transform_present = false;
                                         cx.notify();
@@ -864,14 +858,15 @@ impl DataEncodingForm {
                                             .child("Termination character"),
                                     )
                                     .child(if self.fixed_termination_present {
-                                        Button::new("remove-fixed-string-termination")
-                                            .small()
-                                            .danger()
-                                            .label("Remove")
-                                            .on_click(cx.listener(|this, _, _, cx| {
+                                        super::section_remove_button(
+                                            "remove-fixed-string-termination",
+                                        )
+                                        .on_click(
+                                            cx.listener(|this, _, _, cx| {
                                                 this.fixed_termination_present = false;
                                                 cx.notify();
-                                            }))
+                                            }),
+                                        )
                                     } else {
                                         Button::new("add-fixed-string-termination")
                                             .small()
@@ -900,14 +895,15 @@ impl DataEncodingForm {
                                     .justify_between()
                                     .child(div().text_sm().font_medium().child("Leading size"))
                                     .child(if self.fixed_leading_size_present {
-                                        Button::new("remove-fixed-string-leading-size")
-                                            .small()
-                                            .danger()
-                                            .label("Remove")
-                                            .on_click(cx.listener(|this, _, _, cx| {
+                                        super::section_remove_button(
+                                            "remove-fixed-string-leading-size",
+                                        )
+                                        .on_click(
+                                            cx.listener(|this, _, _, cx| {
                                                 this.fixed_leading_size_present = false;
                                                 cx.notify();
-                                            }))
+                                            }),
+                                        )
                                     } else {
                                         Button::new("add-fixed-string-leading-size")
                                             .small()

@@ -3,11 +3,7 @@ use gpui::{
     prelude::FluentBuilder,
 };
 use gpui_component::{
-    IndexPath, Sizable, StyledExt,
-    button::{Button, ButtonVariants},
-    h_flex,
-    input::InputState,
-    select::SelectState,
+    IndexPath, Sizable, StyledExt, button::Button, h_flex, input::InputState, select::SelectState,
     v_flex,
 };
 use strum::{Display, EnumString, VariantArray};
@@ -124,14 +120,12 @@ impl Render for DynamicValueForm {
                             .child("Linear adjustment"),
                     )
                     .child(if self.linear_adjustment_present {
-                        Button::new("remove-dynamic-linear-adjustment")
-                            .small()
-                            .danger()
-                            .label("Remove")
-                            .on_click(cx.listener(|this, _, _, cx| {
+                        super::section_remove_button("remove-dynamic-linear-adjustment").on_click(
+                            cx.listener(|this, _, _, cx| {
                                 this.linear_adjustment_present = false;
                                 cx.notify();
-                            }))
+                            }),
+                        )
                     } else {
                         Button::new("add-dynamic-linear-adjustment")
                             .small()

@@ -4,7 +4,7 @@ use gpui::{
 };
 use gpui_component::{
     ActiveTheme, IconName, IndexPath, Sizable, StyledExt,
-    button::{Button, ButtonVariants},
+    button::Button,
     h_flex,
     input::InputState,
     select::{Select, SelectEvent, SelectState},
@@ -249,14 +249,12 @@ impl Render for ContainerBinaryEncodingForm {
                             ),
                     )
                     .child(if self.present {
-                        Button::new("remove-container-binary-encoding")
-                            .small()
-                            .danger()
-                            .label("Remove binary encoding")
-                            .on_click(cx.listener(|this, _, _, cx| {
+                        super::section_remove_button("remove-container-binary-encoding").on_click(
+                            cx.listener(|this, _, _, cx| {
                                 this.present = false;
                                 cx.notify();
-                            }))
+                            }),
+                        )
                     } else {
                         Button::new("add-container-binary-encoding")
                             .small()
@@ -298,14 +296,15 @@ impl Render for ContainerBinaryEncodingForm {
                                             .child("From-binary transform"),
                                     )
                                     .child(if self.from_transform_present {
-                                        Button::new("remove-container-from-binary-transform")
-                                            .small()
-                                            .danger()
-                                            .label("Remove")
-                                            .on_click(cx.listener(|this, _, _, cx| {
+                                        super::section_remove_button(
+                                            "remove-container-from-binary-transform",
+                                        )
+                                        .on_click(
+                                            cx.listener(|this, _, _, cx| {
                                                 this.from_transform_present = false;
                                                 cx.notify();
-                                            }))
+                                            }),
+                                        )
                                     } else {
                                         Button::new("add-container-from-binary-transform")
                                             .small()
@@ -331,14 +330,15 @@ impl Render for ContainerBinaryEncodingForm {
                                         div().text_sm().font_medium().child("To-binary transform"),
                                     )
                                     .child(if self.to_transform_present {
-                                        Button::new("remove-container-to-binary-transform")
-                                            .small()
-                                            .danger()
-                                            .label("Remove")
-                                            .on_click(cx.listener(|this, _, _, cx| {
+                                        super::section_remove_button(
+                                            "remove-container-to-binary-transform",
+                                        )
+                                        .on_click(
+                                            cx.listener(|this, _, _, cx| {
                                                 this.to_transform_present = false;
                                                 cx.notify();
-                                            }))
+                                            }),
+                                        )
                                     } else {
                                         Button::new("add-container-to-binary-transform")
                                             .small()

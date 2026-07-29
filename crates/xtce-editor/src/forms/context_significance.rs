@@ -3,12 +3,8 @@ use gpui::{
     prelude::FluentBuilder,
 };
 use gpui_component::{
-    ActiveTheme, IconName, IndexPath, Sizable, StyledExt,
-    button::{Button, ButtonVariants},
-    h_flex,
-    input::InputState,
-    select::SelectState,
-    v_flex,
+    ActiveTheme, IconName, IndexPath, Sizable, StyledExt, button::Button, h_flex,
+    input::InputState, select::SelectState, v_flex,
 };
 use strum::{Display, EnumString, VariantArray};
 
@@ -106,16 +102,18 @@ impl Render for ContextSignificanceListForm {
                                     .child(format!("Context significance {}", index + 1)),
                             )
                             .child(
-                                Button::new(format!("remove-context-significance-{index}"))
-                                    .ghost()
-                                    .small()
-                                    .icon(IconName::Minus)
-                                    .on_click(cx.listener(move |this, _, _, cx| {
+                                super::row_remove_button(
+                                    format!("remove-context-significance-{index}"),
+                                    "Remove context significance",
+                                )
+                                .on_click(cx.listener(
+                                    move |this, _, _, cx| {
                                         if index < this.rows.len() {
                                             this.rows.remove(index);
                                             cx.notify();
                                         }
-                                    })),
+                                    },
+                                )),
                             ),
                     )
                     .child(row.clone())

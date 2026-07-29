@@ -4,7 +4,7 @@ use gpui::{
 };
 use gpui_component::{
     ActiveTheme, Disableable, IconName, IndexPath, Sizable, StyledExt,
-    button::{Button, ButtonVariants},
+    button::Button,
     h_flex,
     input::InputState,
     select::{SelectEvent, SelectState},
@@ -147,16 +147,18 @@ impl Render for DiscreteLookupListForm {
                                     .child(format!("Lookup {}", index + 1)),
                             )
                             .child(
-                                Button::new(format!("remove-discrete-lookup-{index}"))
-                                    .ghost()
-                                    .small()
-                                    .icon(IconName::Minus)
-                                    .on_click(cx.listener(move |this, _, _, cx| {
+                                super::row_remove_button(
+                                    format!("remove-discrete-lookup-{index}"),
+                                    "Remove discrete lookup",
+                                )
+                                .on_click(cx.listener(
+                                    move |this, _, _, cx| {
                                         if index < this.rows.len() {
                                             this.rows.remove(index);
                                             cx.notify();
                                         }
-                                    })),
+                                    },
+                                )),
                             ),
                     )
                     .child(row.clone())
@@ -261,17 +263,17 @@ impl Render for ComparisonList {
                     .items_end()
                     .child(row.clone())
                     .child(
-                        Button::new(format!("remove-lookup-comparison-{index}"))
-                            .ghost()
-                            .small()
-                            .icon(IconName::Minus)
-                            .disabled(self.rows.len() <= 1)
-                            .on_click(cx.listener(move |this, _, _, cx| {
-                                if this.rows.len() > 1 && index < this.rows.len() {
-                                    this.rows.remove(index);
-                                    cx.notify();
-                                }
-                            })),
+                        super::row_remove_button(
+                            format!("remove-lookup-comparison-{index}"),
+                            "Remove comparison",
+                        )
+                        .disabled(self.rows.len() <= 1)
+                        .on_click(cx.listener(move |this, _, _, cx| {
+                            if this.rows.len() > 1 && index < this.rows.len() {
+                                this.rows.remove(index);
+                                cx.notify();
+                            }
+                        })),
                     )
             })
             .collect::<Vec<_>>();

@@ -170,14 +170,12 @@ impl Render for ToStringForm {
                     ),
             )
             .child(if self.active {
-                Button::new("remove-parameter-type-to-string")
-                    .small()
-                    .icon(IconName::Minus)
-                    .label("Remove")
-                    .on_click(cx.listener(|this, _, _, cx| {
+                super::section_remove_button("remove-parameter-type-to-string").on_click(
+                    cx.listener(|this, _, _, cx| {
                         this.active = false;
                         cx.notify();
-                    }))
+                    }),
+                )
             } else {
                 Button::new("add-parameter-type-to-string")
                     .small()

@@ -271,14 +271,16 @@ impl BooleanExpressionForm {
                     )
                     .when_some(parent_count, |header, count| {
                         header.child(
-                            Button::new(format!("remove-boolean-group-{path:?}"))
-                                .xsmall()
-                                .ghost()
-                                .icon(IconName::Minus)
-                                .disabled(count <= 2)
-                                .on_click(cx.listener(move |this, _, _, cx| {
+                            super::row_remove_button(
+                                format!("remove-boolean-group-{path:?}"),
+                                "Remove condition group",
+                            )
+                            .disabled(count <= 2)
+                            .on_click(cx.listener(
+                                move |this, _, _, cx| {
                                     this.remove_node(&remove_path, cx);
-                                })),
+                                },
+                            )),
                         )
                     }),
             )
@@ -337,10 +339,10 @@ impl BooleanExpressionForm {
                     .child(div().text_sm().font_medium().child("Condition"))
                     .when_some(parent_count, |header, count| {
                         header.child(
-                            Button::new(format!("remove-boolean-condition-{path:?}"))
-                                .xsmall()
-                                .ghost()
-                                .icon(IconName::Minus)
+                            super::row_remove_button(
+                                format!("remove-boolean-condition-{path:?}"),
+                                "Remove condition",
+                            )
                                 .disabled(count <= 2)
                                 .on_click(cx.listener(move |this, _, _, cx| {
                                     this.remove_node(&remove_path, cx);

@@ -389,14 +389,14 @@ impl EnumerationListForm {
                             })),
                     )
                     .child(
-                        Button::new(format!("remove-enumeration-{index}"))
-                            .xsmall()
-                            .ghost()
-                            .icon(IconName::Minus)
-                            .disabled(count <= 1)
-                            .on_click(cx.listener(move |this, _, _, cx| {
-                                this.remove_row(index, cx);
-                            })),
+                        super::row_remove_button(
+                            format!("remove-enumeration-{index}"),
+                            "Remove enumeration",
+                        )
+                        .disabled(count <= 1)
+                        .on_click(cx.listener(move |this, _, _, cx| {
+                            this.remove_row(index, cx);
+                        })),
                     ),
             )
             .child(editor)

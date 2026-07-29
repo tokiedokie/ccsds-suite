@@ -3,12 +3,8 @@ use gpui::{
     prelude::FluentBuilder,
 };
 use gpui_component::{
-    IconName, IndexPath, Sizable, StyledExt,
-    button::{Button, ButtonVariants},
-    h_flex,
-    input::InputState,
-    select::SelectState,
-    v_flex,
+    IconName, IndexPath, Sizable, StyledExt, button::Button, h_flex, input::InputState,
+    select::SelectState, v_flex,
 };
 use strum::{Display, EnumString, VariantArray};
 
@@ -122,14 +118,12 @@ impl Render for ContainerRateForm {
                     .justify_between()
                     .child(div().text_sm().font_medium().child("Default rate"))
                     .child(if self.default_present {
-                        Button::new("remove-default-container-rate")
-                            .small()
-                            .danger()
-                            .label("Remove default rate")
-                            .on_click(cx.listener(|this, _, _, cx| {
+                        super::section_remove_button("remove-default-container-rate").on_click(
+                            cx.listener(|this, _, _, cx| {
                                 this.default_present = false;
                                 cx.notify();
-                            }))
+                            }),
+                        )
                     } else {
                         Button::new("add-default-container-rate")
                             .small()
@@ -215,16 +209,16 @@ impl Render for StreamRateList {
                     .items_end()
                     .child(row.clone())
                     .child(
-                        Button::new(format!("remove-stream-rate-{index}"))
-                            .ghost()
-                            .small()
-                            .icon(IconName::Minus)
-                            .on_click(cx.listener(move |this, _, _, cx| {
-                                if index < this.rows.len() {
-                                    this.rows.remove(index);
-                                    cx.notify();
-                                }
-                            })),
+                        super::row_remove_button(
+                            format!("remove-stream-rate-{index}"),
+                            "Remove stream rate",
+                        )
+                        .on_click(cx.listener(move |this, _, _, cx| {
+                            if index < this.rows.len() {
+                                this.rows.remove(index);
+                                cx.notify();
+                            }
+                        })),
                     )
             })
             .collect::<Vec<_>>();

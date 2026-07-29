@@ -326,12 +326,12 @@ impl AggregateMemberListForm {
                             })),
                     )
                     .child(
-                        Button::new(format!("remove-member-{index}"))
-                            .xsmall()
-                            .ghost()
-                            .icon(IconName::Minus)
-                            .disabled(count <= 1)
-                            .on_click(cx.listener(move |this, _, _, cx| this.remove(index, cx))),
+                        super::row_remove_button(
+                            format!("remove-member-{index}"),
+                            "Remove aggregate member",
+                        )
+                        .disabled(count <= 1)
+                        .on_click(cx.listener(move |this, _, _, cx| this.remove(index, cx))),
                     ),
             )
             .child(editor)

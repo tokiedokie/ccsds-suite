@@ -4,7 +4,7 @@ use gpui::{
 };
 use gpui_component::{
     ActiveTheme, IconName, IndexPath, Sizable, StyledExt,
-    button::{Button, ButtonVariants},
+    button::Button,
     h_flex,
     input::{Input, InputEvent, InputState},
     select::{SelectEvent, SelectState},
@@ -441,10 +441,7 @@ impl FixedFrameStreamForm {
                             .justify_between()
                             .child(div().text_sm().font_medium().child("Auto invert"))
                             .child(if self.auto_invert_present {
-                                Button::new("remove-fixed-frame-auto-invert")
-                                    .small()
-                                    .danger()
-                                    .label("Remove")
+                                super::section_remove_button("remove-fixed-frame-auto-invert")
                                     .on_click(cx.listener(|this, _, _, cx| {
                                         this.auto_invert_present = false;
                                         cx.notify();
@@ -481,14 +478,13 @@ impl FixedFrameStreamForm {
                                                     .child("Invert algorithm"),
                                             )
                                             .child(if self.invert_algorithm_present {
-                                                Button::new("remove-fixed-frame-invert-algorithm")
-                                                    .small()
-                                                    .danger()
-                                                    .label("Remove")
-                                                    .on_click(cx.listener(|this, _, _, cx| {
-                                                        this.invert_algorithm_present = false;
-                                                        cx.notify();
-                                                    }))
+                                                super::section_remove_button(
+                                                    "remove-fixed-frame-invert-algorithm",
+                                                )
+                                                .on_click(cx.listener(|this, _, _, cx| {
+                                                    this.invert_algorithm_present = false;
+                                                    cx.notify();
+                                                }))
                                             } else {
                                                 Button::new("add-fixed-frame-invert-algorithm")
                                                     .small()

@@ -46,11 +46,12 @@ mod variable_string;
 use std::rc::Rc;
 
 use gpui::{
-    App, Div, Entity, InteractiveElement, IntoElement, ParentElement, StatefulInteractiveElement,
-    Styled, WeakEntity, div, prelude::FluentBuilder, uniform_list,
+    App, Div, ElementId, Entity, InteractiveElement, IntoElement, ParentElement, SharedString,
+    StatefulInteractiveElement, Styled, WeakEntity, div, prelude::FluentBuilder, uniform_list,
 };
 use gpui_component::{
-    ActiveTheme, StyledExt,
+    ActiveTheme, IconName, Sizable, StyledExt,
+    button::{Button, ButtonVariants},
     form::{field as form_field, v_form},
     input::{Input, InputState},
     select::{Select, SelectItem, SelectState},
@@ -119,6 +120,24 @@ where
                 .child(Select::new(select).w_full()),
         ),
     )
+}
+
+pub(super) fn section_remove_button(id: impl Into<ElementId>) -> Button {
+    Button::new(id)
+        .small()
+        .icon(IconName::Minus)
+        .label("Remove")
+}
+
+pub(super) fn row_remove_button(
+    id: impl Into<ElementId>,
+    tooltip: impl Into<SharedString>,
+) -> Button {
+    Button::new(id)
+        .small()
+        .ghost()
+        .icon(IconName::Minus)
+        .tooltip(tooltip)
 }
 
 fn field_requirement(hint: &'static str) -> (bool, &'static str) {

@@ -187,19 +187,21 @@ impl RpnOperationForm {
                                     })),
                             )
                             .child(
-                                Button::new("remove-selected-rpn-entry")
-                                    .xsmall()
-                                    .danger()
-                                    .icon(IconName::Minus)
-                                    .disabled(row_count <= 1)
-                                    .on_click(cx.listener(move |this, _, _, cx| {
+                                super::row_remove_button(
+                                    "remove-selected-rpn-entry",
+                                    "Remove selected operation",
+                                )
+                                .disabled(row_count <= 1)
+                                .on_click(cx.listener(
+                                    move |this, _, _, cx| {
                                         if this.rows.len() > 1 && index < this.rows.len() {
                                             this.rows.remove(index);
                                             this.selected =
                                                 index.min(this.rows.len().saturating_sub(1));
                                             cx.notify();
                                         }
-                                    })),
+                                    },
+                                )),
                             ),
                     ),
             )
