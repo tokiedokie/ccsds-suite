@@ -434,6 +434,7 @@ struct EditorChrome {
 struct ElementTree {
     search_input: Entity<InputState>,
     collapsed: HashSet<ElementSelection>,
+    filter_collapsed: HashSet<ElementSelection>,
     tree_state: Entity<TreeState>,
     nodes: HashMap<SharedString, TreeNode>,
     ordered_nodes: Vec<TreeNode>,
@@ -643,6 +644,7 @@ impl XtceEditor {
         self.inspector.forms = forms;
         self.tree.update(cx, |tree, cx| {
             tree.collapsed = collapsed;
+            tree.filter_collapsed.clear();
             tree.search_input
                 .update(cx, |input, cx| input.set_value("", window, cx));
         });
@@ -2473,6 +2475,7 @@ impl ElementTree {
                 &search_input,
                 |this: &mut ElementTree, _, event: &ComponentInputEvent, cx| {
                     if matches!(event, ComponentInputEvent::Change) {
+                        this.filter_collapsed.clear();
                         this.rebuild(cx);
                     }
                 },
@@ -2489,9 +2492,11 @@ impl ElementTree {
                     match event {
                         TreeEvent::Expanded(_) => {
                             this.collapsed.remove(&node.selection);
+                            this.filter_collapsed.remove(&node.selection);
                         }
                         TreeEvent::Collapsed(_) => {
                             this.collapsed.insert(node.selection.clone());
+                            this.filter_collapsed.insert(node.selection.clone());
                         }
                     }
                 },
@@ -2499,6 +2504,7 @@ impl ElementTree {
             let mut this = Self {
                 search_input,
                 collapsed: Self::collapsed_by_default(root),
+                filter_collapsed: HashSet::new(),
                 tree_state,
                 nodes: HashMap::new(),
                 ordered_nodes: Vec::new(),
@@ -2564,7 +2570,14 @@ impl ElementTree {
             .trim()
             .to_ascii_lowercase();
         let mut index = 0;
-        let items = Self::build_items(&self.ordered_nodes, &mut index, 0, &query, &self.collapsed);
+        let items = Self::build_items(
+            &self.ordered_nodes,
+            &mut index,
+            0,
+            &query,
+            &self.collapsed,
+            &self.filter_collapsed,
+        );
         let selected_id = selected.map(Self::node_id);
         let selected_item = selected_id
             .as_ref()
@@ -2583,6 +2596,7 @@ impl ElementTree {
         level: usize,
         query: &str,
         collapsed: &HashSet<ElementSelection>,
+        filter_collapsed: &HashSet<ElementSelection>,
     ) -> Vec<TreeItem> {
         let mut items = Vec::new();
         while *index < nodes.len() {
@@ -2599,7 +2613,9 @@ impl ElementTree {
                 .filter(|next| next.level > level)
                 .map(|next| next.level);
             let children = child_level
-                .map(|level| Self::build_items(nodes, index, level, query, collapsed))
+                .map(|level| {
+                    Self::build_items(nodes, index, level, query, collapsed, filter_collapsed)
+                })
                 .unwrap_or_default();
             let matches = query.is_empty() || node.label.to_ascii_lowercase().contains(query);
             if !matches && children.is_empty() {
@@ -2608,7 +2624,7 @@ impl ElementTree {
             let expanded = if query.is_empty() {
                 !collapsed.contains(&node.selection)
             } else {
-                !children.is_empty()
+                !children.is_empty() && !filter_collapsed.contains(&node.selection)
             };
             items.push(
                 TreeItem::new(Self::node_id(&node.selection), node.label)
@@ -4683,7 +4699,8 @@ mod tests {
             kind: ElementKind::TelemetryParameterTypeSet,
         }]);
         let mut index = 0;
-        let items = ElementTree::build_items(&nodes, &mut index, 0, "", &collapsed);
+        let items =
+            ElementTree::build_items(&nodes, &mut index, 0, "", &collapsed, &HashSet::new());
         let hidden_parameter_type = ElementTree::node_id(&ElementSelection {
             system_path: Vec::new(),
             kind: ElementKind::TelemetryParameterType(0),
@@ -4701,6 +4718,60 @@ mod tests {
             ElementTree::find_visible_item(&items, &visible_parameter).is_some(),
             "a selection in an expanded sibling set should remain selectable"
         );
+    }
+
+    #[test]
+    fn a_set_manually_collapsed_during_filtering_stays_closed_during_rebuild() {
+        let document = sample_document();
+        let mut nodes = Vec::new();
+        XtceDocument::collect_tree_nodes(&document, &mut Vec::new(), 0, &mut nodes);
+        let collapsed = ElementTree::collapsed_by_default(&document);
+        let parameter_type_set = ElementSelection {
+            system_path: Vec::new(),
+            kind: ElementKind::TelemetryParameterTypeSet,
+        };
+        let parameter_type_id = ElementTree::node_id(&ElementSelection {
+            system_path: Vec::new(),
+            kind: ElementKind::TelemetryParameterType(0),
+        });
+        let parameter_id = ElementTree::node_id(&ElementSelection {
+            system_path: Vec::new(),
+            kind: ElementKind::TelemetryParameter(0),
+        });
+
+        let mut index = 0;
+        let initially_filtered = ElementTree::build_items(
+            &nodes,
+            &mut index,
+            0,
+            "operationalflag",
+            &collapsed,
+            &HashSet::new(),
+        );
+        assert!(
+            ElementTree::find_visible_item(&initially_filtered, &parameter_type_id).is_some(),
+            "matching descendants should initially be revealed"
+        );
+        assert!(ElementTree::find_visible_item(&initially_filtered, &parameter_id).is_some());
+
+        let filter_collapsed = HashSet::from([parameter_type_set.clone()]);
+        index = 0;
+        let rebuilt = ElementTree::build_items(
+            &nodes,
+            &mut index,
+            0,
+            "operationalflag",
+            &collapsed,
+            &filter_collapsed,
+        );
+        let parameter_type_set_id = ElementTree::node_id(&parameter_type_set);
+        let parameter_type_set_item =
+            ElementTree::find_visible_item(&rebuilt, &parameter_type_set_id)
+                .expect("the collapsed matching set remains visible");
+
+        assert!(!parameter_type_set_item.is_expanded());
+        assert!(ElementTree::find_visible_item(&rebuilt, &parameter_type_id).is_none());
+        assert!(ElementTree::find_visible_item(&rebuilt, &parameter_id).is_some());
     }
 
     #[test]
@@ -4733,7 +4804,8 @@ mod tests {
         let collapsed = HashSet::new();
         let mut index = 0;
 
-        let items = ElementTree::build_items(&nodes, &mut index, 0, "", &collapsed);
+        let items =
+            ElementTree::build_items(&nodes, &mut index, 0, "", &collapsed, &HashSet::new());
 
         assert_eq!(items.len(), 1);
         assert_eq!(items[0].label.as_ref(), "ExampleMission");
@@ -4765,7 +4837,14 @@ mod tests {
         let collapsed = ElementTree::collapsed_by_default(&document);
         let mut index = 0;
 
-        let items = ElementTree::build_items(&nodes, &mut index, 0, "samplecount", &collapsed);
+        let items = ElementTree::build_items(
+            &nodes,
+            &mut index,
+            0,
+            "samplecount",
+            &collapsed,
+            &HashSet::new(),
+        );
 
         assert_eq!(items.len(), 1);
         assert_eq!(items[0].label.as_ref(), "ExampleMission");
