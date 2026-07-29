@@ -611,7 +611,7 @@ fn select_field<T>(label: &'static str, select: &Entity<SelectState<Vec<T>>>) ->
 where
     T: Clone + PartialEq + gpui_component::select::SelectItem + 'static,
 {
-    super::select_field(label, "", select)
+    super::select_field(label, "Required", select)
 }
 
 fn reference_choice(value: &xtce::ReferencePointType) -> ReferenceChoice {

@@ -235,7 +235,7 @@ fn select_field(
     label: &'static str,
     select: &Entity<SelectState<Vec<BooleanChoice>>>,
 ) -> gpui::Div {
-    super::select_field(label, "", select)
+    super::select_field(label, "Required", select)
 }
 
 #[cfg(test)]

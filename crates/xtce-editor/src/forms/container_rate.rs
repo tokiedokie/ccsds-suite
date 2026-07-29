@@ -386,7 +386,7 @@ fn selected_basis(select: &Entity<SelectState<Vec<RateBasis>>>, cx: &App) -> Rat
 }
 
 fn select_field(label: &'static str, select: &Entity<SelectState<Vec<RateBasis>>>) -> Div {
-    super::select_field(label, "", select)
+    super::select_field(label, "Required", select)
 }
 
 #[cfg(test)]
