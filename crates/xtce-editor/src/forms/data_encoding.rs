@@ -967,7 +967,10 @@ impl<'a> DataEncodingRef<'a> {
         match self {
             Self::Float(value) => value.default_calibrator.as_ref(),
             Self::Integer(value) => value.default_calibrator.as_ref(),
-            Self::Binary(_) | Self::ArgumentBinary(_) | Self::String(_) | Self::ArgumentString(_) => None,
+            Self::Binary(_)
+            | Self::ArgumentBinary(_)
+            | Self::String(_)
+            | Self::ArgumentString(_) => None,
         }
     }
 
@@ -975,7 +978,10 @@ impl<'a> DataEncodingRef<'a> {
         match self {
             Self::Float(value) => value.context_calibrator_list.as_ref(),
             Self::Integer(value) => value.context_calibrator_list.as_ref(),
-            Self::Binary(_) | Self::ArgumentBinary(_) | Self::String(_) | Self::ArgumentString(_) => None,
+            Self::Binary(_)
+            | Self::ArgumentBinary(_)
+            | Self::String(_)
+            | Self::ArgumentString(_) => None,
         }
     }
 }
@@ -1041,10 +1047,12 @@ fn string_fixed_size(encoding: Option<DataEncodingRef<'_>>) -> Option<&xtce::Siz
             xtce::StringDataEncodingTypeContent::SizeInBits(value) => Some(value),
             _ => None,
         }),
-        Some(DataEncodingRef::ArgumentString(value)) => value.content.iter().find_map(|item| match item {
-            xtce::ArgumentStringDataEncodingTypeContent::SizeInBits(value) => Some(value),
-            _ => None,
-        }),
+        Some(DataEncodingRef::ArgumentString(value)) => {
+            value.content.iter().find_map(|item| match item {
+                xtce::ArgumentStringDataEncodingTypeContent::SizeInBits(value) => Some(value),
+                _ => None,
+            })
+        }
         _ => None,
     }
 }
@@ -1143,10 +1151,14 @@ fn data_error_detect_correct(
             xtce::StringDataEncodingTypeContent::ErrorDetectCorrect(value) => Some(value),
             _ => None,
         }),
-        Some(DataEncodingRef::ArgumentString(value)) => value.content.iter().find_map(|item| match item {
-            xtce::ArgumentStringDataEncodingTypeContent::ErrorDetectCorrect(value) => Some(value),
-            _ => None,
-        }),
+        Some(DataEncodingRef::ArgumentString(value)) => {
+            value.content.iter().find_map(|item| match item {
+                xtce::ArgumentStringDataEncodingTypeContent::ErrorDetectCorrect(value) => {
+                    Some(value)
+                }
+                _ => None,
+            })
+        }
         None => None,
     }
 }
@@ -1224,7 +1236,10 @@ impl DataEncodingMut<'_> {
         match self {
             Self::Float(value) => Some(&mut value.default_calibrator),
             Self::Integer(value) => Some(&mut value.default_calibrator),
-            Self::Binary(_) | Self::ArgumentBinary(_) | Self::String(_) | Self::ArgumentString(_) => None,
+            Self::Binary(_)
+            | Self::ArgumentBinary(_)
+            | Self::String(_)
+            | Self::ArgumentString(_) => None,
         }
     }
 }
@@ -1274,12 +1289,16 @@ pub(super) fn find_argument_data_encoding(
     macro_rules! find {
         ($content:expr, $enum_type:ident) => {
             $content.iter().find_map(|item| match item {
-                xtce::$enum_type::BinaryDataEncoding(value) => Some(DataEncodingRef::ArgumentBinary(value)),
+                xtce::$enum_type::BinaryDataEncoding(value) => {
+                    Some(DataEncodingRef::ArgumentBinary(value))
+                }
                 xtce::$enum_type::FloatDataEncoding(value) => Some(DataEncodingRef::Float(value)),
                 xtce::$enum_type::IntegerDataEncoding(value) => {
                     Some(DataEncodingRef::Integer(value))
                 }
-                xtce::$enum_type::StringDataEncoding(value) => Some(DataEncodingRef::ArgumentString(value)),
+                xtce::$enum_type::StringDataEncoding(value) => {
+                    Some(DataEncodingRef::ArgumentString(value))
+                }
                 _ => None,
             })
         };
@@ -1352,12 +1371,16 @@ pub(super) fn find_argument_data_encoding_mut(
     macro_rules! find {
         ($content:expr, $enum_type:ident) => {
             $content.iter_mut().find_map(|item| match item {
-                xtce::$enum_type::BinaryDataEncoding(value) => Some(DataEncodingMut::ArgumentBinary(value)),
+                xtce::$enum_type::BinaryDataEncoding(value) => {
+                    Some(DataEncodingMut::ArgumentBinary(value))
+                }
                 xtce::$enum_type::FloatDataEncoding(value) => Some(DataEncodingMut::Float(value)),
                 xtce::$enum_type::IntegerDataEncoding(value) => {
                     Some(DataEncodingMut::Integer(value))
                 }
-                xtce::$enum_type::StringDataEncoding(value) => Some(DataEncodingMut::ArgumentString(value)),
+                xtce::$enum_type::StringDataEncoding(value) => {
+                    Some(DataEncodingMut::ArgumentString(value))
+                }
                 _ => None,
             })
         };

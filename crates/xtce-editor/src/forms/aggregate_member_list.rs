@@ -166,8 +166,7 @@ impl AggregateMemberListForm {
         argument_type: &mut xtce::ArgumentTypeSetTypeContent,
         cx: &App,
     ) {
-        let xtce::ArgumentTypeSetTypeContent::AggregateArgumentType(value) = argument_type
-        else {
+        let xtce::ArgumentTypeSetTypeContent::AggregateArgumentType(value) = argument_type else {
             return;
         };
         let rows = self.current_rows(cx);
@@ -462,8 +461,7 @@ fn rows_from_type(
 pub(super) fn rows_from_argument_type(
     argument_type: Option<&xtce::ArgumentTypeSetTypeContent>,
 ) -> Vec<MemberRowData> {
-    let Some(xtce::ArgumentTypeSetTypeContent::AggregateArgumentType(value)) = argument_type
-    else {
+    let Some(xtce::ArgumentTypeSetTypeContent::AggregateArgumentType(value)) = argument_type else {
         return Vec::new();
     };
     value

@@ -186,11 +186,7 @@ impl ArgumentTypeForm {
                     window,
                     cx,
                 ),
-                enumeration_list: EnumerationListForm::new_argument_type(
-                    argument_type,
-                    window,
-                    cx,
-                ),
+                enumeration_list: EnumerationListForm::new_argument_type(argument_type, window, cx),
                 aggregate_members: AggregateMemberListForm::new_argument_type(
                     argument_type,
                     window,
@@ -313,9 +309,16 @@ impl ArgumentTypeForm {
         }
         .apply_to(argument_type);
         apply_nested_items(argument_type, &value(&self.nested_items_input, cx));
-        self.enumeration_list.read(cx).apply_to_argument_type(argument_type, cx);
-        self.aggregate_members.read(cx).apply_to_argument_type(argument_type, cx);
-        set_argument_data_encoding_kind(argument_type, self.data_encoding.read(cx).selected_kind(cx));
+        self.enumeration_list
+            .read(cx)
+            .apply_to_argument_type(argument_type, cx);
+        self.aggregate_members
+            .read(cx)
+            .apply_to_argument_type(argument_type, cx);
+        set_argument_data_encoding_kind(
+            argument_type,
+            self.data_encoding.read(cx).selected_kind(cx),
+        );
         if let Some(encoding) = find_argument_data_encoding_mut(argument_type) {
             self.data_encoding.read(cx).apply_to(encoding, cx);
         }
@@ -1138,8 +1141,12 @@ mod tests {
         let encoding = find_argument_data_encoding(&value).expect("data encoding present");
         assert_eq!(encoding.kind(), DataEncodingKind::Integer);
 
-        let mut_encoding = find_argument_data_encoding_mut(&mut value).expect("mut encoding present");
-        assert!(matches!(mut_encoding, super::super::data_encoding::DataEncodingMut::Integer(_)));
+        let mut_encoding =
+            find_argument_data_encoding_mut(&mut value).expect("mut encoding present");
+        assert!(matches!(
+            mut_encoding,
+            super::super::data_encoding::DataEncodingMut::Integer(_)
+        ));
     }
 
     #[test]
@@ -1148,16 +1155,18 @@ mod tests {
         let xtce::ArgumentTypeSetTypeContent::EnumeratedArgumentType(enum_type) = &mut value else {
             panic!("expected enumerated argument")
         };
-        enum_type.content.push(xtce::EnumeratedArgumentTypeContent::EnumerationList(
-            xtce::EnumerationListType {
-                enumeration: vec![xtce::ValueEnumerationType {
-                    value: 1,
-                    max_value: None,
-                    label: "STATUS_OK".to_string(),
-                    short_description: Some("Ok".to_string()),
-                }],
-            },
-        ));
+        enum_type
+            .content
+            .push(xtce::EnumeratedArgumentTypeContent::EnumerationList(
+                xtce::EnumerationListType {
+                    enumeration: vec![xtce::ValueEnumerationType {
+                        value: 1,
+                        max_value: None,
+                        label: "STATUS_OK".to_string(),
+                        short_description: Some("Ok".to_string()),
+                    }],
+                },
+            ));
 
         let rows = super::super::enumeration_list::rows_from_argument_type(Some(&value));
         assert_eq!(rows.len(), 1);

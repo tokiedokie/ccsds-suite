@@ -195,8 +195,7 @@ impl EnumerationListForm {
         argument_type: &mut xtce::ArgumentTypeSetTypeContent,
         cx: &App,
     ) {
-        let xtce::ArgumentTypeSetTypeContent::EnumeratedArgumentType(argument_type) =
-            argument_type
+        let xtce::ArgumentTypeSetTypeContent::EnumeratedArgumentType(argument_type) = argument_type
         else {
             return;
         };
