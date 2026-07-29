@@ -119,7 +119,7 @@ impl Render for ContextSignificanceListForm {
             .child(
                 h_flex()
                     .justify_between()
-                    .child(div().text_sm().font_medium().child("Context significance"))
+                    .child(super::section_title("Context significance"))
                     .child(
                         super::collection_add_button(
                             "add-context-significance",
@@ -164,12 +164,7 @@ impl Render for ContextSignificanceRow {
             .w_full()
             .gap_4()
             .child(self.criteria.clone())
-            .child(
-                div()
-                    .text_sm()
-                    .font_medium()
-                    .child("Significance when matched"),
-            )
+            .child(super::section_title("Significance when matched"))
             .child(select_field("Consequence level", &self.consequence_level))
             .child(field(
                 "Reason for warning",

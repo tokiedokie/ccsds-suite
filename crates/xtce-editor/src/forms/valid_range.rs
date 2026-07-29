@@ -2,7 +2,7 @@ use gpui::{
     App, AppContext, Context, Div, Entity, IntoElement, ParentElement, Render, Styled, Window, div,
 };
 use gpui_component::{
-    ActiveTheme, IndexPath, StyledExt, h_flex, input::InputState, select::SelectState, v_flex,
+    ActiveTheme, IndexPath, h_flex, input::InputState, select::SelectState, v_flex,
 };
 use strum::{Display, EnumString, VariantArray};
 
@@ -140,14 +140,12 @@ impl Render for ValidRangeForm {
         let header = h_flex()
             .justify_between()
             .child(
-                v_flex()
-                    .child(div().text_sm().font_medium().child("Valid range"))
-                    .child(
-                        div()
-                            .text_xs()
-                            .text_color(cx.theme().muted_foreground)
-                            .child("Limits values accepted as valid"),
-                    ),
+                v_flex().child(super::section_title("Valid range")).child(
+                    div()
+                        .text_xs()
+                        .text_color(cx.theme().muted_foreground)
+                        .child("Limits values accepted as valid"),
+                ),
             )
             .child(if self.active {
                 super::section_remove_button("remove-parameter-type-valid-range").on_click(

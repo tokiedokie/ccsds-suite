@@ -2,7 +2,7 @@ use gpui::{
     App, AppContext, Context, Div, Entity, ParentElement, Render, Styled, Subscription, Window, div,
 };
 use gpui_component::{
-    ActiveTheme, IndexPath, StyledExt, h_flex,
+    ActiveTheme, IndexPath, h_flex,
     input::{InputEvent, InputState},
     select::SelectState,
     v_flex,
@@ -210,7 +210,7 @@ impl CustomAlgorithmForm {
             .child(
                 v_flex()
                     .gap_3()
-                    .child(div().text_sm().font_medium().child("Algorithm"))
+                    .child(super::section_title("Algorithm"))
                     .child(field(
                         "Language",
                         "Optional; defaults to pseudo",
@@ -245,7 +245,7 @@ impl CustomAlgorithmForm {
             .child(
                 v_flex()
                     .gap_3()
-                    .child(div().text_sm().font_medium().child("Trigger set"))
+                    .child(super::section_title("Trigger set"))
                     .child(
                         h_flex()
                             .gap_4()

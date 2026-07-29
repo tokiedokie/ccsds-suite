@@ -106,18 +106,16 @@ impl Render for DimensionListForm {
                 h_flex()
                     .justify_between()
                     .child(
-                        v_flex()
-                            .child(div().text_sm().font_medium().child("Dimensions"))
-                            .child(
-                                div()
-                                    .text_xs()
-                                    .text_color(cx.theme().muted_foreground)
-                                    .child(super::count_label(
-                                        self.rows.len(),
-                                        "dimension",
-                                        "dimensions",
-                                    )),
-                            ),
+                        v_flex().child(super::section_title("Dimensions")).child(
+                            div()
+                                .text_xs()
+                                .text_color(cx.theme().muted_foreground)
+                                .child(super::count_label(
+                                    self.rows.len(),
+                                    "dimension",
+                                    "dimensions",
+                                )),
+                        ),
                     )
                     .child(
                         super::collection_add_button(

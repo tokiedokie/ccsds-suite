@@ -393,7 +393,7 @@ impl Render for DefaultCalibratorForm {
                 form.child(
                     h_flex()
                         .justify_between()
-                        .child(div().text_sm().font_medium().child("Default calibrator"))
+                        .child(super::section_title("Default calibrator"))
                         .child(if present {
                             super::section_remove_button("remove-default-calibrator").on_click(
                                 cx.listener(|this, _, _, cx| {

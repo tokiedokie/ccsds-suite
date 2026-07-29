@@ -1,10 +1,8 @@
 use gpui::{
-    App, AppContext, Context, Div, Entity, IntoElement, ParentElement, Render, Styled, Window, div,
+    App, AppContext, Context, Div, Entity, IntoElement, ParentElement, Render, Styled, Window,
     prelude::FluentBuilder,
 };
-use gpui_component::{
-    IndexPath, StyledExt, h_flex, input::InputState, select::SelectState, v_flex,
-};
+use gpui_component::{IndexPath, h_flex, input::InputState, select::SelectState, v_flex};
 use strum::{Display, EnumString, VariantArray};
 
 use super::{field, impl_select_item};
@@ -115,7 +113,7 @@ impl Render for ContainerRateForm {
             .child(
                 h_flex()
                     .justify_between()
-                    .child(div().text_sm().font_medium().child("Default rate"))
+                    .child(super::section_title("Default rate"))
                     .child(if self.default_present {
                         super::section_remove_button("remove-default-container-rate").on_click(
                             cx.listener(|this, _, _, cx| {
@@ -223,7 +221,7 @@ impl Render for StreamRateList {
             .child(
                 h_flex()
                     .justify_between()
-                    .child(div().text_sm().font_medium().child("Per-stream rates"))
+                    .child(super::section_title("Per-stream rates"))
                     .child(
                         super::collection_add_button("add-stream-rate", "Add stream rate")
                             .on_click(cx.listener(move |this, _, window, cx| {

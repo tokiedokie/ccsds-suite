@@ -2,7 +2,7 @@ use gpui::{
     App, AppContext, Context, Div, Entity, IntoElement, ParentElement, Render, Styled, Window, div,
 };
 use gpui_component::{
-    ActiveTheme, IndexPath, StyledExt, h_flex, input::InputState, select::SelectState, v_flex,
+    ActiveTheme, IndexPath, h_flex, input::InputState, select::SelectState, v_flex,
 };
 use strum::{Display, EnumString, VariantArray};
 
@@ -106,14 +106,12 @@ impl Render for TimeEncodingForm {
         let header = h_flex()
             .justify_between()
             .child(
-                v_flex()
-                    .child(div().text_sm().font_medium().child("Time encoding"))
-                    .child(
-                        div()
-                            .text_xs()
-                            .text_color(cx.theme().muted_foreground)
-                            .child("Defines how the time value is stored"),
-                    ),
+                v_flex().child(super::section_title("Time encoding")).child(
+                    div()
+                        .text_xs()
+                        .text_color(cx.theme().muted_foreground)
+                        .child("Defines how the time value is stored"),
+                ),
             )
             .child(if self.active {
                 super::section_remove_button("remove-parameter-type-time-encoding").on_click(
@@ -149,7 +147,7 @@ impl Render for TimeEncodingForm {
                         .child(field("Scale", "Optional; defaults to 1", &self.scale, cx))
                         .child(field("Offset", "Optional; defaults to 0", &self.offset, cx)),
                 )
-                .child(div().text_sm().font_medium().child("Data encoding"))
+                .child(super::section_title("Data encoding"))
                 .child(self.data_encoding.clone());
         }
         form

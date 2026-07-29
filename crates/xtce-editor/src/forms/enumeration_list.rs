@@ -5,7 +5,7 @@ use gpui::{
     ParentElement, Render, Styled, Window, div, list, px,
 };
 use gpui_component::{
-    ActiveTheme, Disableable, IconName, Sizable, StyledExt, WindowExt,
+    ActiveTheme, Disableable, IconName, Sizable, WindowExt,
     button::{Button, ButtonVariants},
     h_flex,
     input::InputState,
@@ -441,7 +441,7 @@ impl Render for EnumerationListForm {
                     .justify_between()
                     .child(
                         v_flex()
-                            .child(div().text_sm().font_medium().child("Enumeration list"))
+                            .child(super::section_title("Enumeration list"))
                             .child(
                                 div()
                                     .text_xs()

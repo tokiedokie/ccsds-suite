@@ -1,7 +1,5 @@
-use gpui::{
-    App, AppContext, Context, Entity, IntoElement, ParentElement, Render, Styled, Window, div,
-};
-use gpui_component::{ActiveTheme, StyledExt, input::InputState, v_flex};
+use gpui::{App, AppContext, Context, Entity, IntoElement, ParentElement, Render, Styled, Window};
+use gpui_component::{ActiveTheme, input::InputState, v_flex};
 
 use super::{
     alias_set::AliasSetForm,
@@ -119,7 +117,7 @@ impl InputAlgorithmForm {
                     .rounded_md()
                     .border_1()
                     .border_color(cx.theme().border)
-                    .child(div().text_sm().font_medium().child("Algorithm identity"))
+                    .child(super::section_title("Algorithm identity"))
                     .child(field("Name", "Required", &self.name, cx))
                     .child(field(
                         "Short description",
@@ -141,7 +139,7 @@ impl InputAlgorithmForm {
                     .rounded_md()
                     .border_1()
                     .border_color(cx.theme().border)
-                    .child(div().text_sm().font_medium().child("Implementation"))
+                    .child(super::section_title("Implementation"))
                     .child(field(
                         "Language",
                         "Optional; defaults to pseudo",

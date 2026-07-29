@@ -3,7 +3,7 @@ use gpui::{
     prelude::FluentBuilder,
 };
 use gpui_component::{
-    ActiveTheme, IndexPath, StyledExt, h_flex,
+    ActiveTheme, IndexPath, h_flex,
     input::InputState,
     select::{SelectEvent, SelectState},
     v_flex,
@@ -238,7 +238,7 @@ impl Render for ContainerBinaryEncodingForm {
                     .justify_between()
                     .child(
                         v_flex()
-                            .child(div().text_sm().font_medium().child("Binary encoding"))
+                            .child(super::section_title("Binary encoding"))
                             .child(
                                 div()
                                     .text_xs()
@@ -285,12 +285,7 @@ impl Render for ContainerBinaryEncodingForm {
                             .child(
                                 h_flex()
                                     .justify_between()
-                                    .child(
-                                        div()
-                                            .text_sm()
-                                            .font_medium()
-                                            .child("From-binary transform"),
-                                    )
+                                    .child(super::section_title("From-binary transform"))
                                     .child(if self.from_transform_present {
                                         super::section_remove_button(
                                             "remove-container-from-binary-transform",
@@ -323,9 +318,7 @@ impl Render for ContainerBinaryEncodingForm {
                             .child(
                                 h_flex()
                                     .justify_between()
-                                    .child(
-                                        div().text_sm().font_medium().child("To-binary transform"),
-                                    )
+                                    .child(super::section_title("To-binary transform"))
                                     .child(if self.to_transform_present {
                                         super::section_remove_button(
                                             "remove-container-to-binary-transform",

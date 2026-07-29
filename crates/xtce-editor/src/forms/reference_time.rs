@@ -3,7 +3,7 @@ use gpui::{
     Subscription, Window, div, prelude::FluentBuilder, px,
 };
 use gpui_component::{
-    ActiveTheme, IconName, IndexPath, Sizable, StyledExt, WindowExt,
+    ActiveTheme, IconName, IndexPath, Sizable, WindowExt,
     button::{Button, ButtonVariants},
     h_flex,
     input::InputState,
@@ -156,7 +156,7 @@ impl Render for ReferenceTimeForm {
             .justify_between()
             .child(
                 v_flex()
-                    .child(div().text_sm().font_medium().child("Reference time"))
+                    .child(super::section_title("Reference time"))
                     .child(
                         div()
                             .text_xs()

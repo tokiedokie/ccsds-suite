@@ -5,7 +5,7 @@ use gpui::{
     ParentElement, Render, Styled, Window, div, list, px,
 };
 use gpui_component::{
-    ActiveTheme, Disableable, IconName, Sizable, StyledExt, WindowExt,
+    ActiveTheme, Disableable, IconName, Sizable, WindowExt,
     button::{Button, ButtonVariants},
     h_flex,
     input::InputState,
@@ -375,17 +375,15 @@ impl Render for AggregateMemberListForm {
                 h_flex()
                     .justify_between()
                     .child(
-                        v_flex()
-                            .child(div().text_sm().font_medium().child("Member list"))
-                            .child(
-                                div()
-                                    .text_xs()
-                                    .text_color(cx.theme().muted_foreground)
-                                    .child(format!(
-                                        "{} · packed in this order",
-                                        super::count_label(count, "member", "members")
-                                    )),
-                            ),
+                        v_flex().child(super::section_title("Member list")).child(
+                            div()
+                                .text_xs()
+                                .text_color(cx.theme().muted_foreground)
+                                .child(format!(
+                                    "{} · packed in this order",
+                                    super::count_label(count, "member", "members")
+                                )),
+                        ),
                     )
                     .child(
                         super::collection_add_button("add-aggregate-member", "Add member")

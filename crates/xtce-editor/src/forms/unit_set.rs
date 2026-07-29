@@ -3,7 +3,7 @@ use gpui::{
     prelude::FluentBuilder, px,
 };
 use gpui_component::{
-    ActiveTheme, IconName, IndexPath, Sizable, StyledExt, WindowExt,
+    ActiveTheme, IconName, IndexPath, Sizable, WindowExt,
     button::{Button, ButtonVariants},
     h_flex,
     input::InputState,
@@ -86,14 +86,12 @@ impl Render for UnitSetForm {
                 h_flex()
                     .justify_between()
                     .child(
-                        v_flex()
-                            .child(div().text_sm().font_medium().child("Units"))
-                            .child(
-                                div()
-                                    .text_xs()
-                                    .text_color(cx.theme().muted_foreground)
-                                    .child(super::count_label(self.rows.len(), "unit", "units")),
-                            ),
+                        v_flex().child(super::section_title("Units")).child(
+                            div()
+                                .text_xs()
+                                .text_color(cx.theme().muted_foreground)
+                                .child(super::count_label(self.rows.len(), "unit", "units")),
+                        ),
                     )
                     .child(
                         super::collection_add_button("add-parameter-type-unit", "Add unit")
