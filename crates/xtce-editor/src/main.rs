@@ -13,6 +13,7 @@ use gpui_component::{
     list::ListItem,
     menu::{AppMenuBar, DropdownMenu, PopupMenuItem},
     resizable::{h_resizable, resizable_panel},
+    tooltip::Tooltip,
     tree::{TreeEvent, TreeItem, TreeState, tree},
     v_flex,
 };
@@ -182,6 +183,50 @@ impl ElementKind {
         }
     }
 
+    fn breadcrumb_directories(self) -> &'static [&'static str] {
+        match self {
+            Self::SpaceSystem
+            | Self::TelemetryMetaData
+            | Self::CommandMetaData
+            | Self::ServiceSet => &[],
+            Self::TelemetryParameterTypeSet
+            | Self::TelemetryParameterSet
+            | Self::ContainerSet
+            | Self::MessageSet
+            | Self::TelemetryStreamSet
+            | Self::TelemetryAlgorithmSet => &["TelemetryMetaData"],
+            Self::TelemetryParameterType(_) => &["TelemetryMetaData", "ParameterTypeSet"],
+            Self::TelemetryParameter(_) => &["TelemetryMetaData", "ParameterSet"],
+            Self::SequenceContainer(_) => &["TelemetryMetaData", "ContainerSet"],
+            Self::Message(_) => &["TelemetryMetaData", "MessageSet"],
+            Self::TelemetryFixedFrameStream(_)
+            | Self::TelemetryVariableFrameStream(_)
+            | Self::TelemetryCustomStream(_) => &["TelemetryMetaData", "StreamSet"],
+            Self::TelemetryCustomAlgorithm(_) | Self::TelemetryMathAlgorithm(_) => {
+                &["TelemetryMetaData", "AlgorithmSet"]
+            }
+            Self::CommandParameterTypeSet
+            | Self::CommandParameterSet
+            | Self::ArgumentTypeSet
+            | Self::MetaCommandSet
+            | Self::CommandContainerSet
+            | Self::CommandStreamSet
+            | Self::CommandAlgorithmSet => &["CommandMetaData"],
+            Self::CommandParameterType(_) => &["CommandMetaData", "ParameterTypeSet"],
+            Self::CommandParameter(_) => &["CommandMetaData", "ParameterSet"],
+            Self::ArgumentType(_) => &["CommandMetaData", "ArgumentTypeSet"],
+            Self::MetaCommand(_) => &["CommandMetaData", "MetaCommandSet"],
+            Self::CommandContainer(_) => &["CommandMetaData", "CommandContainerSet"],
+            Self::CommandFixedFrameStream(_)
+            | Self::CommandVariableFrameStream(_)
+            | Self::CommandCustomStream(_) => &["CommandMetaData", "StreamSet"],
+            Self::CommandCustomAlgorithm(_) | Self::CommandMathAlgorithm(_) => {
+                &["CommandMetaData", "AlgorithmSet"]
+            }
+            Self::Service(_) => &["ServiceSet"],
+        }
+    }
+
     fn is_directory_only(self) -> bool {
         matches!(
             self,
@@ -273,6 +318,69 @@ enum AlgorithmChildKind {
 struct ElementSelection {
     system_path: Vec<usize>,
     kind: ElementKind,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+struct BreadcrumbItem {
+    label: String,
+    system_path: Option<Vec<usize>>,
+}
+
+fn breadcrumb_items(
+    root: &xtce::SpaceSystem,
+    selection: &ElementSelection,
+    current_label: String,
+) -> Vec<BreadcrumbItem> {
+    let mut items = Vec::new();
+    let mut system = root;
+    let mut path = Vec::new();
+    items.push(BreadcrumbItem {
+        label: system.name.clone(),
+        system_path: Some(path.clone()),
+    });
+
+    for &index in &selection.system_path {
+        system = &system.space_system[index];
+        path.push(index);
+        items.push(BreadcrumbItem {
+            label: system.name.clone(),
+            system_path: Some(path.clone()),
+        });
+    }
+
+    if selection.kind == ElementKind::SpaceSystem {
+        if let Some(current) = items.last_mut() {
+            current.label = current_label;
+        }
+        return items;
+    }
+
+    items.extend(
+        selection
+            .kind
+            .breadcrumb_directories()
+            .iter()
+            .map(|label| BreadcrumbItem {
+                label: (*label).to_owned(),
+                system_path: None,
+            }),
+    );
+    items.push(BreadcrumbItem {
+        label: current_label,
+        system_path: None,
+    });
+    items
+}
+
+fn abbreviated_breadcrumb_label(label: &str) -> String {
+    const MAX_CHARACTERS: usize = 28;
+    let mut characters = label.chars();
+    let prefix: String = characters.by_ref().take(MAX_CHARACTERS).collect();
+    if characters.next().is_some() {
+        format!("{prefix}…")
+    } else {
+        prefix
+    }
 }
 
 #[derive(Clone)]
@@ -3079,6 +3187,72 @@ impl Render for ElementTree {
 }
 
 impl ElementInspector {
+    fn render_breadcrumb(
+        &self,
+        document: &XtceDocument,
+        current_label: String,
+        cx: &mut Context<XtceEditor>,
+    ) -> Div {
+        let items = breadcrumb_items(&document.root, &document.selection, current_label);
+        let item_count = items.len();
+        let mut breadcrumb = h_flex().min_w_0().gap_1().text_sm().overflow_hidden();
+
+        for (index, item) in items.into_iter().enumerate() {
+            if index > 0 {
+                breadcrumb = breadcrumb.child(
+                    Icon::new(IconName::ChevronRight)
+                        .xsmall()
+                        .flex_none()
+                        .text_color(cx.theme().muted_foreground),
+                );
+            }
+
+            let is_current = index + 1 == item_count;
+            let full_label = item.label;
+            let visible_label = abbreviated_breadcrumb_label(&full_label);
+            if let Some(system_path) = item.system_path.filter(|_| !is_current) {
+                let tooltip = full_label.clone();
+                breadcrumb = breadcrumb.child(
+                    Button::new(format!("breadcrumb-space-system-{index}"))
+                        .xsmall()
+                        .compact()
+                        .link()
+                        .label(visible_label)
+                        .tooltip(tooltip)
+                        .on_click(cx.listener(move |this, _, window, cx| {
+                            let selection = ElementSelection {
+                                system_path: system_path.clone(),
+                                kind: ElementKind::SpaceSystem,
+                            };
+                            if this.document.selection == selection {
+                                return;
+                            }
+                            this.save_selected_element(cx);
+                            this.document.selection = selection;
+                            this.load_selected_element(window, cx);
+                        })),
+                );
+            } else {
+                let tooltip = full_label.clone();
+                breadcrumb = breadcrumb.child(
+                    div()
+                        .id(format!("breadcrumb-item-{index}"))
+                        .min_w_0()
+                        .max_w(px(220.))
+                        .truncate()
+                        .when(is_current, |item| item.font_medium())
+                        .when(!is_current, |item| {
+                            item.text_color(cx.theme().muted_foreground)
+                        })
+                        .tooltip(move |window, cx| Tooltip::new(tooltip.clone()).build(window, cx))
+                        .child(visible_label),
+                );
+            }
+        }
+
+        breadcrumb
+    }
+
     fn render_structural_element(
         &self,
         document: &XtceDocument,
@@ -3107,23 +3281,7 @@ impl ElementInspector {
                     .border_b_1()
                     .border_color(cx.theme().border)
                     .bg(cx.theme().background)
-                    .child(
-                        h_flex()
-                            .gap_2()
-                            .text_sm()
-                            .child(
-                                div()
-                                    .text_color(cx.theme().muted_foreground)
-                                    .child(owner_name.clone()),
-                            )
-                            .child(
-                                Icon::new(IconName::ChevronRight)
-                                    .xsmall()
-                                    .text_color(cx.theme().muted_foreground),
-                            )
-                            .child(div().font_medium().child(element_name.clone())),
-                    )
-                    ,
+                    .child(self.render_breadcrumb(document, element_name.clone(), cx)),
             )
             .child(
                 v_flex()
@@ -3210,12 +3368,7 @@ impl ElementInspector {
                     .border_b_1()
                     .border_color(cx.theme().border)
                     .bg(cx.theme().background)
-                    .child(
-                        h_flex()
-                            .gap_2()
-                            .text_sm()
-                            .child(div().font_medium().child(selected_name)),
-                    ),
+                    .child(self.render_breadcrumb(document, selected_name, cx)),
             )
             .child(
                 v_flex()
@@ -3473,7 +3626,7 @@ mod tests {
 
     use super::{
         AlgorithmChildKind, ElementKind, ElementSelection, ElementTree, IconName, StreamChildKind,
-        XtceDocument, startup_document,
+        XtceDocument, abbreviated_breadcrumb_label, breadcrumb_items, startup_document,
     };
 
     #[test]
@@ -3499,6 +3652,175 @@ mod tests {
     fn sample_document() -> xtce::SpaceSystem {
         xtce::from_str(include_str!("../../xtce/tests/fixtures/sample.xml"))
             .expect("sample.xml should decode")
+    }
+
+    #[test]
+    fn every_element_kind_has_the_expected_breadcrumb_directories() {
+        let cases: &[(ElementKind, &[&str])] = &[
+            (ElementKind::SpaceSystem, &[]),
+            (ElementKind::TelemetryMetaData, &[]),
+            (
+                ElementKind::TelemetryParameterTypeSet,
+                &["TelemetryMetaData"],
+            ),
+            (
+                ElementKind::TelemetryParameterType(0),
+                &["TelemetryMetaData", "ParameterTypeSet"],
+            ),
+            (ElementKind::TelemetryParameterSet, &["TelemetryMetaData"]),
+            (
+                ElementKind::TelemetryParameter(0),
+                &["TelemetryMetaData", "ParameterSet"],
+            ),
+            (ElementKind::ContainerSet, &["TelemetryMetaData"]),
+            (
+                ElementKind::SequenceContainer(0),
+                &["TelemetryMetaData", "ContainerSet"],
+            ),
+            (ElementKind::MessageSet, &["TelemetryMetaData"]),
+            (
+                ElementKind::Message(0),
+                &["TelemetryMetaData", "MessageSet"],
+            ),
+            (ElementKind::TelemetryStreamSet, &["TelemetryMetaData"]),
+            (
+                ElementKind::TelemetryFixedFrameStream(0),
+                &["TelemetryMetaData", "StreamSet"],
+            ),
+            (
+                ElementKind::TelemetryVariableFrameStream(0),
+                &["TelemetryMetaData", "StreamSet"],
+            ),
+            (
+                ElementKind::TelemetryCustomStream(0),
+                &["TelemetryMetaData", "StreamSet"],
+            ),
+            (ElementKind::TelemetryAlgorithmSet, &["TelemetryMetaData"]),
+            (
+                ElementKind::TelemetryCustomAlgorithm(0),
+                &["TelemetryMetaData", "AlgorithmSet"],
+            ),
+            (
+                ElementKind::TelemetryMathAlgorithm(0),
+                &["TelemetryMetaData", "AlgorithmSet"],
+            ),
+            (ElementKind::CommandMetaData, &[]),
+            (ElementKind::CommandParameterTypeSet, &["CommandMetaData"]),
+            (
+                ElementKind::CommandParameterType(0),
+                &["CommandMetaData", "ParameterTypeSet"],
+            ),
+            (ElementKind::CommandParameterSet, &["CommandMetaData"]),
+            (
+                ElementKind::CommandParameter(0),
+                &["CommandMetaData", "ParameterSet"],
+            ),
+            (ElementKind::ArgumentTypeSet, &["CommandMetaData"]),
+            (
+                ElementKind::ArgumentType(0),
+                &["CommandMetaData", "ArgumentTypeSet"],
+            ),
+            (ElementKind::MetaCommandSet, &["CommandMetaData"]),
+            (
+                ElementKind::MetaCommand(0),
+                &["CommandMetaData", "MetaCommandSet"],
+            ),
+            (ElementKind::CommandContainerSet, &["CommandMetaData"]),
+            (
+                ElementKind::CommandContainer(0),
+                &["CommandMetaData", "CommandContainerSet"],
+            ),
+            (ElementKind::CommandStreamSet, &["CommandMetaData"]),
+            (
+                ElementKind::CommandFixedFrameStream(0),
+                &["CommandMetaData", "StreamSet"],
+            ),
+            (
+                ElementKind::CommandVariableFrameStream(0),
+                &["CommandMetaData", "StreamSet"],
+            ),
+            (
+                ElementKind::CommandCustomStream(0),
+                &["CommandMetaData", "StreamSet"],
+            ),
+            (ElementKind::CommandAlgorithmSet, &["CommandMetaData"]),
+            (
+                ElementKind::CommandCustomAlgorithm(0),
+                &["CommandMetaData", "AlgorithmSet"],
+            ),
+            (
+                ElementKind::CommandMathAlgorithm(0),
+                &["CommandMetaData", "AlgorithmSet"],
+            ),
+            (ElementKind::ServiceSet, &[]),
+            (ElementKind::Service(0), &["ServiceSet"]),
+        ];
+
+        for (kind, expected) in cases {
+            assert_eq!(
+                kind.breadcrumb_directories(),
+                *expected,
+                "unexpected breadcrumb directories for {kind:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn breadcrumb_includes_nested_systems_and_structural_directories() {
+        let document = sample_document();
+        let items = breadcrumb_items(
+            &document,
+            &ElementSelection {
+                system_path: vec![0, 0],
+                kind: ElementKind::TelemetryParameter(0),
+            },
+            "DraftParameter".to_owned(),
+        );
+
+        assert_eq!(
+            items
+                .iter()
+                .map(|item| item.label.as_str())
+                .collect::<Vec<_>>(),
+            [
+                "ExampleMission",
+                "Payload",
+                "Sensor",
+                "TelemetryMetaData",
+                "ParameterSet",
+                "DraftParameter",
+            ]
+        );
+        assert_eq!(items[0].system_path, Some(Vec::new()));
+        assert_eq!(items[1].system_path, Some(vec![0]));
+        assert_eq!(items[2].system_path, Some(vec![0, 0]));
+        assert!(items[3..].iter().all(|item| item.system_path.is_none()));
+    }
+
+    #[test]
+    fn current_space_system_uses_its_draft_name_in_the_breadcrumb() {
+        let document = sample_document();
+        let items = breadcrumb_items(
+            &document,
+            &ElementSelection {
+                system_path: vec![0],
+                kind: ElementKind::SpaceSystem,
+            },
+            "RenamedPayload".to_owned(),
+        );
+
+        assert_eq!(items[0].label, "ExampleMission");
+        assert_eq!(items[1].label, "RenamedPayload");
+        assert_eq!(items[1].system_path, Some(vec![0]));
+    }
+
+    #[test]
+    fn long_breadcrumb_labels_are_abbreviated() {
+        assert_eq!(
+            abbreviated_breadcrumb_label("ABCDEFGHIJKLMNOPQRSTUVWXYZ123456789"),
+            "ABCDEFGHIJKLMNOPQRSTUVWXYZ12…"
+        );
+        assert_eq!(abbreviated_breadcrumb_label("ShortName"), "ShortName");
     }
 
     #[test]
