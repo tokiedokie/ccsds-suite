@@ -25,7 +25,7 @@ pub const PREFIX_XTCE: xsd_parser_types::misc::NamespacePrefix = xsd_parser_type
     b"xtce",
 );
 pub type SpaceSystem = SpaceSystemType;
-#[derive(Debug)]
+#[derive(Clone, Debug)]
 pub struct SpaceSystemType {
     pub short_description: ::core::option::Option<::std::string::String>,
     pub name: ::std::string::String,
@@ -77,7 +77,7 @@ impl ::xsd_parser_types::quick_xml::WithDeserializer for SpaceSystemType {
         quick_xml_deserialize::SpaceSystemTypeDeserializer,
     >;
 }
-#[derive(Debug)]
+#[derive(Clone, Debug)]
 pub enum SystemTypeType {
     Asset,
     AssetGroup,
@@ -126,7 +126,7 @@ impl ::xsd_parser_types::quick_xml::DeserializeBytes for SystemTypeType {
     }
 }
 impl xsd_parser_types::quick_xml::WithDeserializerFromBytes for SystemTypeType {}
-#[derive(Debug)]
+#[derive(Clone, Debug)]
 pub struct AliasSetType {
     pub alias: ::std::vec::Vec<AliasType>,
 }
@@ -155,7 +155,7 @@ impl ::xsd_parser_types::quick_xml::WithDeserializer for AliasSetType {
         quick_xml_deserialize::AliasSetTypeDeserializer,
     >;
 }
-#[derive(Debug)]
+#[derive(Clone, Debug)]
 pub struct AncillaryDataSetType {
     pub ancillary_data: ::std::vec::Vec<AncillaryDataType>,
 }
@@ -184,7 +184,7 @@ impl ::xsd_parser_types::quick_xml::WithDeserializer for AncillaryDataSetType {
         quick_xml_deserialize::AncillaryDataSetTypeDeserializer,
     >;
 }
-#[derive(Debug)]
+#[derive(Clone, Debug)]
 pub struct HeaderType {
     pub version: ::core::option::Option<::std::string::String>,
     pub date: ::core::option::Option<::std::string::String>,
@@ -224,7 +224,7 @@ impl ::xsd_parser_types::quick_xml::WithSerializer for HeaderType {
 impl ::xsd_parser_types::quick_xml::WithDeserializer for HeaderType {
     type Deserializer = ::std::boxed::Box<quick_xml_deserialize::HeaderTypeDeserializer>;
 }
-#[derive(Debug)]
+#[derive(Clone, Debug)]
 pub struct TelemetryMetaDataType {
     pub parameter_type_set: ::core::option::Option<ParameterTypeSetType>,
     pub parameter_set: ::core::option::Option<ParameterSetType>,
@@ -258,7 +258,7 @@ impl ::xsd_parser_types::quick_xml::WithDeserializer for TelemetryMetaDataType {
         quick_xml_deserialize::TelemetryMetaDataTypeDeserializer,
     >;
 }
-#[derive(Debug)]
+#[derive(Clone, Debug)]
 pub struct CommandMetaDataType {
     pub parameter_type_set: ::core::option::Option<ParameterTypeSetType>,
     pub parameter_set: ::core::option::Option<ParameterSetType>,
@@ -293,7 +293,7 @@ impl ::xsd_parser_types::quick_xml::WithDeserializer for CommandMetaDataType {
         quick_xml_deserialize::CommandMetaDataTypeDeserializer,
     >;
 }
-#[derive(Debug)]
+#[derive(Clone, Debug)]
 pub struct ServiceSetType {
     pub service: ::std::vec::Vec<ServiceType>,
 }
@@ -322,7 +322,7 @@ impl ::xsd_parser_types::quick_xml::WithDeserializer for ServiceSetType {
         quick_xml_deserialize::ServiceSetTypeDeserializer,
     >;
 }
-#[derive(Debug)]
+#[derive(Clone, Debug)]
 pub struct AliasType {
     pub name_space: ::std::string::String,
     pub alias: ::std::string::String,
@@ -350,7 +350,7 @@ impl ::xsd_parser_types::quick_xml::WithSerializer for AliasType {
 impl ::xsd_parser_types::quick_xml::WithDeserializer for AliasType {
     type Deserializer = ::std::boxed::Box<quick_xml_deserialize::AliasTypeDeserializer>;
 }
-#[derive(Debug)]
+#[derive(Clone, Debug)]
 pub struct AncillaryDataType {
     pub name: ::std::string::String,
     pub mime_type: ::std::string::String,
@@ -388,7 +388,7 @@ impl ::xsd_parser_types::quick_xml::WithDeserializer for AncillaryDataType {
         quick_xml_deserialize::AncillaryDataTypeDeserializer,
     >;
 }
-#[derive(Debug)]
+#[derive(Clone, Debug)]
 pub enum ValidationStatusType {
     Unknown,
     Working,
@@ -444,7 +444,7 @@ impl ::xsd_parser_types::quick_xml::DeserializeBytes for ValidationStatusType {
     }
 }
 impl xsd_parser_types::quick_xml::WithDeserializerFromBytes for ValidationStatusType {}
-#[derive(Debug)]
+#[derive(Clone, Debug)]
 pub struct AuthorSetType {
     pub author: ::std::vec::Vec<::std::string::String>,
 }
@@ -473,7 +473,7 @@ impl ::xsd_parser_types::quick_xml::WithDeserializer for AuthorSetType {
         quick_xml_deserialize::AuthorSetTypeDeserializer,
     >;
 }
-#[derive(Debug)]
+#[derive(Clone, Debug)]
 pub struct NoteSetType {
     pub note: ::std::vec::Vec<::std::string::String>,
 }
@@ -502,7 +502,7 @@ impl ::xsd_parser_types::quick_xml::WithDeserializer for NoteSetType {
         quick_xml_deserialize::NoteSetTypeDeserializer,
     >;
 }
-#[derive(Debug)]
+#[derive(Clone, Debug)]
 pub struct HistorySetType {
     pub history: ::std::vec::Vec<::std::string::String>,
 }
@@ -531,11 +531,11 @@ impl ::xsd_parser_types::quick_xml::WithDeserializer for HistorySetType {
         quick_xml_deserialize::HistorySetTypeDeserializer,
     >;
 }
-#[derive(Debug)]
+#[derive(Clone, Debug)]
 pub struct ParameterTypeSetType {
     pub content: ::std::vec::Vec<ParameterTypeSetTypeContent>,
 }
-#[derive(Debug)]
+#[derive(Clone, Debug)]
 pub enum ParameterTypeSetTypeContent {
     StringParameterType(StringParameterType),
     EnumeratedParameterType(EnumeratedParameterType),
@@ -598,11 +598,11 @@ impl ::xsd_parser_types::quick_xml::WithDeserializer for ParameterTypeSetTypeCon
         quick_xml_deserialize::ParameterTypeSetTypeContentDeserializer,
     >;
 }
-#[derive(Debug)]
+#[derive(Clone, Debug)]
 pub struct ParameterSetType {
     pub content: ::std::vec::Vec<ParameterSetTypeContent>,
 }
-#[derive(Debug)]
+#[derive(Clone, Debug)]
 pub enum ParameterSetTypeContent {
     Parameter(ParameterType),
     ParameterRef(ParameterRefType),
@@ -657,11 +657,11 @@ impl ::xsd_parser_types::quick_xml::WithDeserializer for ParameterSetTypeContent
         quick_xml_deserialize::ParameterSetTypeContentDeserializer,
     >;
 }
-#[derive(Debug)]
+#[derive(Clone, Debug)]
 pub struct ContainerSetType {
     pub content: ::std::vec::Vec<ContainerSetTypeContent>,
 }
-#[derive(Debug)]
+#[derive(Clone, Debug)]
 pub enum ContainerSetTypeContent {
     SequenceContainer(SequenceContainerType),
 }
@@ -715,7 +715,7 @@ impl ::xsd_parser_types::quick_xml::WithDeserializer for ContainerSetTypeContent
         quick_xml_deserialize::ContainerSetTypeContentDeserializer,
     >;
 }
-#[derive(Debug)]
+#[derive(Clone, Debug)]
 pub struct MessageSetType {
     pub short_description: ::core::option::Option<::std::string::String>,
     pub name: ::core::option::Option<::std::string::String>,
@@ -749,11 +749,11 @@ impl ::xsd_parser_types::quick_xml::WithDeserializer for MessageSetType {
         quick_xml_deserialize::MessageSetTypeDeserializer,
     >;
 }
-#[derive(Debug)]
+#[derive(Clone, Debug)]
 pub struct StreamSetType {
     pub content: ::std::vec::Vec<StreamSetTypeContent>,
 }
-#[derive(Debug)]
+#[derive(Clone, Debug)]
 pub enum StreamSetTypeContent {
     FixedFrameStream(FixedFrameStreamType),
     VariableFrameStream(VariableFrameStreamType),
@@ -809,11 +809,11 @@ impl ::xsd_parser_types::quick_xml::WithDeserializer for StreamSetTypeContent {
         quick_xml_deserialize::StreamSetTypeContentDeserializer,
     >;
 }
-#[derive(Debug)]
+#[derive(Clone, Debug)]
 pub struct AlgorithmSetType {
     pub content: ::std::vec::Vec<AlgorithmSetTypeContent>,
 }
-#[derive(Debug)]
+#[derive(Clone, Debug)]
 pub enum AlgorithmSetTypeContent {
     CustomAlgorithm(InputOutputTriggerAlgorithmType),
     MathAlgorithm(MathAlgorithmType),
@@ -868,11 +868,11 @@ impl ::xsd_parser_types::quick_xml::WithDeserializer for AlgorithmSetTypeContent
         quick_xml_deserialize::AlgorithmSetTypeContentDeserializer,
     >;
 }
-#[derive(Debug)]
+#[derive(Clone, Debug)]
 pub struct ArgumentTypeSetType {
     pub content: ::std::vec::Vec<ArgumentTypeSetTypeContent>,
 }
-#[derive(Debug)]
+#[derive(Clone, Debug)]
 pub enum ArgumentTypeSetTypeContent {
     StringArgumentType(StringArgumentType),
     EnumeratedArgumentType(EnumeratedArgumentType),
@@ -935,11 +935,11 @@ impl ::xsd_parser_types::quick_xml::WithDeserializer for ArgumentTypeSetTypeCont
         quick_xml_deserialize::ArgumentTypeSetTypeContentDeserializer,
     >;
 }
-#[derive(Debug)]
+#[derive(Clone, Debug)]
 pub struct MetaCommandSetType {
     pub content: ::std::vec::Vec<MetaCommandSetTypeContent>,
 }
-#[derive(Debug)]
+#[derive(Clone, Debug)]
 pub enum MetaCommandSetTypeContent {
     MetaCommand(MetaCommandType),
     MetaCommandRef(::std::string::String),
@@ -995,7 +995,7 @@ impl ::xsd_parser_types::quick_xml::WithDeserializer for MetaCommandSetTypeConte
         quick_xml_deserialize::MetaCommandSetTypeContentDeserializer,
     >;
 }
-#[derive(Debug)]
+#[derive(Clone, Debug)]
 pub struct CommandContainerSetType {
     pub command_container: ::std::vec::Vec<SequenceContainerType>,
 }
@@ -1024,13 +1024,13 @@ impl ::xsd_parser_types::quick_xml::WithDeserializer for CommandContainerSetType
         quick_xml_deserialize::CommandContainerSetTypeDeserializer,
     >;
 }
-#[derive(Debug)]
+#[derive(Clone, Debug)]
 pub struct ServiceType {
     pub short_description: ::core::option::Option<::std::string::String>,
     pub name: ::std::string::String,
     pub content: ::std::vec::Vec<ServiceTypeContent>,
 }
-#[derive(Debug)]
+#[derive(Clone, Debug)]
 pub enum ServiceTypeContent {
     LongDescription(::std::string::String),
     AliasSet(AliasSetType),
@@ -1088,7 +1088,7 @@ impl ::xsd_parser_types::quick_xml::WithDeserializer for ServiceTypeContent {
         quick_xml_deserialize::ServiceTypeContentDeserializer,
     >;
 }
-#[derive(Debug)]
+#[derive(Clone, Debug)]
 pub struct StringParameterType {
     pub short_description: ::core::option::Option<::std::string::String>,
     pub name: ::std::string::String,
@@ -1098,7 +1098,7 @@ pub struct StringParameterType {
     pub character_width: ::core::option::Option<CharacterWidthType>,
     pub content: ::std::vec::Vec<StringParameterTypeContent>,
 }
-#[derive(Debug)]
+#[derive(Clone, Debug)]
 pub enum StringParameterTypeContent {
     LongDescription(::std::string::String),
     AliasSet(AliasSetType),
@@ -1162,7 +1162,7 @@ impl ::xsd_parser_types::quick_xml::WithDeserializer for StringParameterTypeCont
         quick_xml_deserialize::StringParameterTypeContentDeserializer,
     >;
 }
-#[derive(Debug)]
+#[derive(Clone, Debug)]
 pub struct EnumeratedParameterType {
     pub short_description: ::core::option::Option<::std::string::String>,
     pub name: ::std::string::String,
@@ -1170,7 +1170,7 @@ pub struct EnumeratedParameterType {
     pub initial_value: ::core::option::Option<::std::string::String>,
     pub content: ::std::vec::Vec<EnumeratedParameterTypeContent>,
 }
-#[derive(Debug)]
+#[derive(Clone, Debug)]
 pub enum EnumeratedParameterTypeContent {
     LongDescription(::std::string::String),
     AliasSet(AliasSetType),
@@ -1236,7 +1236,7 @@ impl ::xsd_parser_types::quick_xml::WithDeserializer for EnumeratedParameterType
         quick_xml_deserialize::EnumeratedParameterTypeContentDeserializer,
     >;
 }
-#[derive(Debug)]
+#[derive(Clone, Debug)]
 pub struct IntegerParameterType {
     pub short_description: ::core::option::Option<::std::string::String>,
     pub name: ::std::string::String,
@@ -1246,7 +1246,7 @@ pub struct IntegerParameterType {
     pub signed: ::core::primitive::bool,
     pub content: ::std::vec::Vec<IntegerParameterTypeContent>,
 }
-#[derive(Debug)]
+#[derive(Clone, Debug)]
 pub enum IntegerParameterTypeContent {
     LongDescription(::std::string::String),
     AliasSet(AliasSetType),
@@ -1321,7 +1321,7 @@ impl ::xsd_parser_types::quick_xml::WithDeserializer for IntegerParameterTypeCon
         quick_xml_deserialize::IntegerParameterTypeContentDeserializer,
     >;
 }
-#[derive(Debug)]
+#[derive(Clone, Debug)]
 pub struct BinaryParameterType {
     pub short_description: ::core::option::Option<::std::string::String>,
     pub name: ::std::string::String,
@@ -1329,7 +1329,7 @@ pub struct BinaryParameterType {
     pub initial_value: ::core::option::Option<::std::string::String>,
     pub content: ::std::vec::Vec<BinaryParameterTypeContent>,
 }
-#[derive(Debug)]
+#[derive(Clone, Debug)]
 pub enum BinaryParameterTypeContent {
     LongDescription(::std::string::String),
     AliasSet(AliasSetType),
@@ -1392,7 +1392,7 @@ impl ::xsd_parser_types::quick_xml::WithDeserializer for BinaryParameterTypeCont
         quick_xml_deserialize::BinaryParameterTypeContentDeserializer,
     >;
 }
-#[derive(Debug)]
+#[derive(Clone, Debug)]
 pub struct FloatParameterType {
     pub short_description: ::core::option::Option<::std::string::String>,
     pub name: ::std::string::String,
@@ -1401,7 +1401,7 @@ pub struct FloatParameterType {
     pub size_in_bits: FloatSizeInBitsType,
     pub content: ::std::vec::Vec<FloatParameterTypeContent>,
 }
-#[derive(Debug)]
+#[derive(Clone, Debug)]
 pub enum FloatParameterTypeContent {
     LongDescription(::std::string::String),
     AliasSet(AliasSetType),
@@ -1472,7 +1472,7 @@ impl ::xsd_parser_types::quick_xml::WithDeserializer for FloatParameterTypeConte
         quick_xml_deserialize::FloatParameterTypeContentDeserializer,
     >;
 }
-#[derive(Debug)]
+#[derive(Clone, Debug)]
 pub struct BooleanParameterType {
     pub short_description: ::core::option::Option<::std::string::String>,
     pub name: ::std::string::String,
@@ -1482,7 +1482,7 @@ pub struct BooleanParameterType {
     pub zero_string_value: ::std::string::String,
     pub content: ::std::vec::Vec<BooleanParameterTypeContent>,
 }
-#[derive(Debug)]
+#[derive(Clone, Debug)]
 pub enum BooleanParameterTypeContent {
     LongDescription(::std::string::String),
     AliasSet(AliasSetType),
@@ -1555,7 +1555,7 @@ impl ::xsd_parser_types::quick_xml::WithDeserializer for BooleanParameterTypeCon
         quick_xml_deserialize::BooleanParameterTypeContentDeserializer,
     >;
 }
-#[derive(Debug)]
+#[derive(Clone, Debug)]
 pub struct RelativeTimeParameterType {
     pub short_description: ::core::option::Option<::std::string::String>,
     pub name: ::std::string::String,
@@ -1594,7 +1594,7 @@ impl ::xsd_parser_types::quick_xml::WithDeserializer for RelativeTimeParameterTy
         quick_xml_deserialize::RelativeTimeParameterTypeDeserializer,
     >;
 }
-#[derive(Debug)]
+#[derive(Clone, Debug)]
 pub struct AbsoluteTimeParameterType {
     pub short_description: ::core::option::Option<::std::string::String>,
     pub name: ::std::string::String,
@@ -1631,7 +1631,7 @@ impl ::xsd_parser_types::quick_xml::WithDeserializer for AbsoluteTimeParameterTy
         quick_xml_deserialize::AbsoluteTimeParameterTypeDeserializer,
     >;
 }
-#[derive(Debug)]
+#[derive(Clone, Debug)]
 pub struct ArrayParameterType {
     pub short_description: ::core::option::Option<::std::string::String>,
     pub name: ::std::string::String,
@@ -1667,7 +1667,7 @@ impl ::xsd_parser_types::quick_xml::WithDeserializer for ArrayParameterType {
         quick_xml_deserialize::ArrayParameterTypeDeserializer,
     >;
 }
-#[derive(Debug)]
+#[derive(Clone, Debug)]
 pub struct AggregateParameterType {
     pub short_description: ::core::option::Option<::std::string::String>,
     pub name: ::std::string::String,
@@ -1702,7 +1702,7 @@ impl ::xsd_parser_types::quick_xml::WithDeserializer for AggregateParameterType 
         quick_xml_deserialize::AggregateParameterTypeDeserializer,
     >;
 }
-#[derive(Debug)]
+#[derive(Clone, Debug)]
 pub struct ParameterType {
     pub short_description: ::core::option::Option<::std::string::String>,
     pub name: ::std::string::String,
@@ -1738,7 +1738,7 @@ impl ::xsd_parser_types::quick_xml::WithDeserializer for ParameterType {
         quick_xml_deserialize::ParameterTypeDeserializer,
     >;
 }
-#[derive(Debug)]
+#[derive(Clone, Debug)]
 pub struct ParameterRefType {
     pub parameter_ref: ::std::string::String,
 }
@@ -1767,7 +1767,7 @@ impl ::xsd_parser_types::quick_xml::WithDeserializer for ParameterRefType {
         quick_xml_deserialize::ParameterRefTypeDeserializer,
     >;
 }
-#[derive(Debug)]
+#[derive(Clone, Debug)]
 pub struct SequenceContainerType {
     pub short_description: ::core::option::Option<::std::string::String>,
     pub name: ::std::string::String,
@@ -1819,7 +1819,7 @@ impl ::xsd_parser_types::quick_xml::WithDeserializer for SequenceContainerType {
         quick_xml_deserialize::SequenceContainerTypeDeserializer,
     >;
 }
-#[derive(Debug)]
+#[derive(Clone, Debug)]
 pub struct MessageType {
     pub short_description: ::core::option::Option<::std::string::String>,
     pub name: ::std::string::String,
@@ -1854,7 +1854,7 @@ impl ::xsd_parser_types::quick_xml::WithDeserializer for MessageType {
         quick_xml_deserialize::MessageTypeDeserializer,
     >;
 }
-#[derive(Debug)]
+#[derive(Clone, Debug)]
 pub struct FixedFrameStreamType {
     pub short_description: ::core::option::Option<::std::string::String>,
     pub name: ::std::string::String,
@@ -1865,7 +1865,7 @@ pub struct FixedFrameStreamType {
     pub frame_length_in_bits: ::core::primitive::i64,
     pub content: ::std::vec::Vec<FixedFrameStreamTypeContent>,
 }
-#[derive(Debug)]
+#[derive(Clone, Debug)]
 pub enum FixedFrameStreamTypeContent {
     LongDescription(::std::string::String),
     AliasSet(AliasSetType),
@@ -1939,7 +1939,7 @@ impl ::xsd_parser_types::quick_xml::WithDeserializer for FixedFrameStreamTypeCon
         quick_xml_deserialize::FixedFrameStreamTypeContentDeserializer,
     >;
 }
-#[derive(Debug)]
+#[derive(Clone, Debug)]
 pub struct VariableFrameStreamType {
     pub short_description: ::core::option::Option<::std::string::String>,
     pub name: ::std::string::String,
@@ -1948,7 +1948,7 @@ pub struct VariableFrameStreamType {
     pub inverted: ::core::primitive::bool,
     pub content: ::std::vec::Vec<VariableFrameStreamTypeContent>,
 }
-#[derive(Debug)]
+#[derive(Clone, Debug)]
 pub enum VariableFrameStreamTypeContent {
     LongDescription(::std::string::String),
     AliasSet(AliasSetType),
@@ -2020,7 +2020,7 @@ impl ::xsd_parser_types::quick_xml::WithDeserializer for VariableFrameStreamType
         quick_xml_deserialize::VariableFrameStreamTypeContentDeserializer,
     >;
 }
-#[derive(Debug)]
+#[derive(Clone, Debug)]
 pub struct CustomStreamType {
     pub short_description: ::core::option::Option<::std::string::String>,
     pub name: ::std::string::String,
@@ -2070,7 +2070,7 @@ impl ::xsd_parser_types::quick_xml::WithDeserializer for CustomStreamType {
         quick_xml_deserialize::CustomStreamTypeDeserializer,
     >;
 }
-#[derive(Debug)]
+#[derive(Clone, Debug)]
 pub struct InputOutputTriggerAlgorithmType {
     pub short_description: ::core::option::Option<::std::string::String>,
     pub name: ::std::string::String,
@@ -2120,7 +2120,7 @@ for InputOutputTriggerAlgorithmType {
         quick_xml_deserialize::InputOutputTriggerAlgorithmTypeDeserializer,
     >;
 }
-#[derive(Debug)]
+#[derive(Clone, Debug)]
 pub struct MathAlgorithmType {
     pub short_description: ::core::option::Option<::std::string::String>,
     pub name: ::std::string::String,
@@ -2154,7 +2154,7 @@ impl ::xsd_parser_types::quick_xml::WithDeserializer for MathAlgorithmType {
         quick_xml_deserialize::MathAlgorithmTypeDeserializer,
     >;
 }
-#[derive(Debug)]
+#[derive(Clone, Debug)]
 pub struct StringArgumentType {
     pub short_description: ::core::option::Option<::std::string::String>,
     pub name: ::std::string::String,
@@ -2164,7 +2164,7 @@ pub struct StringArgumentType {
     pub character_width: ::core::option::Option<CharacterWidthType>,
     pub content: ::std::vec::Vec<StringArgumentTypeContent>,
 }
-#[derive(Debug)]
+#[derive(Clone, Debug)]
 pub enum StringArgumentTypeContent {
     LongDescription(::std::string::String),
     AliasSet(AliasSetType),
@@ -2226,7 +2226,7 @@ impl ::xsd_parser_types::quick_xml::WithDeserializer for StringArgumentTypeConte
         quick_xml_deserialize::StringArgumentTypeContentDeserializer,
     >;
 }
-#[derive(Debug)]
+#[derive(Clone, Debug)]
 pub struct EnumeratedArgumentType {
     pub short_description: ::core::option::Option<::std::string::String>,
     pub name: ::std::string::String,
@@ -2234,7 +2234,7 @@ pub struct EnumeratedArgumentType {
     pub initial_value: ::core::option::Option<::std::string::String>,
     pub content: ::std::vec::Vec<EnumeratedArgumentTypeContent>,
 }
-#[derive(Debug)]
+#[derive(Clone, Debug)]
 pub enum EnumeratedArgumentTypeContent {
     LongDescription(::std::string::String),
     AliasSet(AliasSetType),
@@ -2298,7 +2298,7 @@ impl ::xsd_parser_types::quick_xml::WithDeserializer for EnumeratedArgumentTypeC
         quick_xml_deserialize::EnumeratedArgumentTypeContentDeserializer,
     >;
 }
-#[derive(Debug)]
+#[derive(Clone, Debug)]
 pub struct IntegerArgumentType {
     pub short_description: ::core::option::Option<::std::string::String>,
     pub name: ::std::string::String,
@@ -2308,7 +2308,7 @@ pub struct IntegerArgumentType {
     pub signed: ::core::primitive::bool,
     pub content: ::std::vec::Vec<IntegerArgumentTypeContent>,
 }
-#[derive(Debug)]
+#[derive(Clone, Debug)]
 pub enum IntegerArgumentTypeContent {
     LongDescription(::std::string::String),
     AliasSet(AliasSetType),
@@ -2381,7 +2381,7 @@ impl ::xsd_parser_types::quick_xml::WithDeserializer for IntegerArgumentTypeCont
         quick_xml_deserialize::IntegerArgumentTypeContentDeserializer,
     >;
 }
-#[derive(Debug)]
+#[derive(Clone, Debug)]
 pub struct BinaryArgumentType {
     pub short_description: ::core::option::Option<::std::string::String>,
     pub name: ::std::string::String,
@@ -2389,7 +2389,7 @@ pub struct BinaryArgumentType {
     pub initial_value: ::core::option::Option<::std::string::String>,
     pub content: ::std::vec::Vec<BinaryArgumentTypeContent>,
 }
-#[derive(Debug)]
+#[derive(Clone, Debug)]
 pub enum BinaryArgumentTypeContent {
     LongDescription(::std::string::String),
     AliasSet(AliasSetType),
@@ -2450,7 +2450,7 @@ impl ::xsd_parser_types::quick_xml::WithDeserializer for BinaryArgumentTypeConte
         quick_xml_deserialize::BinaryArgumentTypeContentDeserializer,
     >;
 }
-#[derive(Debug)]
+#[derive(Clone, Debug)]
 pub struct FloatArgumentType {
     pub short_description: ::core::option::Option<::std::string::String>,
     pub name: ::std::string::String,
@@ -2459,7 +2459,7 @@ pub struct FloatArgumentType {
     pub size_in_bits: FloatSizeInBitsType,
     pub content: ::std::vec::Vec<FloatArgumentTypeContent>,
 }
-#[derive(Debug)]
+#[derive(Clone, Debug)]
 pub enum FloatArgumentTypeContent {
     LongDescription(::std::string::String),
     AliasSet(AliasSetType),
@@ -2528,7 +2528,7 @@ impl ::xsd_parser_types::quick_xml::WithDeserializer for FloatArgumentTypeConten
         quick_xml_deserialize::FloatArgumentTypeContentDeserializer,
     >;
 }
-#[derive(Debug)]
+#[derive(Clone, Debug)]
 pub struct BooleanArgumentType {
     pub short_description: ::core::option::Option<::std::string::String>,
     pub name: ::std::string::String,
@@ -2538,7 +2538,7 @@ pub struct BooleanArgumentType {
     pub zero_string_value: ::std::string::String,
     pub content: ::std::vec::Vec<BooleanArgumentTypeContent>,
 }
-#[derive(Debug)]
+#[derive(Clone, Debug)]
 pub enum BooleanArgumentTypeContent {
     LongDescription(::std::string::String),
     AliasSet(AliasSetType),
@@ -2609,7 +2609,7 @@ impl ::xsd_parser_types::quick_xml::WithDeserializer for BooleanArgumentTypeCont
         quick_xml_deserialize::BooleanArgumentTypeContentDeserializer,
     >;
 }
-#[derive(Debug)]
+#[derive(Clone, Debug)]
 pub struct RelativeTimeArgumentType {
     pub short_description: ::core::option::Option<::std::string::String>,
     pub name: ::std::string::String,
@@ -2646,7 +2646,7 @@ impl ::xsd_parser_types::quick_xml::WithDeserializer for RelativeTimeArgumentTyp
         quick_xml_deserialize::RelativeTimeArgumentTypeDeserializer,
     >;
 }
-#[derive(Debug)]
+#[derive(Clone, Debug)]
 pub struct AbsoluteTimeArgumentType {
     pub short_description: ::core::option::Option<::std::string::String>,
     pub name: ::std::string::String,
@@ -2683,7 +2683,7 @@ impl ::xsd_parser_types::quick_xml::WithDeserializer for AbsoluteTimeArgumentTyp
         quick_xml_deserialize::AbsoluteTimeArgumentTypeDeserializer,
     >;
 }
-#[derive(Debug)]
+#[derive(Clone, Debug)]
 pub struct ArrayArgumentType {
     pub short_description: ::core::option::Option<::std::string::String>,
     pub name: ::std::string::String,
@@ -2719,7 +2719,7 @@ impl ::xsd_parser_types::quick_xml::WithDeserializer for ArrayArgumentType {
         quick_xml_deserialize::ArrayArgumentTypeDeserializer,
     >;
 }
-#[derive(Debug)]
+#[derive(Clone, Debug)]
 pub struct AggregateArgumentType {
     pub short_description: ::core::option::Option<::std::string::String>,
     pub name: ::std::string::String,
@@ -2754,7 +2754,7 @@ impl ::xsd_parser_types::quick_xml::WithDeserializer for AggregateArgumentType {
         quick_xml_deserialize::AggregateArgumentTypeDeserializer,
     >;
 }
-#[derive(Debug)]
+#[derive(Clone, Debug)]
 pub struct MetaCommandType {
     pub short_description: ::core::option::Option<::std::string::String>,
     pub name: ::std::string::String,
@@ -2809,7 +2809,7 @@ impl ::xsd_parser_types::quick_xml::WithDeserializer for MetaCommandType {
         quick_xml_deserialize::MetaCommandTypeDeserializer,
     >;
 }
-#[derive(Debug)]
+#[derive(Clone, Debug)]
 pub struct BlockMetaCommandType {
     pub short_description: ::core::option::Option<::std::string::String>,
     pub name: ::std::string::String,
@@ -2843,7 +2843,7 @@ impl ::xsd_parser_types::quick_xml::WithDeserializer for BlockMetaCommandType {
         quick_xml_deserialize::BlockMetaCommandTypeDeserializer,
     >;
 }
-#[derive(Debug)]
+#[derive(Clone, Debug)]
 pub struct MessageRefSetType {
     pub message_ref: ::std::vec::Vec<MessageRefType>,
 }
@@ -2872,7 +2872,7 @@ impl ::xsd_parser_types::quick_xml::WithDeserializer for MessageRefSetType {
         quick_xml_deserialize::MessageRefSetTypeDeserializer,
     >;
 }
-#[derive(Debug)]
+#[derive(Clone, Debug)]
 pub struct ContainerRefSetType {
     pub container_ref: ::std::vec::Vec<ContainerRefType>,
 }
@@ -2901,7 +2901,7 @@ impl ::xsd_parser_types::quick_xml::WithDeserializer for ContainerRefSetType {
         quick_xml_deserialize::ContainerRefSetTypeDeserializer,
     >;
 }
-#[derive(Debug)]
+#[derive(Clone, Debug)]
 pub enum CharacterWidthType {
     _8,
     _16,
@@ -2945,7 +2945,7 @@ impl ::xsd_parser_types::quick_xml::DeserializeBytes for CharacterWidthType {
     }
 }
 impl xsd_parser_types::quick_xml::WithDeserializerFromBytes for CharacterWidthType {}
-#[derive(Debug)]
+#[derive(Clone, Debug)]
 pub struct UnitSetType {
     pub unit: ::std::vec::Vec<UnitType>,
 }
@@ -2974,7 +2974,7 @@ impl ::xsd_parser_types::quick_xml::WithDeserializer for UnitSetType {
         quick_xml_deserialize::UnitSetTypeDeserializer,
     >;
 }
-#[derive(Debug)]
+#[derive(Clone, Debug)]
 pub struct BinaryDataEncodingType {
     pub bit_order: BitOrderType,
     pub byte_order: ByteOrderType,
@@ -3018,7 +3018,7 @@ impl ::xsd_parser_types::quick_xml::WithDeserializer for BinaryDataEncodingType 
         quick_xml_deserialize::BinaryDataEncodingTypeDeserializer,
     >;
 }
-#[derive(Debug)]
+#[derive(Clone, Debug)]
 pub struct FloatDataEncodingType {
     pub bit_order: BitOrderType,
     pub byte_order: ByteOrderType,
@@ -3072,7 +3072,7 @@ impl ::xsd_parser_types::quick_xml::WithDeserializer for FloatDataEncodingType {
         quick_xml_deserialize::FloatDataEncodingTypeDeserializer,
     >;
 }
-#[derive(Debug)]
+#[derive(Clone, Debug)]
 pub struct IntegerDataEncodingType {
     pub bit_order: BitOrderType,
     pub byte_order: ByteOrderType,
@@ -3126,14 +3126,14 @@ impl ::xsd_parser_types::quick_xml::WithDeserializer for IntegerDataEncodingType
         quick_xml_deserialize::IntegerDataEncodingTypeDeserializer,
     >;
 }
-#[derive(Debug)]
+#[derive(Clone, Debug)]
 pub struct StringDataEncodingType {
     pub bit_order: BitOrderType,
     pub byte_order: ByteOrderType,
     pub encoding: StringEncodingType,
     pub content: ::std::vec::Vec<StringDataEncodingTypeContent>,
 }
-#[derive(Debug)]
+#[derive(Clone, Debug)]
 pub enum StringDataEncodingTypeContent {
     ErrorDetectCorrect(ErrorDetectCorrectType),
     SizeInBits(SizeInBitsType),
@@ -3205,7 +3205,7 @@ impl ::xsd_parser_types::quick_xml::WithDeserializer for StringDataEncodingTypeC
         quick_xml_deserialize::StringDataEncodingTypeContentDeserializer,
     >;
 }
-#[derive(Debug)]
+#[derive(Clone, Debug)]
 pub struct IntegerRangeType {
     pub min_inclusive: ::core::option::Option<::core::primitive::i64>,
     pub max_inclusive: ::core::option::Option<::core::primitive::i64>,
@@ -3235,7 +3235,7 @@ impl ::xsd_parser_types::quick_xml::WithDeserializer for IntegerRangeType {
         quick_xml_deserialize::IntegerRangeTypeDeserializer,
     >;
 }
-#[derive(Debug)]
+#[derive(Clone, Debug)]
 pub struct StringAlarmType {
     pub name: ::core::option::Option<::std::string::String>,
     pub short_description: ::core::option::Option<::std::string::String>,
@@ -3245,7 +3245,7 @@ pub struct StringAlarmType {
     pub default_alarm_level: ConcernLevelsType,
     pub content: ::std::vec::Vec<StringAlarmTypeContent>,
 }
-#[derive(Debug)]
+#[derive(Clone, Debug)]
 pub enum StringAlarmTypeContent {
     AncillaryDataSet(AncillaryDataSetType),
     AlarmConditions(AlarmConditionsType),
@@ -3320,7 +3320,7 @@ impl ::xsd_parser_types::quick_xml::WithDeserializer for StringAlarmTypeContent 
         quick_xml_deserialize::StringAlarmTypeContentDeserializer,
     >;
 }
-#[derive(Debug)]
+#[derive(Clone, Debug)]
 pub struct StringContextAlarmListType {
     pub context_alarm: ::std::vec::Vec<StringContextAlarmType>,
 }
@@ -3349,7 +3349,7 @@ impl ::xsd_parser_types::quick_xml::WithDeserializer for StringContextAlarmListT
         quick_xml_deserialize::StringContextAlarmListTypeDeserializer,
     >;
 }
-#[derive(Debug)]
+#[derive(Clone, Debug)]
 pub struct EnumerationListType {
     pub enumeration: ::std::vec::Vec<ValueEnumerationType>,
 }
@@ -3378,7 +3378,7 @@ impl ::xsd_parser_types::quick_xml::WithDeserializer for EnumerationListType {
         quick_xml_deserialize::EnumerationListTypeDeserializer,
     >;
 }
-#[derive(Debug)]
+#[derive(Clone, Debug)]
 pub struct EnumerationAlarmType {
     pub name: ::core::option::Option<::std::string::String>,
     pub short_description: ::core::option::Option<::std::string::String>,
@@ -3388,7 +3388,7 @@ pub struct EnumerationAlarmType {
     pub default_alarm_level: ConcernLevelsType,
     pub content: ::std::vec::Vec<EnumerationAlarmTypeContent>,
 }
-#[derive(Debug)]
+#[derive(Clone, Debug)]
 pub enum EnumerationAlarmTypeContent {
     AncillaryDataSet(AncillaryDataSetType),
     AlarmConditions(AlarmConditionsType),
@@ -3463,7 +3463,7 @@ impl ::xsd_parser_types::quick_xml::WithDeserializer for EnumerationAlarmTypeCon
         quick_xml_deserialize::EnumerationAlarmTypeContentDeserializer,
     >;
 }
-#[derive(Debug)]
+#[derive(Clone, Debug)]
 pub struct EnumerationContextAlarmListType {
     pub context_alarm: ::std::vec::Vec<EnumerationContextAlarmType>,
 }
@@ -3495,7 +3495,7 @@ for EnumerationContextAlarmListType {
         quick_xml_deserialize::EnumerationContextAlarmListTypeDeserializer,
     >;
 }
-#[derive(Debug)]
+#[derive(Clone, Debug)]
 pub struct ToStringType {
     pub number_format: NumberFormatType,
 }
@@ -3524,7 +3524,7 @@ impl ::xsd_parser_types::quick_xml::WithDeserializer for ToStringType {
         quick_xml_deserialize::ToStringTypeDeserializer,
     >;
 }
-#[derive(Debug)]
+#[derive(Clone, Debug)]
 pub struct IntegerDataTypeValidRangeElementType {
     pub min_inclusive: ::core::option::Option<::core::primitive::i64>,
     pub max_inclusive: ::core::option::Option<::core::primitive::i64>,
@@ -3565,7 +3565,7 @@ for IntegerDataTypeValidRangeElementType {
         quick_xml_deserialize::IntegerDataTypeValidRangeElementTypeDeserializer,
     >;
 }
-#[derive(Debug)]
+#[derive(Clone, Debug)]
 pub struct NumericAlarmType {
     pub name: ::core::option::Option<::std::string::String>,
     pub short_description: ::core::option::Option<::std::string::String>,
@@ -3574,7 +3574,7 @@ pub struct NumericAlarmType {
     pub disabled: ::core::primitive::bool,
     pub content: ::std::vec::Vec<NumericAlarmTypeContent>,
 }
-#[derive(Debug)]
+#[derive(Clone, Debug)]
 pub enum NumericAlarmTypeContent {
     AncillaryDataSet(AncillaryDataSetType),
     AlarmConditions(AlarmConditionsType),
@@ -3647,7 +3647,7 @@ impl ::xsd_parser_types::quick_xml::WithDeserializer for NumericAlarmTypeContent
         quick_xml_deserialize::NumericAlarmTypeContentDeserializer,
     >;
 }
-#[derive(Debug)]
+#[derive(Clone, Debug)]
 pub struct NumericContextAlarmListType {
     pub context_alarm: ::std::vec::Vec<NumericContextAlarmType>,
 }
@@ -3676,7 +3676,7 @@ impl ::xsd_parser_types::quick_xml::WithDeserializer for NumericContextAlarmList
         quick_xml_deserialize::NumericContextAlarmListTypeDeserializer,
     >;
 }
-#[derive(Debug)]
+#[derive(Clone, Debug)]
 pub struct BinaryAlarmType {
     pub name: ::core::option::Option<::std::string::String>,
     pub short_description: ::core::option::Option<::std::string::String>,
@@ -3685,7 +3685,7 @@ pub struct BinaryAlarmType {
     pub disabled: ::core::primitive::bool,
     pub content: ::std::vec::Vec<BinaryAlarmTypeContent>,
 }
-#[derive(Debug)]
+#[derive(Clone, Debug)]
 pub enum BinaryAlarmTypeContent {
     AncillaryDataSet(AncillaryDataSetType),
     AlarmConditions(AlarmConditionsType),
@@ -3755,7 +3755,7 @@ impl ::xsd_parser_types::quick_xml::WithDeserializer for BinaryAlarmTypeContent 
         quick_xml_deserialize::BinaryAlarmTypeContentDeserializer,
     >;
 }
-#[derive(Debug)]
+#[derive(Clone, Debug)]
 pub struct BinaryContextAlarmListType {
     pub context_alarm: ::std::vec::Vec<BinaryContextAlarmType>,
 }
@@ -3784,7 +3784,7 @@ impl ::xsd_parser_types::quick_xml::WithDeserializer for BinaryContextAlarmListT
         quick_xml_deserialize::BinaryContextAlarmListTypeDeserializer,
     >;
 }
-#[derive(Debug)]
+#[derive(Clone, Debug)]
 pub enum FloatSizeInBitsType {
     _32,
     _64,
@@ -3828,7 +3828,7 @@ impl ::xsd_parser_types::quick_xml::DeserializeBytes for FloatSizeInBitsType {
     }
 }
 impl xsd_parser_types::quick_xml::WithDeserializerFromBytes for FloatSizeInBitsType {}
-#[derive(Debug)]
+#[derive(Clone, Debug)]
 pub struct FloatDataTypeValidRangeElementType {
     pub min_inclusive: ::core::option::Option<::core::primitive::f64>,
     pub min_exclusive: ::core::option::Option<::core::primitive::f64>,
@@ -3871,7 +3871,7 @@ for FloatDataTypeValidRangeElementType {
         quick_xml_deserialize::FloatDataTypeValidRangeElementTypeDeserializer,
     >;
 }
-#[derive(Debug)]
+#[derive(Clone, Debug)]
 pub struct BooleanAlarmType {
     pub name: ::core::option::Option<::std::string::String>,
     pub short_description: ::core::option::Option<::std::string::String>,
@@ -3880,7 +3880,7 @@ pub struct BooleanAlarmType {
     pub disabled: ::core::primitive::bool,
     pub content: ::std::vec::Vec<BooleanAlarmTypeContent>,
 }
-#[derive(Debug)]
+#[derive(Clone, Debug)]
 pub enum BooleanAlarmTypeContent {
     AncillaryDataSet(AncillaryDataSetType),
     AlarmConditions(AlarmConditionsType),
@@ -3950,7 +3950,7 @@ impl ::xsd_parser_types::quick_xml::WithDeserializer for BooleanAlarmTypeContent
         quick_xml_deserialize::BooleanAlarmTypeContentDeserializer,
     >;
 }
-#[derive(Debug)]
+#[derive(Clone, Debug)]
 pub struct BooleanContextAlarmListType {
     pub context_alarm: ::std::vec::Vec<BooleanContextAlarmType>,
 }
@@ -3979,14 +3979,14 @@ impl ::xsd_parser_types::quick_xml::WithDeserializer for BooleanContextAlarmList
         quick_xml_deserialize::BooleanContextAlarmListTypeDeserializer,
     >;
 }
-#[derive(Debug)]
+#[derive(Clone, Debug)]
 pub struct EncodingType {
     pub units: TimeUnitsType,
     pub scale: ::core::primitive::f64,
     pub offset: ::core::primitive::f64,
     pub content: EncodingTypeContent,
 }
-#[derive(Debug)]
+#[derive(Clone, Debug)]
 pub enum EncodingTypeContent {
     BinaryDataEncoding(BinaryDataEncodingType),
     FloatDataEncoding(FloatDataEncodingType),
@@ -4057,7 +4057,7 @@ impl ::xsd_parser_types::quick_xml::WithDeserializer for EncodingTypeContent {
         quick_xml_deserialize::EncodingTypeContentDeserializer,
     >;
 }
-#[derive(Debug)]
+#[derive(Clone, Debug)]
 pub enum ReferenceTimeType {
     OffsetFrom(ParameterInstanceRefType),
     Epoch(EpochType),
@@ -4087,7 +4087,7 @@ impl ::xsd_parser_types::quick_xml::WithDeserializer for ReferenceTimeType {
         quick_xml_deserialize::ReferenceTimeTypeDeserializer,
     >;
 }
-#[derive(Debug)]
+#[derive(Clone, Debug)]
 pub struct TimeAlarmType {
     pub name: ::core::option::Option<::std::string::String>,
     pub short_description: ::core::option::Option<::std::string::String>,
@@ -4096,7 +4096,7 @@ pub struct TimeAlarmType {
     pub disabled: ::core::primitive::bool,
     pub content: ::std::vec::Vec<TimeAlarmTypeContent>,
 }
-#[derive(Debug)]
+#[derive(Clone, Debug)]
 pub enum TimeAlarmTypeContent {
     AncillaryDataSet(AncillaryDataSetType),
     AlarmConditions(AlarmConditionsType),
@@ -4168,7 +4168,7 @@ impl ::xsd_parser_types::quick_xml::WithDeserializer for TimeAlarmTypeContent {
         quick_xml_deserialize::TimeAlarmTypeContentDeserializer,
     >;
 }
-#[derive(Debug)]
+#[derive(Clone, Debug)]
 pub struct TimeContextAlarmListType {
     pub context_alarm: ::std::vec::Vec<TimeContextAlarmType>,
 }
@@ -4197,7 +4197,7 @@ impl ::xsd_parser_types::quick_xml::WithDeserializer for TimeContextAlarmListTyp
         quick_xml_deserialize::TimeContextAlarmListTypeDeserializer,
     >;
 }
-#[derive(Debug)]
+#[derive(Clone, Debug)]
 pub struct DimensionListType {
     pub dimension: ::std::vec::Vec<DimensionType>,
 }
@@ -4226,7 +4226,7 @@ impl ::xsd_parser_types::quick_xml::WithDeserializer for DimensionListType {
         quick_xml_deserialize::DimensionListTypeDeserializer,
     >;
 }
-#[derive(Debug)]
+#[derive(Clone, Debug)]
 pub struct MemberListType {
     pub member: ::std::vec::Vec<MemberType>,
 }
@@ -4255,7 +4255,7 @@ impl ::xsd_parser_types::quick_xml::WithDeserializer for MemberListType {
         quick_xml_deserialize::MemberListTypeDeserializer,
     >;
 }
-#[derive(Debug)]
+#[derive(Clone, Debug)]
 pub struct ParameterPropertiesType {
     pub data_source: ::core::option::Option<TelemetryDataSourceType>,
     pub read_only: ::core::primitive::bool,
@@ -4300,7 +4300,7 @@ impl ::xsd_parser_types::quick_xml::WithDeserializer for ParameterPropertiesType
         quick_xml_deserialize::ParameterPropertiesTypeDeserializer,
     >;
 }
-#[derive(Debug)]
+#[derive(Clone, Debug)]
 pub enum FixedIntegerValueType {
     BigInt(::num::BigInt),
     String(::std::string::String),
@@ -4342,7 +4342,7 @@ impl xsd_parser_types::quick_xml::DeserializeBytes for FixedIntegerValueType {
     }
 }
 impl xsd_parser_types::quick_xml::WithDeserializerFromBytes for FixedIntegerValueType {}
-#[derive(Debug)]
+#[derive(Clone, Debug)]
 pub struct RateInStreamType {
     pub basis: BasisType,
     pub minimum_value: ::core::option::Option<::core::primitive::f64>,
@@ -4379,7 +4379,7 @@ impl ::xsd_parser_types::quick_xml::WithDeserializer for RateInStreamType {
         quick_xml_deserialize::RateInStreamTypeDeserializer,
     >;
 }
-#[derive(Debug)]
+#[derive(Clone, Debug)]
 pub struct RateInStreamSetType {
     pub rate_in_stream: ::std::vec::Vec<RateInStreamWithStreamNameType>,
 }
@@ -4408,7 +4408,7 @@ impl ::xsd_parser_types::quick_xml::WithDeserializer for RateInStreamSetType {
         quick_xml_deserialize::RateInStreamSetTypeDeserializer,
     >;
 }
-#[derive(Debug)]
+#[derive(Clone, Debug)]
 pub struct ContainerBinaryDataEncodingType {
     pub error_detect_correct: ::core::option::Option<ErrorDetectCorrectType>,
     pub size_in_bits: ::core::option::Option<IntegerValueType>,
@@ -4443,11 +4443,11 @@ for ContainerBinaryDataEncodingType {
         quick_xml_deserialize::ContainerBinaryDataEncodingTypeDeserializer,
     >;
 }
-#[derive(Debug)]
+#[derive(Clone, Debug)]
 pub struct EntryListType {
     pub content: ::std::vec::Vec<EntryListTypeContent>,
 }
-#[derive(Debug)]
+#[derive(Clone, Debug)]
 pub enum EntryListTypeContent {
     ParameterRefEntry(ParameterRefEntryType),
     ParameterSegmentRefEntry(ParameterSegmentRefEntryType),
@@ -4507,7 +4507,7 @@ impl ::xsd_parser_types::quick_xml::WithDeserializer for EntryListTypeContent {
         quick_xml_deserialize::EntryListTypeContentDeserializer,
     >;
 }
-#[derive(Debug)]
+#[derive(Clone, Debug)]
 pub struct BaseContainerType {
     pub container_ref: ::std::string::String,
     pub restriction_criteria: ::core::option::Option<RestrictionCriteriaType>,
@@ -4537,7 +4537,7 @@ impl ::xsd_parser_types::quick_xml::WithDeserializer for BaseContainerType {
         quick_xml_deserialize::BaseContainerTypeDeserializer,
     >;
 }
-#[derive(Debug)]
+#[derive(Clone, Debug)]
 pub enum MatchCriteriaType {
     Comparison(ComparisonType),
     ComparisonList(ComparisonListType),
@@ -4569,7 +4569,7 @@ impl ::xsd_parser_types::quick_xml::WithDeserializer for MatchCriteriaType {
         quick_xml_deserialize::MatchCriteriaTypeDeserializer,
     >;
 }
-#[derive(Debug)]
+#[derive(Clone, Debug)]
 pub struct ContainerRefType {
     pub container_ref: ::std::string::String,
 }
@@ -4598,7 +4598,7 @@ impl ::xsd_parser_types::quick_xml::WithDeserializer for ContainerRefType {
         quick_xml_deserialize::ContainerRefTypeDeserializer,
     >;
 }
-#[derive(Debug)]
+#[derive(Clone, Debug)]
 pub enum PcmType {
     Nrzl,
     Nrzm,
@@ -4651,7 +4651,7 @@ impl ::xsd_parser_types::quick_xml::DeserializeBytes for PcmType {
     }
 }
 impl xsd_parser_types::quick_xml::WithDeserializerFromBytes for PcmType {}
-#[derive(Debug)]
+#[derive(Clone, Debug)]
 pub struct ServiceRefType {
     pub service_ref: ::std::string::String,
 }
@@ -4680,7 +4680,7 @@ impl ::xsd_parser_types::quick_xml::WithDeserializer for ServiceRefType {
         quick_xml_deserialize::ServiceRefTypeDeserializer,
     >;
 }
-#[derive(Debug)]
+#[derive(Clone, Debug)]
 pub struct StreamRefType {
     pub stream_ref: ::std::string::String,
 }
@@ -4709,7 +4709,7 @@ impl ::xsd_parser_types::quick_xml::WithDeserializer for StreamRefType {
         quick_xml_deserialize::StreamRefTypeDeserializer,
     >;
 }
-#[derive(Debug)]
+#[derive(Clone, Debug)]
 pub struct FixedFrameSyncStrategyType {
     pub verify_to_lock_good_frames: ::core::primitive::i64,
     pub check_to_lock_good_frames: ::core::primitive::i64,
@@ -4756,7 +4756,7 @@ impl ::xsd_parser_types::quick_xml::WithDeserializer for FixedFrameSyncStrategyT
         quick_xml_deserialize::FixedFrameSyncStrategyTypeDeserializer,
     >;
 }
-#[derive(Debug)]
+#[derive(Clone, Debug)]
 pub struct VariableFrameSyncStrategyType {
     pub verify_to_lock_good_frames: ::core::primitive::i64,
     pub check_to_lock_good_frames: ::core::primitive::i64,
@@ -4805,7 +4805,7 @@ impl ::xsd_parser_types::quick_xml::WithDeserializer for VariableFrameSyncStrate
         quick_xml_deserialize::VariableFrameSyncStrategyTypeDeserializer,
     >;
 }
-#[derive(Debug)]
+#[derive(Clone, Debug)]
 pub struct InputAlgorithmType {
     pub short_description: ::core::option::Option<::std::string::String>,
     pub name: ::std::string::String,
@@ -4841,7 +4841,7 @@ impl ::xsd_parser_types::quick_xml::WithDeserializer for InputAlgorithmType {
         quick_xml_deserialize::InputAlgorithmTypeDeserializer,
     >;
 }
-#[derive(Debug)]
+#[derive(Clone, Debug)]
 pub struct InputOutputAlgorithmType {
     pub short_description: ::core::option::Option<::std::string::String>,
     pub name: ::std::string::String,
@@ -4885,7 +4885,7 @@ impl ::xsd_parser_types::quick_xml::WithDeserializer for InputOutputAlgorithmTyp
         quick_xml_deserialize::InputOutputAlgorithmTypeDeserializer,
     >;
 }
-#[derive(Debug)]
+#[derive(Clone, Debug)]
 pub struct AlgorithmTextType {
     pub language: ::std::string::String,
     pub content: ::std::string::String,
@@ -4921,7 +4921,7 @@ impl ::xsd_parser_types::quick_xml::WithDeserializer for AlgorithmTextType {
         quick_xml_deserialize::AlgorithmTextTypeDeserializer,
     >;
 }
-#[derive(Debug)]
+#[derive(Clone, Debug)]
 pub struct ExternalAlgorithmSetType {
     pub external_algorithm: ::std::vec::Vec<ExternalAlgorithmType>,
 }
@@ -4950,11 +4950,11 @@ impl ::xsd_parser_types::quick_xml::WithDeserializer for ExternalAlgorithmSetTyp
         quick_xml_deserialize::ExternalAlgorithmSetTypeDeserializer,
     >;
 }
-#[derive(Debug)]
+#[derive(Clone, Debug)]
 pub struct InputSetType {
     pub content: ::std::vec::Vec<InputSetTypeContent>,
 }
-#[derive(Debug)]
+#[derive(Clone, Debug)]
 pub enum InputSetTypeContent {
     InputParameterInstanceRef(InputParameterInstanceRefType),
     Constant(ConstantType),
@@ -5009,7 +5009,7 @@ impl ::xsd_parser_types::quick_xml::WithDeserializer for InputSetTypeContent {
         quick_xml_deserialize::InputSetTypeContentDeserializer,
     >;
 }
-#[derive(Debug)]
+#[derive(Clone, Debug)]
 pub struct OutputSetType {
     pub output_parameter_ref: ::std::vec::Vec<OutputParameterRefType>,
 }
@@ -5038,13 +5038,13 @@ impl ::xsd_parser_types::quick_xml::WithDeserializer for OutputSetType {
         quick_xml_deserialize::OutputSetTypeDeserializer,
     >;
 }
-#[derive(Debug)]
+#[derive(Clone, Debug)]
 pub struct TriggerSetType {
     pub name: ::core::option::Option<::std::string::String>,
     pub trigger_rate: ::core::primitive::i64,
     pub content: ::std::vec::Vec<TriggerSetTypeContent>,
 }
-#[derive(Debug)]
+#[derive(Clone, Debug)]
 pub enum TriggerSetTypeContent {
     OnParameterUpdateTrigger(OnParameterUpdateTriggerType),
     OnContainerUpdateTrigger(OnContainerUpdateTriggerType),
@@ -5106,14 +5106,14 @@ impl ::xsd_parser_types::quick_xml::WithDeserializer for TriggerSetTypeContent {
         quick_xml_deserialize::TriggerSetTypeContentDeserializer,
     >;
 }
-#[derive(Debug)]
+#[derive(Clone, Debug)]
 pub struct TriggeredMathOperationType {
     pub name: ::core::option::Option<::std::string::String>,
     pub short_description: ::core::option::Option<::std::string::String>,
     pub output_parameter_ref: ::std::string::String,
     pub content: ::std::vec::Vec<TriggeredMathOperationTypeContent>,
 }
-#[derive(Debug)]
+#[derive(Clone, Debug)]
 pub enum TriggeredMathOperationTypeContent {
     AncillaryDataSet(AncillaryDataSetType),
     ValueOperand(::std::string::String),
@@ -5176,7 +5176,7 @@ for TriggeredMathOperationTypeContent {
         quick_xml_deserialize::TriggeredMathOperationTypeContentDeserializer,
     >;
 }
-#[derive(Debug)]
+#[derive(Clone, Debug)]
 pub struct ArgumentBinaryDataEncodingType {
     pub bit_order: BitOrderType,
     pub byte_order: ByteOrderType,
@@ -5226,14 +5226,14 @@ impl ::xsd_parser_types::quick_xml::WithDeserializer for ArgumentBinaryDataEncod
         quick_xml_deserialize::ArgumentBinaryDataEncodingTypeDeserializer,
     >;
 }
-#[derive(Debug)]
+#[derive(Clone, Debug)]
 pub struct ArgumentStringDataEncodingType {
     pub bit_order: BitOrderType,
     pub byte_order: ByteOrderType,
     pub encoding: StringEncodingType,
     pub content: ::std::vec::Vec<ArgumentStringDataEncodingTypeContent>,
 }
-#[derive(Debug)]
+#[derive(Clone, Debug)]
 pub enum ArgumentStringDataEncodingTypeContent {
     ErrorDetectCorrect(ErrorDetectCorrectType),
     SizeInBits(SizeInBitsType),
@@ -5309,7 +5309,7 @@ for ArgumentStringDataEncodingTypeContent {
         quick_xml_deserialize::ArgumentStringDataEncodingTypeContentDeserializer,
     >;
 }
-#[derive(Debug)]
+#[derive(Clone, Debug)]
 pub struct ValidIntegerRangeSetType {
     pub valid_range_applies_to_calibrated: ::core::primitive::bool,
     pub valid_range: ::std::vec::Vec<IntegerRangeType>,
@@ -5345,7 +5345,7 @@ impl ::xsd_parser_types::quick_xml::WithDeserializer for ValidIntegerRangeSetTyp
         quick_xml_deserialize::ValidIntegerRangeSetTypeDeserializer,
     >;
 }
-#[derive(Debug)]
+#[derive(Clone, Debug)]
 pub struct ValidFloatRangeSetType {
     pub valid_range_applies_to_calibrated: ::core::primitive::bool,
     pub valid_range: ::std::vec::Vec<FloatRangeType>,
@@ -5381,7 +5381,7 @@ impl ::xsd_parser_types::quick_xml::WithDeserializer for ValidFloatRangeSetType 
         quick_xml_deserialize::ValidFloatRangeSetTypeDeserializer,
     >;
 }
-#[derive(Debug)]
+#[derive(Clone, Debug)]
 pub struct ArgumentDimensionListType {
     pub dimension: ::std::vec::Vec<ArgumentDimensionType>,
 }
@@ -5410,7 +5410,7 @@ impl ::xsd_parser_types::quick_xml::WithDeserializer for ArgumentDimensionListTy
         quick_xml_deserialize::ArgumentDimensionListTypeDeserializer,
     >;
 }
-#[derive(Debug)]
+#[derive(Clone, Debug)]
 pub struct BaseMetaCommandType {
     pub meta_command_ref: ::std::string::String,
     pub argument_assignment_list: ::core::option::Option<ArgumentAssignmentListType>,
@@ -5440,7 +5440,7 @@ impl ::xsd_parser_types::quick_xml::WithDeserializer for BaseMetaCommandType {
         quick_xml_deserialize::BaseMetaCommandTypeDeserializer,
     >;
 }
-#[derive(Debug)]
+#[derive(Clone, Debug)]
 pub struct ArgumentListType {
     pub argument: ::std::vec::Vec<ArgumentType>,
 }
@@ -5469,7 +5469,7 @@ impl ::xsd_parser_types::quick_xml::WithDeserializer for ArgumentListType {
         quick_xml_deserialize::ArgumentListTypeDeserializer,
     >;
 }
-#[derive(Debug)]
+#[derive(Clone, Debug)]
 pub struct CommandContainerType {
     pub short_description: ::core::option::Option<::std::string::String>,
     pub name: ::std::string::String,
@@ -5507,7 +5507,7 @@ impl ::xsd_parser_types::quick_xml::WithDeserializer for CommandContainerType {
         quick_xml_deserialize::CommandContainerTypeDeserializer,
     >;
 }
-#[derive(Debug)]
+#[derive(Clone, Debug)]
 pub struct TransmissionConstraintListType {
     pub transmission_constraint: ::std::vec::Vec<TransmissionConstraintType>,
 }
@@ -5538,7 +5538,7 @@ impl ::xsd_parser_types::quick_xml::WithDeserializer for TransmissionConstraintL
         quick_xml_deserialize::TransmissionConstraintListTypeDeserializer,
     >;
 }
-#[derive(Debug)]
+#[derive(Clone, Debug)]
 pub struct SignificanceType {
     pub space_system_at_risk: ::core::option::Option<::std::string::String>,
     pub reason_for_warning: ::core::option::Option<::std::string::String>,
@@ -5575,7 +5575,7 @@ impl ::xsd_parser_types::quick_xml::WithDeserializer for SignificanceType {
         quick_xml_deserialize::SignificanceTypeDeserializer,
     >;
 }
-#[derive(Debug)]
+#[derive(Clone, Debug)]
 pub struct ContextSignificanceListType {
     pub context_significance: ::std::vec::Vec<ContextSignificanceType>,
 }
@@ -5604,7 +5604,7 @@ impl ::xsd_parser_types::quick_xml::WithDeserializer for ContextSignificanceList
         quick_xml_deserialize::ContextSignificanceListTypeDeserializer,
     >;
 }
-#[derive(Debug)]
+#[derive(Clone, Debug)]
 pub struct InterlockType {
     pub scope_to_space_system: ::core::option::Option<::std::string::String>,
     pub verification_to_wait_for: VerifierEnumerationType,
@@ -5646,7 +5646,7 @@ impl ::xsd_parser_types::quick_xml::WithDeserializer for InterlockType {
         quick_xml_deserialize::InterlockTypeDeserializer,
     >;
 }
-#[derive(Debug)]
+#[derive(Clone, Debug)]
 pub struct VerifierSetType {
     pub transferred_to_range_verifier: ::core::option::Option<
         TransferredToRangeVerifierType,
@@ -5684,7 +5684,7 @@ impl ::xsd_parser_types::quick_xml::WithDeserializer for VerifierSetType {
         quick_xml_deserialize::VerifierSetTypeDeserializer,
     >;
 }
-#[derive(Debug)]
+#[derive(Clone, Debug)]
 pub struct ParameterToSetListType {
     pub parameter_to_set: ::std::vec::Vec<ParameterToSetType>,
 }
@@ -5713,7 +5713,7 @@ impl ::xsd_parser_types::quick_xml::WithDeserializer for ParameterToSetListType 
         quick_xml_deserialize::ParameterToSetListTypeDeserializer,
     >;
 }
-#[derive(Debug)]
+#[derive(Clone, Debug)]
 pub struct ParametersToSuspendAlarmsOnSetType {
     pub parameter_to_suspend_alarms_on: ::std::vec::Vec<ParameterToSuspendAlarmsOnType>,
 }
@@ -5746,7 +5746,7 @@ for ParametersToSuspendAlarmsOnSetType {
         quick_xml_deserialize::ParametersToSuspendAlarmsOnSetTypeDeserializer,
     >;
 }
-#[derive(Debug)]
+#[derive(Clone, Debug)]
 pub struct MetaCommandStepListType {
     pub meta_command_step: ::std::vec::Vec<MetaCommandStepType>,
 }
@@ -5775,7 +5775,7 @@ impl ::xsd_parser_types::quick_xml::WithDeserializer for MetaCommandStepListType
         quick_xml_deserialize::MetaCommandStepListTypeDeserializer,
     >;
 }
-#[derive(Debug)]
+#[derive(Clone, Debug)]
 pub struct MessageRefType {
     pub message_ref: ::std::string::String,
 }
@@ -5804,7 +5804,7 @@ impl ::xsd_parser_types::quick_xml::WithDeserializer for MessageRefType {
         quick_xml_deserialize::MessageRefTypeDeserializer,
     >;
 }
-#[derive(Debug)]
+#[derive(Clone, Debug)]
 pub struct UnitType {
     pub power: ::core::primitive::f64,
     pub factor: ::std::string::String,
@@ -5849,7 +5849,7 @@ impl ::xsd_parser_types::quick_xml::WithSerializer for UnitType {
 impl ::xsd_parser_types::quick_xml::WithDeserializer for UnitType {
     type Deserializer = ::std::boxed::Box<quick_xml_deserialize::UnitTypeDeserializer>;
 }
-#[derive(Debug)]
+#[derive(Clone, Debug)]
 pub enum BitOrderType {
     LeastSignificantBitFirst,
     MostSignificantBitFirst,
@@ -5894,7 +5894,7 @@ impl ::xsd_parser_types::quick_xml::DeserializeBytes for BitOrderType {
     }
 }
 impl xsd_parser_types::quick_xml::WithDeserializerFromBytes for BitOrderType {}
-#[derive(Debug)]
+#[derive(Clone, Debug)]
 pub enum ByteOrderType {
     MostSignificantByteFirst,
     LeastSignificantByteFirst,
@@ -5933,11 +5933,11 @@ impl ::xsd_parser_types::quick_xml::DeserializeBytes for ByteOrderType {
     }
 }
 impl xsd_parser_types::quick_xml::WithDeserializerFromBytes for ByteOrderType {}
-#[derive(Debug)]
+#[derive(Clone, Debug)]
 pub struct ErrorDetectCorrectType {
     pub content: ::std::vec::Vec<ErrorDetectCorrectTypeContent>,
 }
-#[derive(Debug)]
+#[derive(Clone, Debug)]
 pub enum ErrorDetectCorrectTypeContent {
     Checksum(ChecksumType),
     Crc(CrcType),
@@ -5996,7 +5996,7 @@ impl ::xsd_parser_types::quick_xml::WithDeserializer for ErrorDetectCorrectTypeC
         quick_xml_deserialize::ErrorDetectCorrectTypeContentDeserializer,
     >;
 }
-#[derive(Debug)]
+#[derive(Clone, Debug)]
 pub enum IntegerValueType {
     FixedValue(::core::primitive::i64),
     DynamicValue(DynamicValueType),
@@ -6027,7 +6027,7 @@ impl ::xsd_parser_types::quick_xml::WithDeserializer for IntegerValueType {
         quick_xml_deserialize::IntegerValueTypeDeserializer,
     >;
 }
-#[derive(Debug)]
+#[derive(Clone, Debug)]
 pub enum FloatEncodingType {
     Ieee7541985,
     Ieee754,
@@ -6080,7 +6080,7 @@ impl ::xsd_parser_types::quick_xml::DeserializeBytes for FloatEncodingType {
     }
 }
 impl xsd_parser_types::quick_xml::WithDeserializerFromBytes for FloatEncodingType {}
-#[derive(Debug)]
+#[derive(Clone, Debug)]
 pub enum FloatEncodingSizeInBitsType {
     _16,
     _32,
@@ -6137,13 +6137,13 @@ impl ::xsd_parser_types::quick_xml::DeserializeBytes for FloatEncodingSizeInBits
 }
 impl xsd_parser_types::quick_xml::WithDeserializerFromBytes
 for FloatEncodingSizeInBitsType {}
-#[derive(Debug)]
+#[derive(Clone, Debug)]
 pub struct CalibratorType {
     pub name: ::core::option::Option<::std::string::String>,
     pub short_description: ::core::option::Option<::std::string::String>,
     pub content: ::std::vec::Vec<CalibratorTypeContent>,
 }
-#[derive(Debug)]
+#[derive(Clone, Debug)]
 pub enum CalibratorTypeContent {
     AncillaryDataSet(AncillaryDataSetType),
     SplineCalibrator(SplineCalibratorType),
@@ -6200,7 +6200,7 @@ impl ::xsd_parser_types::quick_xml::WithDeserializer for CalibratorTypeContent {
         quick_xml_deserialize::CalibratorTypeContentDeserializer,
     >;
 }
-#[derive(Debug)]
+#[derive(Clone, Debug)]
 pub struct ContextCalibratorListType {
     pub context_calibrator: ::std::vec::Vec<ContextCalibratorType>,
 }
@@ -6229,7 +6229,7 @@ impl ::xsd_parser_types::quick_xml::WithDeserializer for ContextCalibratorListTy
         quick_xml_deserialize::ContextCalibratorListTypeDeserializer,
     >;
 }
-#[derive(Debug)]
+#[derive(Clone, Debug)]
 pub enum IntegerEncodingType {
     Unsigned,
     SignMagnitude,
@@ -6288,7 +6288,7 @@ impl ::xsd_parser_types::quick_xml::DeserializeBytes for IntegerEncodingType {
     }
 }
 impl xsd_parser_types::quick_xml::WithDeserializerFromBytes for IntegerEncodingType {}
-#[derive(Debug)]
+#[derive(Clone, Debug)]
 pub enum StringEncodingType {
     UsAscii,
     Iso88591,
@@ -6353,7 +6353,7 @@ impl ::xsd_parser_types::quick_xml::DeserializeBytes for StringEncodingType {
     }
 }
 impl xsd_parser_types::quick_xml::WithDeserializerFromBytes for StringEncodingType {}
-#[derive(Debug)]
+#[derive(Clone, Debug)]
 pub struct SizeInBitsType {
     pub fixed: SizeInBitsTypeFixedElementType,
     pub termination_char: ::core::option::Option<::std::string::String>,
@@ -6384,12 +6384,12 @@ impl ::xsd_parser_types::quick_xml::WithDeserializer for SizeInBitsType {
         quick_xml_deserialize::SizeInBitsTypeDeserializer,
     >;
 }
-#[derive(Debug)]
+#[derive(Clone, Debug)]
 pub struct VariableStringType {
     pub max_size_in_bits: ::core::primitive::i64,
     pub content: ::std::vec::Vec<VariableStringTypeContent>,
 }
-#[derive(Debug)]
+#[derive(Clone, Debug)]
 pub enum VariableStringTypeContent {
     DynamicValue(DynamicValueType),
     DiscreteLookupList(DiscreteLookupListType),
@@ -6446,7 +6446,7 @@ impl ::xsd_parser_types::quick_xml::WithDeserializer for VariableStringTypeConte
         quick_xml_deserialize::VariableStringTypeContentDeserializer,
     >;
 }
-#[derive(Debug)]
+#[derive(Clone, Debug)]
 pub enum ConcernLevelsType {
     Normal,
     Watch,
@@ -6499,7 +6499,7 @@ impl ::xsd_parser_types::quick_xml::DeserializeBytes for ConcernLevelsType {
     }
 }
 impl xsd_parser_types::quick_xml::WithDeserializerFromBytes for ConcernLevelsType {}
-#[derive(Debug)]
+#[derive(Clone, Debug)]
 pub struct AlarmConditionsType {
     pub watch_alarm: ::core::option::Option<MatchCriteriaType>,
     pub warning_alarm: ::core::option::Option<MatchCriteriaType>,
@@ -6532,7 +6532,7 @@ impl ::xsd_parser_types::quick_xml::WithDeserializer for AlarmConditionsType {
         quick_xml_deserialize::AlarmConditionsTypeDeserializer,
     >;
 }
-#[derive(Debug)]
+#[derive(Clone, Debug)]
 pub struct CustomAlarmType {
     pub name: ::core::option::Option<::std::string::String>,
     pub short_description: ::core::option::Option<::std::string::String>,
@@ -6564,7 +6564,7 @@ impl ::xsd_parser_types::quick_xml::WithDeserializer for CustomAlarmType {
         quick_xml_deserialize::CustomAlarmTypeDeserializer,
     >;
 }
-#[derive(Debug)]
+#[derive(Clone, Debug)]
 pub struct StringAlarmListType {
     pub string_alarm: ::std::vec::Vec<StringAlarmLevelType>,
 }
@@ -6593,7 +6593,7 @@ impl ::xsd_parser_types::quick_xml::WithDeserializer for StringAlarmListType {
         quick_xml_deserialize::StringAlarmListTypeDeserializer,
     >;
 }
-#[derive(Debug)]
+#[derive(Clone, Debug)]
 pub struct StringContextAlarmType {
     pub name: ::core::option::Option<::std::string::String>,
     pub short_description: ::core::option::Option<::std::string::String>,
@@ -6603,7 +6603,7 @@ pub struct StringContextAlarmType {
     pub default_alarm_level: ConcernLevelsType,
     pub content: ::std::vec::Vec<StringContextAlarmTypeContent>,
 }
-#[derive(Debug)]
+#[derive(Clone, Debug)]
 pub enum StringContextAlarmTypeContent {
     AncillaryDataSet(AncillaryDataSetType),
     AlarmConditions(AlarmConditionsType),
@@ -6681,7 +6681,7 @@ impl ::xsd_parser_types::quick_xml::WithDeserializer for StringContextAlarmTypeC
         quick_xml_deserialize::StringContextAlarmTypeContentDeserializer,
     >;
 }
-#[derive(Debug)]
+#[derive(Clone, Debug)]
 pub struct ValueEnumerationType {
     pub value: ::core::primitive::i64,
     pub max_value: ::core::option::Option<::core::primitive::i64>,
@@ -6713,7 +6713,7 @@ impl ::xsd_parser_types::quick_xml::WithDeserializer for ValueEnumerationType {
         quick_xml_deserialize::ValueEnumerationTypeDeserializer,
     >;
 }
-#[derive(Debug)]
+#[derive(Clone, Debug)]
 pub struct EnumerationAlarmListType {
     pub enumeration_alarm: ::std::vec::Vec<EnumerationAlarmLevelType>,
 }
@@ -6742,7 +6742,7 @@ impl ::xsd_parser_types::quick_xml::WithDeserializer for EnumerationAlarmListTyp
         quick_xml_deserialize::EnumerationAlarmListTypeDeserializer,
     >;
 }
-#[derive(Debug)]
+#[derive(Clone, Debug)]
 pub struct EnumerationContextAlarmType {
     pub name: ::core::option::Option<::std::string::String>,
     pub short_description: ::core::option::Option<::std::string::String>,
@@ -6752,7 +6752,7 @@ pub struct EnumerationContextAlarmType {
     pub default_alarm_level: ConcernLevelsType,
     pub content: ::std::vec::Vec<EnumerationContextAlarmTypeContent>,
 }
-#[derive(Debug)]
+#[derive(Clone, Debug)]
 pub enum EnumerationContextAlarmTypeContent {
     AncillaryDataSet(AncillaryDataSetType),
     AlarmConditions(AlarmConditionsType),
@@ -6832,7 +6832,7 @@ for EnumerationContextAlarmTypeContent {
         quick_xml_deserialize::EnumerationContextAlarmTypeContentDeserializer,
     >;
 }
-#[derive(Debug)]
+#[derive(Clone, Debug)]
 pub struct NumberFormatType {
     pub number_base: RadixType,
     pub minimum_fraction_digits: ::core::primitive::i64,
@@ -6909,7 +6909,7 @@ impl ::xsd_parser_types::quick_xml::WithDeserializer for NumberFormatType {
         quick_xml_deserialize::NumberFormatTypeDeserializer,
     >;
 }
-#[derive(Debug)]
+#[derive(Clone, Debug)]
 pub struct AlarmRangesType {
     pub name: ::core::option::Option<::std::string::String>,
     pub short_description: ::core::option::Option<::std::string::String>,
@@ -6952,7 +6952,7 @@ impl ::xsd_parser_types::quick_xml::WithDeserializer for AlarmRangesType {
         quick_xml_deserialize::AlarmRangesTypeDeserializer,
     >;
 }
-#[derive(Debug)]
+#[derive(Clone, Debug)]
 pub struct ChangeAlarmRangesType {
     pub name: ::core::option::Option<::std::string::String>,
     pub short_description: ::core::option::Option<::std::string::String>,
@@ -7015,7 +7015,7 @@ impl ::xsd_parser_types::quick_xml::WithDeserializer for ChangeAlarmRangesType {
         quick_xml_deserialize::ChangeAlarmRangesTypeDeserializer,
     >;
 }
-#[derive(Debug)]
+#[derive(Clone, Debug)]
 pub struct AlarmMultiRangesType {
     pub name: ::core::option::Option<::std::string::String>,
     pub short_description: ::core::option::Option<::std::string::String>,
@@ -7047,7 +7047,7 @@ impl ::xsd_parser_types::quick_xml::WithDeserializer for AlarmMultiRangesType {
         quick_xml_deserialize::AlarmMultiRangesTypeDeserializer,
     >;
 }
-#[derive(Debug)]
+#[derive(Clone, Debug)]
 pub struct NumericContextAlarmType {
     pub name: ::core::option::Option<::std::string::String>,
     pub short_description: ::core::option::Option<::std::string::String>,
@@ -7056,7 +7056,7 @@ pub struct NumericContextAlarmType {
     pub disabled: ::core::primitive::bool,
     pub content: ::std::vec::Vec<NumericContextAlarmTypeContent>,
 }
-#[derive(Debug)]
+#[derive(Clone, Debug)]
 pub enum NumericContextAlarmTypeContent {
     AncillaryDataSet(AncillaryDataSetType),
     AlarmConditions(AlarmConditionsType),
@@ -7132,7 +7132,7 @@ impl ::xsd_parser_types::quick_xml::WithDeserializer for NumericContextAlarmType
         quick_xml_deserialize::NumericContextAlarmTypeContentDeserializer,
     >;
 }
-#[derive(Debug)]
+#[derive(Clone, Debug)]
 pub struct BinaryContextAlarmType {
     pub name: ::core::option::Option<::std::string::String>,
     pub short_description: ::core::option::Option<::std::string::String>,
@@ -7141,7 +7141,7 @@ pub struct BinaryContextAlarmType {
     pub disabled: ::core::primitive::bool,
     pub content: ::std::vec::Vec<BinaryContextAlarmTypeContent>,
 }
-#[derive(Debug)]
+#[derive(Clone, Debug)]
 pub enum BinaryContextAlarmTypeContent {
     AncillaryDataSet(AncillaryDataSetType),
     AlarmConditions(AlarmConditionsType),
@@ -7214,7 +7214,7 @@ impl ::xsd_parser_types::quick_xml::WithDeserializer for BinaryContextAlarmTypeC
         quick_xml_deserialize::BinaryContextAlarmTypeContentDeserializer,
     >;
 }
-#[derive(Debug)]
+#[derive(Clone, Debug)]
 pub struct BooleanContextAlarmType {
     pub name: ::core::option::Option<::std::string::String>,
     pub short_description: ::core::option::Option<::std::string::String>,
@@ -7223,7 +7223,7 @@ pub struct BooleanContextAlarmType {
     pub disabled: ::core::primitive::bool,
     pub content: ::std::vec::Vec<BooleanContextAlarmTypeContent>,
 }
-#[derive(Debug)]
+#[derive(Clone, Debug)]
 pub enum BooleanContextAlarmTypeContent {
     AncillaryDataSet(AncillaryDataSetType),
     AlarmConditions(AlarmConditionsType),
@@ -7296,7 +7296,7 @@ impl ::xsd_parser_types::quick_xml::WithDeserializer for BooleanContextAlarmType
         quick_xml_deserialize::BooleanContextAlarmTypeContentDeserializer,
     >;
 }
-#[derive(Debug)]
+#[derive(Clone, Debug)]
 pub enum TimeUnitsType {
     Seconds,
     Milliseconds,
@@ -7361,7 +7361,7 @@ impl ::xsd_parser_types::quick_xml::DeserializeBytes for TimeUnitsType {
     }
 }
 impl xsd_parser_types::quick_xml::WithDeserializerFromBytes for TimeUnitsType {}
-#[derive(Debug)]
+#[derive(Clone, Debug)]
 pub struct ParameterInstanceRefType {
     pub parameter_ref: ::std::string::String,
     pub instance: ::core::primitive::i64,
@@ -7402,7 +7402,7 @@ impl ::xsd_parser_types::quick_xml::WithDeserializer for ParameterInstanceRefTyp
         quick_xml_deserialize::ParameterInstanceRefTypeDeserializer,
     >;
 }
-#[derive(Debug)]
+#[derive(Clone, Debug)]
 pub enum EpochType {
     String(::std::string::String),
     Tai,
@@ -7443,7 +7443,7 @@ impl ::xsd_parser_types::quick_xml::DeserializeBytes for EpochType {
     }
 }
 impl xsd_parser_types::quick_xml::WithDeserializerFromBytes for EpochType {}
-#[derive(Debug)]
+#[derive(Clone, Debug)]
 pub struct TimeAlarmRangesType {
     pub name: ::core::option::Option<::std::string::String>,
     pub short_description: ::core::option::Option<::std::string::String>,
@@ -7491,7 +7491,7 @@ impl ::xsd_parser_types::quick_xml::WithDeserializer for TimeAlarmRangesType {
         quick_xml_deserialize::TimeAlarmRangesTypeDeserializer,
     >;
 }
-#[derive(Debug)]
+#[derive(Clone, Debug)]
 pub struct TimeContextAlarmType {
     pub name: ::core::option::Option<::std::string::String>,
     pub short_description: ::core::option::Option<::std::string::String>,
@@ -7500,7 +7500,7 @@ pub struct TimeContextAlarmType {
     pub disabled: ::core::primitive::bool,
     pub content: ::std::vec::Vec<TimeContextAlarmTypeContent>,
 }
-#[derive(Debug)]
+#[derive(Clone, Debug)]
 pub enum TimeContextAlarmTypeContent {
     AncillaryDataSet(AncillaryDataSetType),
     AlarmConditions(AlarmConditionsType),
@@ -7573,7 +7573,7 @@ impl ::xsd_parser_types::quick_xml::WithDeserializer for TimeContextAlarmTypeCon
         quick_xml_deserialize::TimeContextAlarmTypeContentDeserializer,
     >;
 }
-#[derive(Debug)]
+#[derive(Clone, Debug)]
 pub struct DimensionType {
     pub starting_index: IntegerValueType,
     pub ending_index: IntegerValueType,
@@ -7603,7 +7603,7 @@ impl ::xsd_parser_types::quick_xml::WithDeserializer for DimensionType {
         quick_xml_deserialize::DimensionTypeDeserializer,
     >;
 }
-#[derive(Debug)]
+#[derive(Clone, Debug)]
 pub struct MemberType {
     pub short_description: ::core::option::Option<::std::string::String>,
     pub name: ::std::string::String,
@@ -7636,7 +7636,7 @@ impl ::xsd_parser_types::quick_xml::WithSerializer for MemberType {
 impl ::xsd_parser_types::quick_xml::WithDeserializer for MemberType {
     type Deserializer = ::std::boxed::Box<quick_xml_deserialize::MemberTypeDeserializer>;
 }
-#[derive(Debug)]
+#[derive(Clone, Debug)]
 pub enum TelemetryDataSourceType {
     Telemetered,
     Derived,
@@ -7686,7 +7686,7 @@ impl ::xsd_parser_types::quick_xml::DeserializeBytes for TelemetryDataSourceType
     }
 }
 impl xsd_parser_types::quick_xml::WithDeserializerFromBytes for TelemetryDataSourceType {}
-#[derive(Debug)]
+#[derive(Clone, Debug)]
 pub struct PhysicalAddressSetType {
     pub physical_address: ::std::vec::Vec<PhysicalAddressType>,
 }
@@ -7715,7 +7715,7 @@ impl ::xsd_parser_types::quick_xml::WithDeserializer for PhysicalAddressSetType 
         quick_xml_deserialize::PhysicalAddressSetTypeDeserializer,
     >;
 }
-#[derive(Debug)]
+#[derive(Clone, Debug)]
 pub struct TimeAssociationType {
     pub parameter_ref: ::std::string::String,
     pub instance: ::core::primitive::i64,
@@ -7767,7 +7767,7 @@ impl ::xsd_parser_types::quick_xml::WithDeserializer for TimeAssociationType {
         quick_xml_deserialize::TimeAssociationTypeDeserializer,
     >;
 }
-#[derive(Debug)]
+#[derive(Clone, Debug)]
 pub enum BasisType {
     PerSecond,
     PerContainerUpdate,
@@ -7810,7 +7810,7 @@ impl ::xsd_parser_types::quick_xml::DeserializeBytes for BasisType {
     }
 }
 impl xsd_parser_types::quick_xml::WithDeserializerFromBytes for BasisType {}
-#[derive(Debug)]
+#[derive(Clone, Debug)]
 pub struct RateInStreamWithStreamNameType {
     pub basis: BasisType,
     pub minimum_value: ::core::option::Option<::core::primitive::f64>,
@@ -7850,7 +7850,7 @@ impl ::xsd_parser_types::quick_xml::WithDeserializer for RateInStreamWithStreamN
         quick_xml_deserialize::RateInStreamWithStreamNameTypeDeserializer,
     >;
 }
-#[derive(Debug)]
+#[derive(Clone, Debug)]
 pub struct ParameterRefEntryType {
     pub short_description: ::core::option::Option<::std::string::String>,
     pub parameter_ref: ::std::string::String,
@@ -7887,7 +7887,7 @@ impl ::xsd_parser_types::quick_xml::WithDeserializer for ParameterRefEntryType {
         quick_xml_deserialize::ParameterRefEntryTypeDeserializer,
     >;
 }
-#[derive(Debug)]
+#[derive(Clone, Debug)]
 pub struct ParameterSegmentRefEntryType {
     pub short_description: ::core::option::Option<::std::string::String>,
     pub parameter_ref: ::std::string::String,
@@ -7928,7 +7928,7 @@ impl ::xsd_parser_types::quick_xml::WithDeserializer for ParameterSegmentRefEntr
         quick_xml_deserialize::ParameterSegmentRefEntryTypeDeserializer,
     >;
 }
-#[derive(Debug)]
+#[derive(Clone, Debug)]
 pub struct ContainerRefEntryType {
     pub short_description: ::core::option::Option<::std::string::String>,
     pub container_ref: ::std::string::String,
@@ -7965,7 +7965,7 @@ impl ::xsd_parser_types::quick_xml::WithDeserializer for ContainerRefEntryType {
         quick_xml_deserialize::ContainerRefEntryTypeDeserializer,
     >;
 }
-#[derive(Debug)]
+#[derive(Clone, Debug)]
 pub struct ContainerSegmentRefEntryType {
     pub short_description: ::core::option::Option<::std::string::String>,
     pub container_ref: ::std::string::String,
@@ -8006,7 +8006,7 @@ impl ::xsd_parser_types::quick_xml::WithDeserializer for ContainerSegmentRefEntr
         quick_xml_deserialize::ContainerSegmentRefEntryTypeDeserializer,
     >;
 }
-#[derive(Debug)]
+#[derive(Clone, Debug)]
 pub struct StreamSegmentEntryType {
     pub short_description: ::core::option::Option<::std::string::String>,
     pub stream_ref: ::std::string::String,
@@ -8045,7 +8045,7 @@ impl ::xsd_parser_types::quick_xml::WithDeserializer for StreamSegmentEntryType 
         quick_xml_deserialize::StreamSegmentEntryTypeDeserializer,
     >;
 }
-#[derive(Debug)]
+#[derive(Clone, Debug)]
 pub struct IndirectParameterRefEntryType {
     pub short_description: ::core::option::Option<::std::string::String>,
     pub alias_name_space: ::core::option::Option<::std::string::String>,
@@ -8085,13 +8085,13 @@ impl ::xsd_parser_types::quick_xml::WithDeserializer for IndirectParameterRefEnt
         quick_xml_deserialize::IndirectParameterRefEntryTypeDeserializer,
     >;
 }
-#[derive(Debug)]
+#[derive(Clone, Debug)]
 pub struct ArrayParameterRefEntryType {
     pub short_description: ::core::option::Option<::std::string::String>,
     pub parameter_ref: ::std::string::String,
     pub content: ::core::option::Option<ArrayParameterRefEntryTypeContent>,
 }
-#[derive(Debug)]
+#[derive(Clone, Debug)]
 pub struct ArrayParameterRefEntryTypeContent {
     pub location_in_container_in_bits: ::core::option::Option<
         LocationInContainerInBitsType,
@@ -8156,11 +8156,11 @@ for ArrayParameterRefEntryTypeContent {
         quick_xml_deserialize::ArrayParameterRefEntryTypeContentDeserializer,
     >;
 }
-#[derive(Debug)]
+#[derive(Clone, Debug)]
 pub struct RestrictionCriteriaType {
     pub content: ::core::option::Option<RestrictionCriteriaTypeContent>,
 }
-#[derive(Debug)]
+#[derive(Clone, Debug)]
 pub enum RestrictionCriteriaTypeContent {
     Comparison(ComparisonType),
     ComparisonList(ComparisonListType),
@@ -8220,7 +8220,7 @@ impl ::xsd_parser_types::quick_xml::WithDeserializer for RestrictionCriteriaType
         quick_xml_deserialize::RestrictionCriteriaTypeContentDeserializer,
     >;
 }
-#[derive(Debug)]
+#[derive(Clone, Debug)]
 pub struct ComparisonType {
     pub parameter_ref: ::std::string::String,
     pub instance: ::core::primitive::i64,
@@ -8267,7 +8267,7 @@ impl ::xsd_parser_types::quick_xml::WithDeserializer for ComparisonType {
         quick_xml_deserialize::ComparisonTypeDeserializer,
     >;
 }
-#[derive(Debug)]
+#[derive(Clone, Debug)]
 pub struct ComparisonListType {
     pub comparison: ::std::vec::Vec<ComparisonType>,
 }
@@ -8296,7 +8296,7 @@ impl ::xsd_parser_types::quick_xml::WithDeserializer for ComparisonListType {
         quick_xml_deserialize::ComparisonListTypeDeserializer,
     >;
 }
-#[derive(Debug)]
+#[derive(Clone, Debug)]
 pub enum BooleanExpressionType {
     Condition(ComparisonCheckType),
     AnDedConditions(AnDedConditionsType),
@@ -8327,7 +8327,7 @@ impl ::xsd_parser_types::quick_xml::WithDeserializer for BooleanExpressionType {
         quick_xml_deserialize::BooleanExpressionTypeDeserializer,
     >;
 }
-#[derive(Debug)]
+#[derive(Clone, Debug)]
 pub struct AutoInvertType {
     pub bad_frames_to_auto_invert: ::core::primitive::i64,
     pub invert_algorithm: ::core::option::Option<InputAlgorithmType>,
@@ -8363,7 +8363,7 @@ impl ::xsd_parser_types::quick_xml::WithDeserializer for AutoInvertType {
         quick_xml_deserialize::AutoInvertTypeDeserializer,
     >;
 }
-#[derive(Debug)]
+#[derive(Clone, Debug)]
 pub struct SyncPatternType {
     pub pattern: ::std::string::String,
     pub bit_location_from_start_of_container: ::core::primitive::i64,
@@ -8402,7 +8402,7 @@ impl ::xsd_parser_types::quick_xml::WithDeserializer for SyncPatternType {
         quick_xml_deserialize::SyncPatternTypeDeserializer,
     >;
 }
-#[derive(Debug)]
+#[derive(Clone, Debug)]
 pub struct FlagType {
     pub flag_size_in_bits: ::core::primitive::i64,
     pub flag_bit_type: FlagBitType,
@@ -8440,7 +8440,7 @@ impl ::xsd_parser_types::quick_xml::WithSerializer for FlagType {
 impl ::xsd_parser_types::quick_xml::WithDeserializer for FlagType {
     type Deserializer = ::std::boxed::Box<quick_xml_deserialize::FlagTypeDeserializer>;
 }
-#[derive(Debug)]
+#[derive(Clone, Debug)]
 pub struct ExternalAlgorithmType {
     pub implementation_name: ::std::string::String,
     pub algorithm_location: ::std::string::String,
@@ -8470,7 +8470,7 @@ impl ::xsd_parser_types::quick_xml::WithDeserializer for ExternalAlgorithmType {
         quick_xml_deserialize::ExternalAlgorithmTypeDeserializer,
     >;
 }
-#[derive(Debug)]
+#[derive(Clone, Debug)]
 pub struct InputParameterInstanceRefType {
     pub parameter_ref: ::std::string::String,
     pub instance: ::core::primitive::i64,
@@ -8514,7 +8514,7 @@ impl ::xsd_parser_types::quick_xml::WithDeserializer for InputParameterInstanceR
         quick_xml_deserialize::InputParameterInstanceRefTypeDeserializer,
     >;
 }
-#[derive(Debug)]
+#[derive(Clone, Debug)]
 pub struct ConstantType {
     pub constant_name: ::std::string::String,
     pub value: ::std::string::String,
@@ -8544,7 +8544,7 @@ impl ::xsd_parser_types::quick_xml::WithDeserializer for ConstantType {
         quick_xml_deserialize::ConstantTypeDeserializer,
     >;
 }
-#[derive(Debug)]
+#[derive(Clone, Debug)]
 pub struct OutputParameterRefType {
     pub parameter_ref: ::std::string::String,
     pub output_name: ::core::option::Option<::std::string::String>,
@@ -8574,7 +8574,7 @@ impl ::xsd_parser_types::quick_xml::WithDeserializer for OutputParameterRefType 
         quick_xml_deserialize::OutputParameterRefTypeDeserializer,
     >;
 }
-#[derive(Debug)]
+#[derive(Clone, Debug)]
 pub struct OnParameterUpdateTriggerType {
     pub parameter_ref: ::std::string::String,
 }
@@ -8605,7 +8605,7 @@ impl ::xsd_parser_types::quick_xml::WithDeserializer for OnParameterUpdateTrigge
         quick_xml_deserialize::OnParameterUpdateTriggerTypeDeserializer,
     >;
 }
-#[derive(Debug)]
+#[derive(Clone, Debug)]
 pub struct OnContainerUpdateTriggerType {
     pub container_ref: ::std::string::String,
 }
@@ -8636,7 +8636,7 @@ impl ::xsd_parser_types::quick_xml::WithDeserializer for OnContainerUpdateTrigge
         quick_xml_deserialize::OnContainerUpdateTriggerTypeDeserializer,
     >;
 }
-#[derive(Debug)]
+#[derive(Clone, Debug)]
 pub struct OnPeriodicRateTriggerType {
     pub fire_rate_in_seconds: ::core::primitive::f64,
 }
@@ -8665,7 +8665,7 @@ impl ::xsd_parser_types::quick_xml::WithDeserializer for OnPeriodicRateTriggerTy
         quick_xml_deserialize::OnPeriodicRateTriggerTypeDeserializer,
     >;
 }
-#[derive(Debug)]
+#[derive(Clone, Debug)]
 pub enum ArgumentIntegerValueType {
     FixedValue(::core::primitive::i64),
     DynamicValue(ArgumentDynamicValueType),
@@ -8696,7 +8696,7 @@ impl ::xsd_parser_types::quick_xml::WithDeserializer for ArgumentIntegerValueTyp
         quick_xml_deserialize::ArgumentIntegerValueTypeDeserializer,
     >;
 }
-#[derive(Debug)]
+#[derive(Clone, Debug)]
 pub struct ArgumentInputAlgorithmType {
     pub short_description: ::core::option::Option<::std::string::String>,
     pub name: ::std::string::String,
@@ -8732,12 +8732,12 @@ impl ::xsd_parser_types::quick_xml::WithDeserializer for ArgumentInputAlgorithmT
         quick_xml_deserialize::ArgumentInputAlgorithmTypeDeserializer,
     >;
 }
-#[derive(Debug)]
+#[derive(Clone, Debug)]
 pub struct ArgumentVariableStringType {
     pub max_size_in_bits: ::core::primitive::i64,
     pub content: ::std::vec::Vec<ArgumentVariableStringTypeContent>,
 }
-#[derive(Debug)]
+#[derive(Clone, Debug)]
 pub enum ArgumentVariableStringTypeContent {
     DynamicValue(ArgumentDynamicValueType),
     DiscreteLookupList(ArgumentDiscreteLookupListType),
@@ -8798,7 +8798,7 @@ for ArgumentVariableStringTypeContent {
         quick_xml_deserialize::ArgumentVariableStringTypeContentDeserializer,
     >;
 }
-#[derive(Debug)]
+#[derive(Clone, Debug)]
 pub struct FloatRangeType {
     pub min_inclusive: ::core::option::Option<::core::primitive::f64>,
     pub min_exclusive: ::core::option::Option<::core::primitive::f64>,
@@ -8830,7 +8830,7 @@ impl ::xsd_parser_types::quick_xml::WithDeserializer for FloatRangeType {
         quick_xml_deserialize::FloatRangeTypeDeserializer,
     >;
 }
-#[derive(Debug)]
+#[derive(Clone, Debug)]
 pub struct ArgumentDimensionType {
     pub starting_index: ArgumentIntegerValueType,
     pub ending_index: ArgumentIntegerValueType,
@@ -8860,7 +8860,7 @@ impl ::xsd_parser_types::quick_xml::WithDeserializer for ArgumentDimensionType {
         quick_xml_deserialize::ArgumentDimensionTypeDeserializer,
     >;
 }
-#[derive(Debug)]
+#[derive(Clone, Debug)]
 pub struct ArgumentAssignmentListType {
     pub argument_assignment: ::std::vec::Vec<ArgumentAssignmentType>,
 }
@@ -8889,7 +8889,7 @@ impl ::xsd_parser_types::quick_xml::WithDeserializer for ArgumentAssignmentListT
         quick_xml_deserialize::ArgumentAssignmentListTypeDeserializer,
     >;
 }
-#[derive(Debug)]
+#[derive(Clone, Debug)]
 pub struct ArgumentType {
     pub short_description: ::core::option::Option<::std::string::String>,
     pub name: ::std::string::String,
@@ -8924,11 +8924,11 @@ impl ::xsd_parser_types::quick_xml::WithDeserializer for ArgumentType {
         quick_xml_deserialize::ArgumentTypeDeserializer,
     >;
 }
-#[derive(Debug)]
+#[derive(Clone, Debug)]
 pub struct CommandContainerEntryListType {
     pub content: ::std::vec::Vec<CommandContainerEntryListTypeContent>,
 }
-#[derive(Debug)]
+#[derive(Clone, Debug)]
 pub enum CommandContainerEntryListTypeContent {
     ParameterRefEntry(ArgumentParameterRefEntryType),
     ParameterSegmentRefEntry(ArgumentParameterSegmentRefEntryType),
@@ -8997,13 +8997,13 @@ for CommandContainerEntryListTypeContent {
         quick_xml_deserialize::CommandContainerEntryListTypeContentDeserializer,
     >;
 }
-#[derive(Debug)]
+#[derive(Clone, Debug)]
 pub struct TransmissionConstraintType {
     pub time_out: ::core::option::Option<::std::string::String>,
     pub suspendable: ::core::primitive::bool,
     pub content: ::core::option::Option<TransmissionConstraintTypeContent>,
 }
-#[derive(Debug)]
+#[derive(Clone, Debug)]
 pub enum TransmissionConstraintTypeContent {
     Comparison(ComparisonType),
     ComparisonList(ComparisonListType),
@@ -9071,7 +9071,7 @@ for TransmissionConstraintTypeContent {
         quick_xml_deserialize::TransmissionConstraintTypeContentDeserializer,
     >;
 }
-#[derive(Debug)]
+#[derive(Clone, Debug)]
 pub enum ConsequenceLevelType {
     Normal,
     Vital,
@@ -9124,7 +9124,7 @@ impl ::xsd_parser_types::quick_xml::DeserializeBytes for ConsequenceLevelType {
     }
 }
 impl xsd_parser_types::quick_xml::WithDeserializerFromBytes for ConsequenceLevelType {}
-#[derive(Debug)]
+#[derive(Clone, Debug)]
 pub struct ContextSignificanceType {
     pub context_match: ContextMatchType,
     pub significance: SignificanceType,
@@ -9154,7 +9154,7 @@ impl ::xsd_parser_types::quick_xml::WithDeserializer for ContextSignificanceType
         quick_xml_deserialize::ContextSignificanceTypeDeserializer,
     >;
 }
-#[derive(Debug)]
+#[derive(Clone, Debug)]
 pub enum VerifierEnumerationType {
     Release,
     TransferredToRange,
@@ -9220,13 +9220,13 @@ impl ::xsd_parser_types::quick_xml::DeserializeBytes for VerifierEnumerationType
     }
 }
 impl xsd_parser_types::quick_xml::WithDeserializerFromBytes for VerifierEnumerationType {}
-#[derive(Debug)]
+#[derive(Clone, Debug)]
 pub struct TransferredToRangeVerifierType {
     pub short_description: ::core::option::Option<::std::string::String>,
     pub name: ::core::option::Option<::std::string::String>,
     pub content: ::std::vec::Vec<TransferredToRangeVerifierTypeContent>,
 }
-#[derive(Debug)]
+#[derive(Clone, Debug)]
 pub enum TransferredToRangeVerifierTypeContent {
     LongDescription(::std::string::String),
     AliasSet(AliasSetType),
@@ -9297,13 +9297,13 @@ for TransferredToRangeVerifierTypeContent {
         quick_xml_deserialize::TransferredToRangeVerifierTypeContentDeserializer,
     >;
 }
-#[derive(Debug)]
+#[derive(Clone, Debug)]
 pub struct SentFromRangeVerifierType {
     pub short_description: ::core::option::Option<::std::string::String>,
     pub name: ::core::option::Option<::std::string::String>,
     pub content: ::std::vec::Vec<SentFromRangeVerifierTypeContent>,
 }
-#[derive(Debug)]
+#[derive(Clone, Debug)]
 pub enum SentFromRangeVerifierTypeContent {
     LongDescription(::std::string::String),
     AliasSet(AliasSetType),
@@ -9371,13 +9371,13 @@ for SentFromRangeVerifierTypeContent {
         quick_xml_deserialize::SentFromRangeVerifierTypeContentDeserializer,
     >;
 }
-#[derive(Debug)]
+#[derive(Clone, Debug)]
 pub struct ReceivedVerifierType {
     pub short_description: ::core::option::Option<::std::string::String>,
     pub name: ::core::option::Option<::std::string::String>,
     pub content: ::std::vec::Vec<ReceivedVerifierTypeContent>,
 }
-#[derive(Debug)]
+#[derive(Clone, Debug)]
 pub enum ReceivedVerifierTypeContent {
     LongDescription(::std::string::String),
     AliasSet(AliasSetType),
@@ -9442,13 +9442,13 @@ impl ::xsd_parser_types::quick_xml::WithDeserializer for ReceivedVerifierTypeCon
         quick_xml_deserialize::ReceivedVerifierTypeContentDeserializer,
     >;
 }
-#[derive(Debug)]
+#[derive(Clone, Debug)]
 pub struct AcceptedVerifierType {
     pub short_description: ::core::option::Option<::std::string::String>,
     pub name: ::core::option::Option<::std::string::String>,
     pub content: ::std::vec::Vec<AcceptedVerifierTypeContent>,
 }
-#[derive(Debug)]
+#[derive(Clone, Debug)]
 pub enum AcceptedVerifierTypeContent {
     LongDescription(::std::string::String),
     AliasSet(AliasSetType),
@@ -9513,13 +9513,13 @@ impl ::xsd_parser_types::quick_xml::WithDeserializer for AcceptedVerifierTypeCon
         quick_xml_deserialize::AcceptedVerifierTypeContentDeserializer,
     >;
 }
-#[derive(Debug)]
+#[derive(Clone, Debug)]
 pub struct QueuedVerifierType {
     pub short_description: ::core::option::Option<::std::string::String>,
     pub name: ::core::option::Option<::std::string::String>,
     pub content: ::std::vec::Vec<QueuedVerifierTypeContent>,
 }
-#[derive(Debug)]
+#[derive(Clone, Debug)]
 pub enum QueuedVerifierTypeContent {
     LongDescription(::std::string::String),
     AliasSet(AliasSetType),
@@ -9584,13 +9584,13 @@ impl ::xsd_parser_types::quick_xml::WithDeserializer for QueuedVerifierTypeConte
         quick_xml_deserialize::QueuedVerifierTypeContentDeserializer,
     >;
 }
-#[derive(Debug)]
+#[derive(Clone, Debug)]
 pub struct ExecutionVerifierType {
     pub short_description: ::core::option::Option<::std::string::String>,
     pub name: ::core::option::Option<::std::string::String>,
     pub content: ::std::vec::Vec<ExecutionVerifierTypeContent>,
 }
-#[derive(Debug)]
+#[derive(Clone, Debug)]
 pub enum ExecutionVerifierTypeContent {
     LongDescription(::std::string::String),
     AliasSet(AliasSetType),
@@ -9658,13 +9658,13 @@ impl ::xsd_parser_types::quick_xml::WithDeserializer for ExecutionVerifierTypeCo
         quick_xml_deserialize::ExecutionVerifierTypeContentDeserializer,
     >;
 }
-#[derive(Debug)]
+#[derive(Clone, Debug)]
 pub struct CompleteVerifierType {
     pub short_description: ::core::option::Option<::std::string::String>,
     pub name: ::core::option::Option<::std::string::String>,
     pub content: ::std::vec::Vec<CompleteVerifierTypeContent>,
 }
-#[derive(Debug)]
+#[derive(Clone, Debug)]
 pub enum CompleteVerifierTypeContent {
     LongDescription(::std::string::String),
     AliasSet(AliasSetType),
@@ -9730,13 +9730,13 @@ impl ::xsd_parser_types::quick_xml::WithDeserializer for CompleteVerifierTypeCon
         quick_xml_deserialize::CompleteVerifierTypeContentDeserializer,
     >;
 }
-#[derive(Debug)]
+#[derive(Clone, Debug)]
 pub struct FailedVerifierType {
     pub short_description: ::core::option::Option<::std::string::String>,
     pub name: ::core::option::Option<::std::string::String>,
     pub content: ::std::vec::Vec<FailedVerifierTypeContent>,
 }
-#[derive(Debug)]
+#[derive(Clone, Debug)]
 pub enum FailedVerifierTypeContent {
     LongDescription(::std::string::String),
     AliasSet(AliasSetType),
@@ -9802,13 +9802,13 @@ impl ::xsd_parser_types::quick_xml::WithDeserializer for FailedVerifierTypeConte
         quick_xml_deserialize::FailedVerifierTypeContentDeserializer,
     >;
 }
-#[derive(Debug)]
+#[derive(Clone, Debug)]
 pub struct ParameterToSetType {
     pub parameter_ref: ::std::string::String,
     pub set_on_verification: VerifierEnumerationType,
     pub content: ParameterToSetTypeContent,
 }
-#[derive(Debug)]
+#[derive(Clone, Debug)]
 pub enum ParameterToSetTypeContent {
     Derivation(ArgumentMathOperationType),
     NewValue(::std::string::String),
@@ -9869,7 +9869,7 @@ impl ::xsd_parser_types::quick_xml::WithDeserializer for ParameterToSetTypeConte
         quick_xml_deserialize::ParameterToSetTypeContentDeserializer,
     >;
 }
-#[derive(Debug)]
+#[derive(Clone, Debug)]
 pub struct ParameterToSuspendAlarmsOnType {
     pub parameter_ref: ::std::string::String,
     pub suspense_time: ::std::string::String,
@@ -9908,7 +9908,7 @@ impl ::xsd_parser_types::quick_xml::WithDeserializer for ParameterToSuspendAlarm
         quick_xml_deserialize::ParameterToSuspendAlarmsOnTypeDeserializer,
     >;
 }
-#[derive(Debug)]
+#[derive(Clone, Debug)]
 pub struct MetaCommandStepType {
     pub meta_command_ref: ::std::string::String,
     pub argument_assignment_list: ::core::option::Option<ArgumentAssignmentListType>,
@@ -9938,7 +9938,7 @@ impl ::xsd_parser_types::quick_xml::WithDeserializer for MetaCommandStepType {
         quick_xml_deserialize::MetaCommandStepTypeDeserializer,
     >;
 }
-#[derive(Debug)]
+#[derive(Clone, Debug)]
 pub enum UnitFormType {
     Calibrated,
     Uncalibrated,
@@ -9982,7 +9982,7 @@ impl ::xsd_parser_types::quick_xml::DeserializeBytes for UnitFormType {
     }
 }
 impl xsd_parser_types::quick_xml::WithDeserializerFromBytes for UnitFormType {}
-#[derive(Debug)]
+#[derive(Clone, Debug)]
 pub struct ChecksumType {
     pub bits_from_reference: ::core::primitive::i64,
     pub reference: ReferencePointType,
@@ -10026,7 +10026,7 @@ impl ::xsd_parser_types::quick_xml::WithDeserializer for ChecksumType {
         quick_xml_deserialize::ChecksumTypeDeserializer,
     >;
 }
-#[derive(Debug)]
+#[derive(Clone, Debug)]
 pub struct CrcType {
     pub width: ::core::primitive::i64,
     pub reflect_data: ::core::primitive::bool,
@@ -10084,7 +10084,7 @@ impl ::xsd_parser_types::quick_xml::WithSerializer for CrcType {
 impl ::xsd_parser_types::quick_xml::WithDeserializer for CrcType {
     type Deserializer = ::std::boxed::Box<quick_xml_deserialize::CrcTypeDeserializer>;
 }
-#[derive(Debug)]
+#[derive(Clone, Debug)]
 pub struct XorType {
     pub bits_from_reference: ::core::primitive::i64,
     pub reference: ReferencePointType,
@@ -10123,7 +10123,7 @@ impl ::xsd_parser_types::quick_xml::WithSerializer for XorType {
 impl ::xsd_parser_types::quick_xml::WithDeserializer for XorType {
     type Deserializer = ::std::boxed::Box<quick_xml_deserialize::XorTypeDeserializer>;
 }
-#[derive(Debug)]
+#[derive(Clone, Debug)]
 pub struct ParityType {
     pub type_: ParityFormType,
     pub bits_from_reference: ::core::primitive::i64,
@@ -10163,7 +10163,7 @@ impl ::xsd_parser_types::quick_xml::WithSerializer for ParityType {
 impl ::xsd_parser_types::quick_xml::WithDeserializer for ParityType {
     type Deserializer = ::std::boxed::Box<quick_xml_deserialize::ParityTypeDeserializer>;
 }
-#[derive(Debug)]
+#[derive(Clone, Debug)]
 pub struct DynamicValueType {
     pub parameter_instance_ref: ParameterInstanceRefType,
     pub linear_adjustment: ::core::option::Option<LinearAdjustmentType>,
@@ -10193,7 +10193,7 @@ impl ::xsd_parser_types::quick_xml::WithDeserializer for DynamicValueType {
         quick_xml_deserialize::DynamicValueTypeDeserializer,
     >;
 }
-#[derive(Debug)]
+#[derive(Clone, Debug)]
 pub struct DiscreteLookupListType {
     pub default_value: ::core::primitive::i64,
     pub discrete_lookup: ::std::vec::Vec<DiscreteLookupType>,
@@ -10223,7 +10223,7 @@ impl ::xsd_parser_types::quick_xml::WithDeserializer for DiscreteLookupListType 
         quick_xml_deserialize::DiscreteLookupListTypeDeserializer,
     >;
 }
-#[derive(Debug)]
+#[derive(Clone, Debug)]
 pub struct SplineCalibratorType {
     pub name: ::core::option::Option<::std::string::String>,
     pub short_description: ::core::option::Option<::std::string::String>,
@@ -10267,7 +10267,7 @@ impl ::xsd_parser_types::quick_xml::WithDeserializer for SplineCalibratorType {
         quick_xml_deserialize::SplineCalibratorTypeDeserializer,
     >;
 }
-#[derive(Debug)]
+#[derive(Clone, Debug)]
 pub struct PolynomialCalibratorType {
     pub name: ::core::option::Option<::std::string::String>,
     pub short_description: ::core::option::Option<::std::string::String>,
@@ -10299,13 +10299,13 @@ impl ::xsd_parser_types::quick_xml::WithDeserializer for PolynomialCalibratorTyp
         quick_xml_deserialize::PolynomialCalibratorTypeDeserializer,
     >;
 }
-#[derive(Debug)]
+#[derive(Clone, Debug)]
 pub struct MathOperationCalibratorType {
     pub name: ::core::option::Option<::std::string::String>,
     pub short_description: ::core::option::Option<::std::string::String>,
     pub content: ::std::vec::Vec<MathOperationCalibratorTypeContent>,
 }
-#[derive(Debug)]
+#[derive(Clone, Debug)]
 pub enum MathOperationCalibratorTypeContent {
     AncillaryDataSet(AncillaryDataSetType),
     ValueOperand(::std::string::String),
@@ -10367,7 +10367,7 @@ for MathOperationCalibratorTypeContent {
         quick_xml_deserialize::MathOperationCalibratorTypeContentDeserializer,
     >;
 }
-#[derive(Debug)]
+#[derive(Clone, Debug)]
 pub struct ContextCalibratorType {
     pub context_match: ContextMatchType,
     pub calibrator: CalibratorType,
@@ -10397,7 +10397,7 @@ impl ::xsd_parser_types::quick_xml::WithDeserializer for ContextCalibratorType {
         quick_xml_deserialize::ContextCalibratorTypeDeserializer,
     >;
 }
-#[derive(Debug)]
+#[derive(Clone, Debug)]
 pub struct SizeInBitsTypeFixedElementType {
     pub fixed_value: ::core::primitive::i64,
 }
@@ -10428,7 +10428,7 @@ impl ::xsd_parser_types::quick_xml::WithDeserializer for SizeInBitsTypeFixedElem
         quick_xml_deserialize::SizeInBitsTypeFixedElementTypeDeserializer,
     >;
 }
-#[derive(Debug)]
+#[derive(Clone, Debug)]
 pub struct LeadingSizeType {
     pub size_in_bits_of_size_tag: ::core::primitive::i64,
 }
@@ -10463,7 +10463,7 @@ impl ::xsd_parser_types::quick_xml::WithDeserializer for LeadingSizeType {
         quick_xml_deserialize::LeadingSizeTypeDeserializer,
     >;
 }
-#[derive(Debug)]
+#[derive(Clone, Debug)]
 pub struct StringAlarmLevelType {
     pub alarm_level: ConcernLevelsType,
     pub match_pattern: ::std::string::String,
@@ -10493,7 +10493,7 @@ impl ::xsd_parser_types::quick_xml::WithDeserializer for StringAlarmLevelType {
         quick_xml_deserialize::StringAlarmLevelTypeDeserializer,
     >;
 }
-#[derive(Debug)]
+#[derive(Clone, Debug)]
 pub enum ContextMatchType {
     Comparison(ComparisonType),
     ComparisonList(ComparisonListType),
@@ -10525,7 +10525,7 @@ impl ::xsd_parser_types::quick_xml::WithDeserializer for ContextMatchType {
         quick_xml_deserialize::ContextMatchTypeDeserializer,
     >;
 }
-#[derive(Debug)]
+#[derive(Clone, Debug)]
 pub struct EnumerationAlarmLevelType {
     pub alarm_level: ConcernLevelsType,
     pub enumeration_label: ::std::string::String,
@@ -10555,7 +10555,7 @@ impl ::xsd_parser_types::quick_xml::WithDeserializer for EnumerationAlarmLevelTy
         quick_xml_deserialize::EnumerationAlarmLevelTypeDeserializer,
     >;
 }
-#[derive(Debug)]
+#[derive(Clone, Debug)]
 pub enum RadixType {
     Decimal,
     Hexadecimal,
@@ -10602,7 +10602,7 @@ impl ::xsd_parser_types::quick_xml::DeserializeBytes for RadixType {
     }
 }
 impl xsd_parser_types::quick_xml::WithDeserializerFromBytes for RadixType {}
-#[derive(Debug)]
+#[derive(Clone, Debug)]
 pub enum FloatingPointNotationType {
     Normal,
     Scientific,
@@ -10647,7 +10647,7 @@ impl ::xsd_parser_types::quick_xml::DeserializeBytes for FloatingPointNotationTy
 }
 impl xsd_parser_types::quick_xml::WithDeserializerFromBytes
 for FloatingPointNotationType {}
-#[derive(Debug)]
+#[derive(Clone, Debug)]
 pub enum RangeFormType {
     Outside,
     Inside,
@@ -10688,7 +10688,7 @@ impl ::xsd_parser_types::quick_xml::DeserializeBytes for RangeFormType {
     }
 }
 impl xsd_parser_types::quick_xml::WithDeserializerFromBytes for RangeFormType {}
-#[derive(Debug)]
+#[derive(Clone, Debug)]
 pub enum ChangeSpanType {
     ChangePerSecond,
     ChangePerSample,
@@ -10733,7 +10733,7 @@ impl ::xsd_parser_types::quick_xml::DeserializeBytes for ChangeSpanType {
     }
 }
 impl xsd_parser_types::quick_xml::WithDeserializerFromBytes for ChangeSpanType {}
-#[derive(Debug)]
+#[derive(Clone, Debug)]
 pub enum ChangeBasisType {
     AbsoluteChange,
     PercentageChange,
@@ -10778,7 +10778,7 @@ impl ::xsd_parser_types::quick_xml::DeserializeBytes for ChangeBasisType {
     }
 }
 impl xsd_parser_types::quick_xml::WithDeserializerFromBytes for ChangeBasisType {}
-#[derive(Debug)]
+#[derive(Clone, Debug)]
 pub struct MultiRangeType {
     pub min_inclusive: ::core::option::Option<::core::primitive::f64>,
     pub min_exclusive: ::core::option::Option<::core::primitive::f64>,
@@ -10818,7 +10818,7 @@ impl ::xsd_parser_types::quick_xml::WithDeserializer for MultiRangeType {
         quick_xml_deserialize::MultiRangeTypeDeserializer,
     >;
 }
-#[derive(Debug)]
+#[derive(Clone, Debug)]
 pub struct PhysicalAddressType {
     pub source_name: ::core::option::Option<::std::string::String>,
     pub source_address: ::core::option::Option<::std::string::String>,
@@ -10849,7 +10849,7 @@ impl ::xsd_parser_types::quick_xml::WithDeserializer for PhysicalAddressType {
         quick_xml_deserialize::PhysicalAddressTypeDeserializer,
     >;
 }
-#[derive(Debug)]
+#[derive(Clone, Debug)]
 pub enum TimeAssociationUnitType {
     Seconds,
     Milliseconds,
@@ -10914,12 +10914,12 @@ impl ::xsd_parser_types::quick_xml::DeserializeBytes for TimeAssociationUnitType
     }
 }
 impl xsd_parser_types::quick_xml::WithDeserializerFromBytes for TimeAssociationUnitType {}
-#[derive(Debug)]
+#[derive(Clone, Debug)]
 pub struct LocationInContainerInBitsType {
     pub reference_location: ReferenceLocationType,
     pub content: LocationInContainerInBitsTypeContent,
 }
-#[derive(Debug)]
+#[derive(Clone, Debug)]
 pub enum LocationInContainerInBitsTypeContent {
     FixedValue(::core::primitive::i64),
     DynamicValue(DynamicValueType),
@@ -10987,7 +10987,7 @@ for LocationInContainerInBitsTypeContent {
         quick_xml_deserialize::LocationInContainerInBitsTypeContentDeserializer,
     >;
 }
-#[derive(Debug)]
+#[derive(Clone, Debug)]
 pub struct RepeatType {
     pub count: IntegerValueType,
     pub offset: ::core::option::Option<IntegerValueType>,
@@ -11015,11 +11015,11 @@ impl ::xsd_parser_types::quick_xml::WithSerializer for RepeatType {
 impl ::xsd_parser_types::quick_xml::WithDeserializer for RepeatType {
     type Deserializer = ::std::boxed::Box<quick_xml_deserialize::RepeatTypeDeserializer>;
 }
-#[derive(Debug)]
+#[derive(Clone, Debug)]
 pub struct ComparisonCheckType {
     pub content: ::std::vec::Vec<ComparisonCheckTypeContent>,
 }
-#[derive(Debug)]
+#[derive(Clone, Debug)]
 pub enum ComparisonCheckTypeContent {
     ParameterInstanceRef(ParameterInstanceRefType),
     ComparisonOperator(OperatorString),
@@ -11075,11 +11075,11 @@ impl ::xsd_parser_types::quick_xml::WithDeserializer for ComparisonCheckTypeCont
         quick_xml_deserialize::ComparisonCheckTypeContentDeserializer,
     >;
 }
-#[derive(Debug)]
+#[derive(Clone, Debug)]
 pub struct AnDedConditionsType {
     pub content: ::std::vec::Vec<AnDedConditionsTypeContent>,
 }
-#[derive(Debug)]
+#[derive(Clone, Debug)]
 pub enum AnDedConditionsTypeContent {
     Condition(ComparisonCheckType),
     ORedConditions(ORedConditionsType),
@@ -11134,11 +11134,11 @@ impl ::xsd_parser_types::quick_xml::WithDeserializer for AnDedConditionsTypeCont
         quick_xml_deserialize::AnDedConditionsTypeContentDeserializer,
     >;
 }
-#[derive(Debug)]
+#[derive(Clone, Debug)]
 pub struct ORedConditionsType {
     pub content: ::std::vec::Vec<ORedConditionsTypeContent>,
 }
-#[derive(Debug)]
+#[derive(Clone, Debug)]
 pub enum ORedConditionsTypeContent {
     Condition(ComparisonCheckType),
     AnDedConditions(AnDedConditionsType),
@@ -11193,7 +11193,7 @@ impl ::xsd_parser_types::quick_xml::WithDeserializer for ORedConditionsTypeConte
         quick_xml_deserialize::ORedConditionsTypeContentDeserializer,
     >;
 }
-#[derive(Debug)]
+#[derive(Clone, Debug)]
 pub enum FlagBitType {
     Zeros,
     Ones,
@@ -11234,11 +11234,11 @@ impl ::xsd_parser_types::quick_xml::DeserializeBytes for FlagBitType {
     }
 }
 impl xsd_parser_types::quick_xml::WithDeserializerFromBytes for FlagBitType {}
-#[derive(Debug)]
+#[derive(Clone, Debug)]
 pub struct ArgumentDynamicValueType {
     pub content: ::std::vec::Vec<ArgumentDynamicValueTypeContent>,
 }
-#[derive(Debug)]
+#[derive(Clone, Debug)]
 pub enum ArgumentDynamicValueTypeContent {
     ArgumentInstanceRef(ArgumentInstanceRefType),
     ParameterInstanceRef(ParameterInstanceRefType),
@@ -11297,7 +11297,7 @@ for ArgumentDynamicValueTypeContent {
         quick_xml_deserialize::ArgumentDynamicValueTypeContentDeserializer,
     >;
 }
-#[derive(Debug)]
+#[derive(Clone, Debug)]
 pub struct ArgumentDiscreteLookupListType {
     pub default_value: ::core::primitive::i64,
     pub discrete_lookup: ::std::vec::Vec<ArgumentDiscreteLookupType>,
@@ -11329,11 +11329,11 @@ impl ::xsd_parser_types::quick_xml::WithDeserializer for ArgumentDiscreteLookupL
         quick_xml_deserialize::ArgumentDiscreteLookupListTypeDeserializer,
     >;
 }
-#[derive(Debug)]
+#[derive(Clone, Debug)]
 pub struct ArgumentInputSetType {
     pub content: ::std::vec::Vec<ArgumentInputSetTypeContent>,
 }
-#[derive(Debug)]
+#[derive(Clone, Debug)]
 pub enum ArgumentInputSetTypeContent {
     InputParameterInstanceRef(InputParameterInstanceRefType),
     InputArgumentInstanceRef(ArgumentInstanceRefType),
@@ -11389,7 +11389,7 @@ impl ::xsd_parser_types::quick_xml::WithDeserializer for ArgumentInputSetTypeCon
         quick_xml_deserialize::ArgumentInputSetTypeContentDeserializer,
     >;
 }
-#[derive(Debug)]
+#[derive(Clone, Debug)]
 pub struct ArgumentAssignmentType {
     pub argument_name: ::std::string::String,
     pub argument_value: ::std::string::String,
@@ -11419,7 +11419,7 @@ impl ::xsd_parser_types::quick_xml::WithDeserializer for ArgumentAssignmentType 
         quick_xml_deserialize::ArgumentAssignmentTypeDeserializer,
     >;
 }
-#[derive(Debug)]
+#[derive(Clone, Debug)]
 pub struct ArgumentParameterRefEntryType {
     pub short_description: ::core::option::Option<::std::string::String>,
     pub parameter_ref: ::std::string::String,
@@ -11457,7 +11457,7 @@ impl ::xsd_parser_types::quick_xml::WithDeserializer for ArgumentParameterRefEnt
         quick_xml_deserialize::ArgumentParameterRefEntryTypeDeserializer,
     >;
 }
-#[derive(Debug)]
+#[derive(Clone, Debug)]
 pub struct ArgumentParameterSegmentRefEntryType {
     pub short_description: ::core::option::Option<::std::string::String>,
     pub parameter_ref: ::std::string::String,
@@ -11499,7 +11499,7 @@ for ArgumentParameterSegmentRefEntryType {
         quick_xml_deserialize::ArgumentParameterSegmentRefEntryTypeDeserializer,
     >;
 }
-#[derive(Debug)]
+#[derive(Clone, Debug)]
 pub struct ArgumentContainerRefEntryType {
     pub short_description: ::core::option::Option<::std::string::String>,
     pub container_ref: ::std::string::String,
@@ -11537,7 +11537,7 @@ impl ::xsd_parser_types::quick_xml::WithDeserializer for ArgumentContainerRefEnt
         quick_xml_deserialize::ArgumentContainerRefEntryTypeDeserializer,
     >;
 }
-#[derive(Debug)]
+#[derive(Clone, Debug)]
 pub struct ArgumentContainerSegmentRefEntryType {
     pub short_description: ::core::option::Option<::std::string::String>,
     pub container_ref: ::std::string::String,
@@ -11579,7 +11579,7 @@ for ArgumentContainerSegmentRefEntryType {
         quick_xml_deserialize::ArgumentContainerSegmentRefEntryTypeDeserializer,
     >;
 }
-#[derive(Debug)]
+#[derive(Clone, Debug)]
 pub struct ArgumentStreamSegmentEntryType {
     pub short_description: ::core::option::Option<::std::string::String>,
     pub stream_ref: ::std::string::String,
@@ -11619,7 +11619,7 @@ impl ::xsd_parser_types::quick_xml::WithDeserializer for ArgumentStreamSegmentEn
         quick_xml_deserialize::ArgumentStreamSegmentEntryTypeDeserializer,
     >;
 }
-#[derive(Debug)]
+#[derive(Clone, Debug)]
 pub struct ArgumentIndirectParameterRefEntryType {
     pub short_description: ::core::option::Option<::std::string::String>,
     pub alias_name_space: ::core::option::Option<::std::string::String>,
@@ -11660,14 +11660,14 @@ for ArgumentIndirectParameterRefEntryType {
         quick_xml_deserialize::ArgumentIndirectParameterRefEntryTypeDeserializer,
     >;
 }
-#[derive(Debug)]
+#[derive(Clone, Debug)]
 pub struct ArgumentArrayParameterRefEntryType {
     pub short_description: ::core::option::Option<::std::string::String>,
     pub parameter_ref: ::std::string::String,
     pub last_entry_for_this_array_instance: ::core::primitive::bool,
     pub content: ::core::option::Option<ArgumentArrayParameterRefEntryTypeContent>,
 }
-#[derive(Debug)]
+#[derive(Clone, Debug)]
 pub struct ArgumentArrayParameterRefEntryTypeContent {
     pub location_in_container_in_bits: ::core::option::Option<
         ArgumentLocationInContainerInBitsType,
@@ -11741,7 +11741,7 @@ for ArgumentArrayParameterRefEntryTypeContent {
         quick_xml_deserialize::ArgumentArrayParameterRefEntryTypeContentDeserializer,
     >;
 }
-#[derive(Debug)]
+#[derive(Clone, Debug)]
 pub struct ArgumentArgumentRefEntryType {
     pub short_description: ::core::option::Option<::std::string::String>,
     pub argument_ref: ::std::string::String,
@@ -11779,14 +11779,14 @@ impl ::xsd_parser_types::quick_xml::WithDeserializer for ArgumentArgumentRefEntr
         quick_xml_deserialize::ArgumentArgumentRefEntryTypeDeserializer,
     >;
 }
-#[derive(Debug)]
+#[derive(Clone, Debug)]
 pub struct ArgumentArrayArgumentRefEntryType {
     pub short_description: ::core::option::Option<::std::string::String>,
     pub argument_ref: ::std::string::String,
     pub last_entry_for_this_array_instance: ::core::primitive::bool,
     pub content: ::core::option::Option<ArgumentArrayArgumentRefEntryTypeContent>,
 }
-#[derive(Debug)]
+#[derive(Clone, Debug)]
 pub struct ArgumentArrayArgumentRefEntryTypeContent {
     pub location_in_container_in_bits: ::core::option::Option<
         ArgumentLocationInContainerInBitsType,
@@ -11860,7 +11860,7 @@ for ArgumentArrayArgumentRefEntryTypeContent {
         quick_xml_deserialize::ArgumentArrayArgumentRefEntryTypeContentDeserializer,
     >;
 }
-#[derive(Debug)]
+#[derive(Clone, Debug)]
 pub struct ArgumentFixedValueEntryType {
     pub short_description: ::core::option::Option<::std::string::String>,
     pub name: ::core::option::Option<::std::string::String>,
@@ -11898,7 +11898,7 @@ impl ::xsd_parser_types::quick_xml::WithDeserializer for ArgumentFixedValueEntry
         quick_xml_deserialize::ArgumentFixedValueEntryTypeDeserializer,
     >;
 }
-#[derive(Debug)]
+#[derive(Clone, Debug)]
 pub struct ParameterValueChangeType {
     pub parameter_ref: ParameterRefType,
     pub change: ChangeValueType,
@@ -11928,7 +11928,7 @@ impl ::xsd_parser_types::quick_xml::WithDeserializer for ParameterValueChangeTyp
         quick_xml_deserialize::ParameterValueChangeTypeDeserializer,
     >;
 }
-#[derive(Debug)]
+#[derive(Clone, Debug)]
 pub struct CheckWindowType {
     pub time_to_start_checking: ::core::option::Option<::std::string::String>,
     pub time_to_stop_checking: ::std::string::String,
@@ -11965,7 +11965,7 @@ impl ::xsd_parser_types::quick_xml::WithDeserializer for CheckWindowType {
         quick_xml_deserialize::CheckWindowTypeDeserializer,
     >;
 }
-#[derive(Debug)]
+#[derive(Clone, Debug)]
 pub struct CheckWindowAlgorithmsType {
     pub start_check: InputAlgorithmType,
     pub stop_time: InputAlgorithmType,
@@ -11995,7 +11995,7 @@ impl ::xsd_parser_types::quick_xml::WithDeserializer for CheckWindowAlgorithmsTy
         quick_xml_deserialize::CheckWindowAlgorithmsTypeDeserializer,
     >;
 }
-#[derive(Debug)]
+#[derive(Clone, Debug)]
 pub enum PercentCompleteType {
     FixedValue(::core::primitive::f64),
     DynamicValue(DynamicValueType),
@@ -12025,11 +12025,11 @@ impl ::xsd_parser_types::quick_xml::WithDeserializer for PercentCompleteType {
         quick_xml_deserialize::PercentCompleteTypeDeserializer,
     >;
 }
-#[derive(Debug)]
+#[derive(Clone, Debug)]
 pub struct ArgumentMathOperationType {
     pub content: ::std::vec::Vec<ArgumentMathOperationTypeContent>,
 }
-#[derive(Debug)]
+#[derive(Clone, Debug)]
 pub enum ArgumentMathOperationTypeContent {
     ValueOperand(::std::string::String),
     ThisParameterOperand(::std::string::String),
@@ -12090,7 +12090,7 @@ for ArgumentMathOperationTypeContent {
         quick_xml_deserialize::ArgumentMathOperationTypeContentDeserializer,
     >;
 }
-#[derive(Debug)]
+#[derive(Clone, Debug)]
 pub enum ReferencePointType {
     Start,
     End,
@@ -12131,7 +12131,7 @@ impl ::xsd_parser_types::quick_xml::DeserializeBytes for ReferencePointType {
     }
 }
 impl xsd_parser_types::quick_xml::WithDeserializerFromBytes for ReferencePointType {}
-#[derive(Debug)]
+#[derive(Clone, Debug)]
 pub enum ChecksumTypeNameType {
     UnixSum,
     Sum8,
@@ -12208,7 +12208,7 @@ impl ::xsd_parser_types::quick_xml::DeserializeBytes for ChecksumTypeNameType {
     }
 }
 impl xsd_parser_types::quick_xml::WithDeserializerFromBytes for ChecksumTypeNameType {}
-#[derive(Debug)]
+#[derive(Clone, Debug)]
 pub enum ParityFormType {
     Even,
     Odd,
@@ -12249,7 +12249,7 @@ impl ::xsd_parser_types::quick_xml::DeserializeBytes for ParityFormType {
     }
 }
 impl xsd_parser_types::quick_xml::WithDeserializerFromBytes for ParityFormType {}
-#[derive(Debug)]
+#[derive(Clone, Debug)]
 pub struct LinearAdjustmentType {
     pub slope: ::core::primitive::f64,
     pub intercept: ::core::primitive::f64,
@@ -12289,12 +12289,12 @@ impl ::xsd_parser_types::quick_xml::WithDeserializer for LinearAdjustmentType {
         quick_xml_deserialize::LinearAdjustmentTypeDeserializer,
     >;
 }
-#[derive(Debug)]
+#[derive(Clone, Debug)]
 pub struct DiscreteLookupType {
     pub value: ::core::primitive::i64,
     pub content: DiscreteLookupTypeContent,
 }
-#[derive(Debug)]
+#[derive(Clone, Debug)]
 pub enum DiscreteLookupTypeContent {
     Comparison(ComparisonType),
     ComparisonList(ComparisonListType),
@@ -12351,7 +12351,7 @@ impl ::xsd_parser_types::quick_xml::WithDeserializer for DiscreteLookupTypeConte
         quick_xml_deserialize::DiscreteLookupTypeContentDeserializer,
     >;
 }
-#[derive(Debug)]
+#[derive(Clone, Debug)]
 pub struct SplinePointType {
     pub order: ::core::primitive::i64,
     pub raw: ::core::primitive::f64,
@@ -12388,7 +12388,7 @@ impl ::xsd_parser_types::quick_xml::WithDeserializer for SplinePointType {
         quick_xml_deserialize::SplinePointTypeDeserializer,
     >;
 }
-#[derive(Debug)]
+#[derive(Clone, Debug)]
 pub struct TermType {
     pub coefficient: ::core::primitive::f64,
     pub exponent: ::core::primitive::i64,
@@ -12416,7 +12416,7 @@ impl ::xsd_parser_types::quick_xml::WithSerializer for TermType {
 impl ::xsd_parser_types::quick_xml::WithDeserializer for TermType {
     type Deserializer = ::std::boxed::Box<quick_xml_deserialize::TermTypeDeserializer>;
 }
-#[derive(Debug)]
+#[derive(Clone, Debug)]
 pub enum ReferenceLocationType {
     ContainerStart,
     ContainerEnd,
@@ -12467,7 +12467,7 @@ impl ::xsd_parser_types::quick_xml::DeserializeBytes for ReferenceLocationType {
     }
 }
 impl xsd_parser_types::quick_xml::WithDeserializerFromBytes for ReferenceLocationType {}
-#[derive(Debug)]
+#[derive(Clone, Debug)]
 pub struct ArgumentInstanceRefType {
     pub argument_ref: ::std::string::String,
     pub use_calibrated_value: ::core::primitive::bool,
@@ -12503,12 +12503,12 @@ impl ::xsd_parser_types::quick_xml::WithDeserializer for ArgumentInstanceRefType
         quick_xml_deserialize::ArgumentInstanceRefTypeDeserializer,
     >;
 }
-#[derive(Debug)]
+#[derive(Clone, Debug)]
 pub struct ArgumentDiscreteLookupType {
     pub value: ::core::primitive::i64,
     pub content: ArgumentDiscreteLookupTypeContent,
 }
-#[derive(Debug)]
+#[derive(Clone, Debug)]
 pub enum ArgumentDiscreteLookupTypeContent {
     Comparison(ArgumentComparisonType),
     ComparisonList(ArgumentComparisonListType),
@@ -12569,12 +12569,12 @@ for ArgumentDiscreteLookupTypeContent {
         quick_xml_deserialize::ArgumentDiscreteLookupTypeContentDeserializer,
     >;
 }
-#[derive(Debug)]
+#[derive(Clone, Debug)]
 pub struct ArgumentLocationInContainerInBitsType {
     pub reference_location: ReferenceLocationType,
     pub content: ArgumentLocationInContainerInBitsTypeContent,
 }
-#[derive(Debug)]
+#[derive(Clone, Debug)]
 pub enum ArgumentLocationInContainerInBitsTypeContent {
     FixedValue(::core::primitive::i64),
     DynamicValue(ArgumentDynamicValueType),
@@ -12644,7 +12644,7 @@ for ArgumentLocationInContainerInBitsTypeContent {
         quick_xml_deserialize::ArgumentLocationInContainerInBitsTypeContentDeserializer,
     >;
 }
-#[derive(Debug)]
+#[derive(Clone, Debug)]
 pub struct ArgumentRepeatType {
     pub count: ArgumentIntegerValueType,
     pub offset: ::core::option::Option<ArgumentIntegerValueType>,
@@ -12674,7 +12674,7 @@ impl ::xsd_parser_types::quick_xml::WithDeserializer for ArgumentRepeatType {
         quick_xml_deserialize::ArgumentRepeatTypeDeserializer,
     >;
 }
-#[derive(Debug)]
+#[derive(Clone, Debug)]
 pub enum ArgumentMatchCriteriaType {
     Comparison(ArgumentComparisonType),
     ComparisonList(ArgumentComparisonListType),
@@ -12706,7 +12706,7 @@ impl ::xsd_parser_types::quick_xml::WithDeserializer for ArgumentMatchCriteriaTy
         quick_xml_deserialize::ArgumentMatchCriteriaTypeDeserializer,
     >;
 }
-#[derive(Debug)]
+#[derive(Clone, Debug)]
 pub struct ChangeValueType {
     pub value: ::core::primitive::f64,
 }
@@ -12735,7 +12735,7 @@ impl ::xsd_parser_types::quick_xml::WithDeserializer for ChangeValueType {
         quick_xml_deserialize::ChangeValueTypeDeserializer,
     >;
 }
-#[derive(Debug)]
+#[derive(Clone, Debug)]
 pub enum TimeWindowIsRelativeToType {
     CommandRelease,
     TimeLastVerifierPassed,
@@ -12781,13 +12781,13 @@ impl ::xsd_parser_types::quick_xml::DeserializeBytes for TimeWindowIsRelativeToT
 }
 impl xsd_parser_types::quick_xml::WithDeserializerFromBytes
 for TimeWindowIsRelativeToType {}
-#[derive(Debug)]
+#[derive(Clone, Debug)]
 pub struct ArgumentComparisonType {
     pub comparison_operator: OperatorString,
     pub value: ::std::string::String,
     pub content: ArgumentComparisonTypeContent,
 }
-#[derive(Debug)]
+#[derive(Clone, Debug)]
 pub enum ArgumentComparisonTypeContent {
     ParameterInstanceRef(ParameterInstanceRefType),
     ArgumentInstanceRef(ArgumentInstanceRefType),
@@ -12850,7 +12850,7 @@ impl ::xsd_parser_types::quick_xml::WithDeserializer for ArgumentComparisonTypeC
         quick_xml_deserialize::ArgumentComparisonTypeContentDeserializer,
     >;
 }
-#[derive(Debug)]
+#[derive(Clone, Debug)]
 pub struct ArgumentComparisonListType {
     pub comparison: ::std::vec::Vec<ArgumentComparisonType>,
 }
@@ -12879,7 +12879,7 @@ impl ::xsd_parser_types::quick_xml::WithDeserializer for ArgumentComparisonListT
         quick_xml_deserialize::ArgumentComparisonListTypeDeserializer,
     >;
 }
-#[derive(Debug)]
+#[derive(Clone, Debug)]
 pub enum ArgumentBooleanExpressionType {
     Condition(ArgumentComparisonCheckType),
     AnDedConditions(ArgumentAnDedConditionsType),
@@ -12912,11 +12912,11 @@ impl ::xsd_parser_types::quick_xml::WithDeserializer for ArgumentBooleanExpressi
         quick_xml_deserialize::ArgumentBooleanExpressionTypeDeserializer,
     >;
 }
-#[derive(Debug)]
+#[derive(Clone, Debug)]
 pub struct ArgumentComparisonCheckType {
     pub content: ::std::vec::Vec<ArgumentComparisonCheckTypeContent>,
 }
-#[derive(Debug)]
+#[derive(Clone, Debug)]
 pub enum ArgumentComparisonCheckTypeContent {
     ParameterInstanceRef(ParameterInstanceRefType),
     ArgumentInstanceRef(ArgumentInstanceRefType),
@@ -12977,11 +12977,11 @@ for ArgumentComparisonCheckTypeContent {
         quick_xml_deserialize::ArgumentComparisonCheckTypeContentDeserializer,
     >;
 }
-#[derive(Debug)]
+#[derive(Clone, Debug)]
 pub struct ArgumentAnDedConditionsType {
     pub content: ::std::vec::Vec<ArgumentAnDedConditionsTypeContent>,
 }
-#[derive(Debug)]
+#[derive(Clone, Debug)]
 pub enum ArgumentAnDedConditionsTypeContent {
     Condition(ArgumentComparisonCheckType),
     ORedConditions(ArgumentORedConditionsType),
@@ -13040,11 +13040,11 @@ for ArgumentAnDedConditionsTypeContent {
         quick_xml_deserialize::ArgumentAnDedConditionsTypeContentDeserializer,
     >;
 }
-#[derive(Debug)]
+#[derive(Clone, Debug)]
 pub struct ArgumentORedConditionsType {
     pub content: ::std::vec::Vec<ArgumentORedConditionsTypeContent>,
 }
-#[derive(Debug)]
+#[derive(Clone, Debug)]
 pub enum ArgumentORedConditionsTypeContent {
     Condition(ArgumentComparisonCheckType),
     AnDedConditions(ArgumentAnDedConditionsType),

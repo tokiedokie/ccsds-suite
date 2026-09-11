@@ -20,6 +20,7 @@ fn main() {
     let output = manifest_dir.join("src/generated.rs");
 
     let mut config = Config::default()
+        .with_derive(["Debug", "Clone"])
         .with_schema(Schema::File(manifest_dir.join("SpaceSystem.xsd")))
         .with_quick_xml_config(NamespaceSerialization::Global, None, true)
         .with_parser_flags(ParserFlags::all())

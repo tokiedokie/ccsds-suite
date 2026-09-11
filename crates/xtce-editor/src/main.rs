@@ -3,6 +3,7 @@
     windows_subsystem = "windows"
 )]
 
+mod duplicate;
 mod forms;
 mod support_log;
 
@@ -726,6 +727,31 @@ impl XtceEditor {
         self.tree.update(cx, |tree, _| tree.expand(parent));
         self.document.selection = ElementSelection {
             system_path: parent.system_path.clone(),
+            kind,
+        };
+        self.load_selected_element(window, cx);
+    }
+
+    fn duplicate_tree_element(
+        &mut self,
+        selection: &ElementSelection,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        self.save_selected_element(cx);
+        let Some(kind) = XtceDocument::duplicate_element(&mut self.document.root, selection) else {
+            window.push_notification("The selected element could not be duplicated.", cx);
+            return;
+        };
+        let parent = ElementSelection {
+            system_path: selection.system_path.clone(),
+            kind: kind
+                .parent_set()
+                .expect("duplicated elements have a parent set"),
+        };
+        self.tree.update(cx, |tree, _| tree.expand(&parent));
+        self.document.selection = ElementSelection {
+            system_path: selection.system_path.clone(),
             kind,
         };
         self.load_selected_element(window, cx);
@@ -2984,15 +3010,30 @@ impl ElementTree {
                                         .group_hover(row_group.clone(), |button| button.visible())
                                 })
                                 .dropdown_menu(move |menu, _, _| {
+                                    let duplicate_editor = delete_editor.clone();
+                                    let duplicate_selection = delete_selection.clone();
                                     let editor = delete_editor.clone();
                                     let selection = delete_selection.clone();
-                                    menu.item(PopupMenuItem::new("Delete…").on_click(
+                                    menu.item(PopupMenuItem::new("Duplicate").on_click(
                                         move |_, window, cx| {
-                                            _ = editor.update(cx, |editor, cx| {
-                                                editor.request_delete(&selection, window, cx);
+                                            _ = duplicate_editor.update(cx, |editor, cx| {
+                                                editor.duplicate_tree_element(
+                                                    &duplicate_selection,
+                                                    window,
+                                                    cx,
+                                                );
                                             });
                                         },
                                     ))
+                                    .item(
+                                        PopupMenuItem::new("Delete…").on_click(
+                                            move |_, window, cx| {
+                                                _ = editor.update(cx, |editor, cx| {
+                                                    editor.request_delete(&selection, window, cx);
+                                                });
+                                            },
+                                        ),
+                                    )
                                 }),
                         )
                     }),
